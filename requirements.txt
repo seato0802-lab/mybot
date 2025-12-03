@@ -1,2 +1,2 @@
-git+https://github.com/Rapptz/discord.py@master#egg=discord.py --no-deps
+discord.py==2.6.4
 Flask
