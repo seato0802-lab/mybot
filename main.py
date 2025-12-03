@@ -49,7 +49,6 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
     await interaction.response.send_message(
         f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始です。"
     )
-
 @tasks.loop(minutes=1)
 async def check_tasks():
     now = datetime.now(JST)
@@ -63,6 +62,36 @@ async def check_tasks():
             remove_list.append(name)
     for name in remove_list:
         del tasks_data[name]
+
+@bot.tree.command(name="list", description="現在登録されているタスクを一覧表示します")
+async def list_cmd(interaction: discord.Interaction):
+    if not tasks_data:
+        return await interaction.response.send_message("現在登録されているタスクはありません。")
+
+    msg = "【登録タスク一覧】\n"
+    for name, data in tasks_data.items():
+        time_str = data["time"].strftime("%H:%M")
+        msg += f"・**{name}**：{time_str}\n"
+
+    await interaction.response.send_message(msg)
+
+@bot.tree.command(name="reset", description="登録されている全てのタスクを削除します")
+async def reset_cmd(interaction: discord.Interaction):
+    tasks_data.clear()
+    await interaction.response.send_message("すべてのタスクを削除しました。")
+
+@bot.tree.command(name="resetin", description="特定のタスクを選択して削除します")
+@app_commands.describe(name="削除するタスク名を選択してください")
+@app_commands.choices(name=lambda: [
+    app_commands.Choice(name=n, value=n) for n in tasks_data.keys()
+])
+async def resetin_cmd(interaction: discord.Interaction, name: app_commands.Choice[str]):
+    if name.value not in tasks_data:
+        return await interaction.response.send_message("そのタスクは既に存在しません。")
+
+    del tasks_data[name.value]
+    await interaction.response.send_message(f"**{name.value}** を削除しました。")
+
 
 # --- keep_alive (Flask) ---
 app = Flask('')
@@ -91,3 +120,6 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
+
+
