@@ -1,65 +1,93 @@
 import os
+import asyncio
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from flask import Flask
+from threading import Thread
 
-# Bot の設定
+JST = timezone(timedelta(hours=9))
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# タスク一覧（名前ごとに管理）
-tasks_data = {}  # { name: {"time": datetime, "channel": channel_id} }
+tasks_data = {}
+PLACE_LIST = [
+    "パシフィック", "オイルリグ", "アーティファクト",
+    "飛行場", "客船", "ユニオン", "パレト", "ボブキャット"
+]
 
+# --- Discord Bot ---
 @bot.event
 async def on_ready():
-    await bot.tree.sync()   # スラッシュコマンド同期
-    check_tasks.start()     # タスクループ開始
+    await bot.tree.sync()
+    if not check_tasks.is_running():
+        check_tasks.start()
     print(f"Bot logged in as {bot.user}")
 
-
-# /time コマンド
 @bot.tree.command(name="time", description="受注時間をセットする")
-async def time_cmd(interaction: discord.Interaction, name: str, minutes: int):
-    now = datetime.now()
+@app_commands.describe(
+    name="場所を選択してください",
+    minutes="何分後に受注が開始しますか？"
+)
+@app_commands.choices(
+    name=[app_commands.Choice(name=p, value=p) for p in PLACE_LIST]
+)
+async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[str], minutes: int):
+    if minutes < 1 or minutes > 1440:
+        return await interaction.response.send_message(
+            "分の指定は 1〜1440 の間で入力してください。",
+            ephemeral=True
+        )
+    now = datetime.now(JST)
     target_time = now + timedelta(minutes=minutes)
-
-    # 名前ごとのタスク保存
-    tasks_data[name] = {
+    tasks_data[name.value] = {
         "time": target_time,
         "channel": interaction.channel.id
     }
-
-    # 表示用の時刻整形
-    time_str = target_time.strftime("%H時%M分")
-
     await interaction.response.send_message(
-        f"**{name}** は **{time_str}** に受注開始です。"
+        f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始です。"
     )
 
-# 1分ごとにタスクを確認
 @tasks.loop(minutes=1)
 async def check_tasks():
-    now = datetime.now()
-
-    to_remove = []
-
+    now = datetime.now(JST)
+    remove_list = []
     for name, data in tasks_data.items():
         notify_time = data["time"] - timedelta(minutes=15)
-
-        # 時間になったら通知
         if notify_time <= now:
             channel = bot.get_channel(data["channel"])
             if channel:
                 await channel.send(f"@here **{name}** の受注15分前です！")
-            to_remove.append(name)
-
-    # 発火したタスクを削除
-    for name in to_remove:
+            remove_list.append(name)
+    for name in remove_list:
         del tasks_data[name]
 
+# --- keep_alive (Flask) ---
+app = Flask('')
+@app.route('/')
+def home():
+    return "Bot is running!", 200
+def run():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
-# 起動
-bot.run(os.getenv("DISCORD_TOKEN"))
+# --- Bot start ---
+async def start():
+    TOKEN = os.getenv("DISCORD_TOKEN")
+    if not TOKEN:
+        print("DISCORD_TOKEN not set!")
+        return
+    while True:
+        try:
+            await bot.start(TOKEN)
+        except Exception as e:
+            print("Error:", e)
+            await asyncio.sleep(5)
 
+if __name__ == "__main__":
+    keep_alive()
+    asyncio.run(start())
