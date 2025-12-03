@@ -12,11 +12,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # タスク一覧（名前ごとに管理）
 tasks_data = {}  # { name: {"time": datetime, "channel": channel_id} }
 
-# 起動時にスラッシュコマンドを同期
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user}")
+    await bot.tree.sync()   # スラッシュコマンド同期
+    check_tasks.start()     # タスクループ開始
+    print(f"Bot logged in as {bot.user}")
+
 
 # /time コマンド
 @bot.tree.command(name="time", description="受注時間をセットする")
@@ -58,11 +59,7 @@ async def check_tasks():
     for name in to_remove:
         del tasks_data[name]
 
-# Bot 起動時にループ開始
-@bot.event
-async def on_ready():
-    check_tasks.start()
-    print(f"Bot logged in as {bot.user}")
 
 # 起動
 bot.run(os.getenv("DISCORD_TOKEN"))
+
