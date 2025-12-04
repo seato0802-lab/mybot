@@ -285,14 +285,24 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
 # =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
-    # category と type を取得
-    category_raw = getattr(interaction.namespace, "category", None)
-    type_raw = getattr(interaction.namespace, "type", None)
+    # interaction.data から options を再帰検索して値を取得する関数
+    def find_option(data, name):
+        if not isinstance(data, dict):
+            return None
+        for opt in data.get("options", []):
+            if opt.get("name") == name and "value" in opt:
+                return opt["value"]
+            if "options" in opt:
+                v = find_option(opt, name)
+                if v is not None:
+                    return v
+        return None
 
-    category = _safe_value(category_raw) or _find_option_in_data(interaction.data, "category")
-    type_sel = _safe_value(type_raw) or _find_option_in_data(interaction.data, "type")
+    # 親オプション取得
+    category = find_option(interaction.data, "category")
+    type_sel = find_option(interaction.data, "type")
 
-    # category が未選択の場合、両方のシートを取得して候補作成
+    # 候補を作る対象シート URL
     urls = []
     if category == "道具":
         urls = [TOOL_URL]
@@ -308,7 +318,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         if not sheet:
             continue
 
-        # 列名マッピング
+        # 列名自動判別
         def find_col(cols, target):
             for c in cols:
                 if target in c:
@@ -321,24 +331,27 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         if not name_col or not type_col:
             continue
 
-        def norm(s):
-            return str(s).replace("\u3000", "").strip() if s else ""
-
         for row in sheet:
-            row_name = norm(row.get(name_col))
-            row_type = norm(row.get(type_col))
+            row_name = (row.get(name_col) or "").replace("\u3000", "").strip()
+            row_type = (row.get(type_col) or "").replace("\u3000", "").strip()
             if not row_name:
                 continue
-            # type が未選択なら全て追加、選択済みなら一致するものだけ
-            if not type_sel or row_type == norm(type_sel):
+
+            # type が未選択なら category のシートから全アイテム追加
+            # type が選択済みなら type に一致するものだけ
+            if not type_sel or row_type == type_sel:
                 candidates.append(row_name)
 
-    # current フィルターして最大 25 件
+    # current 文字列でフィルター
     if current:
         candidates = [n for n in candidates if current.lower() in n.lower()]
 
+    # 最大 25 件に制限
     candidates = candidates[:25]
+
+    # app_commands.Choice に変換
     return [app_commands.Choice(name=n, value=n) for n in candidates]
+
 
 # =========================
 # タスク実行ループ
@@ -397,5 +410,6 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
