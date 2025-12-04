@@ -254,63 +254,51 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 
 
 # =======================================================
-# Autocomplete：type
+# Autocomplete：type（安全版）
 # =======================================================
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
-
-    # category may be Choice or str or None
+    # category を取得
     category_raw = getattr(interaction.namespace, "category", None)
     category = _safe_value(category_raw)
     if not category:
-        # fallback to data
         category = _find_option_in_data(interaction.data, "category")
 
+    # category が未選択の場合、両方の候補を返す
     if not category:
-        return []
-
-    if category == "道具":
+        types = ["小型", "大型", "その他", "弾", "武器", "アタッチメント"]
+    elif category == "道具":
         types = ["小型", "大型", "その他"]
     else:
         types = ["弾", "武器", "アタッチメント", "その他"]
 
+    # フィルターして最大 25 件
     return [
         app_commands.Choice(name=t, value=t)
         for t in types
         if current.lower() in t.lower()
-    ]
+    ][:25]
 
 
 # =======================================================
-# Autocomplete：item（種別で絞り込み） — robust version
+# Autocomplete：item（安全版）
 # =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
-
-    # try various ways to get category and type
+    # category と type を取得
     category_raw = getattr(interaction.namespace, "category", None)
     type_raw = getattr(interaction.namespace, "type", None)
 
-    category = _safe_value(category_raw)
-    type_sel = _safe_value(type_raw)
+    category = _safe_value(category_raw) or _find_option_in_data(interaction.data, "category")
+    type_sel = _safe_value(type_raw) or _find_option_in_data(interaction.data, "type")
 
-    # if not present in namespace, try interaction.data (works during autocomplete)
-    if not category:
-        category = _find_option_in_data(interaction.data, "category")
-    if not type_sel:
-        type_sel = _find_option_in_data(interaction.data, "type")
-
-    # final safety
-    if not category or not type_sel:
-        return []
-
-    # choose sheet url
+    # category がない場合は全アイテムから候補作成
     url = TOOL_URL if category == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
     if not sheet:
         return []
 
-    # tolerant column mapping
+    # 列名マッピング
     def find_col(cols, target):
         for c in cols:
             if target in c:
@@ -320,33 +308,28 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     columns = sheet[0].keys()
     name_col = find_col(columns, "名前")
     type_col = find_col(columns, "種別")
-
     if not name_col or not type_col:
         return []
 
-    # build candidate list: compare normalized strings
     def norm(s):
-        if s is None:
-            return ""
-        return str(s).replace("\u3000", "").strip()
+        return str(s).replace("\u3000", "").strip() if s else ""
 
+    # 候補作成
     candidates = []
     for row in sheet:
         row_type = norm(row.get(type_col))
         row_name = norm(row.get(name_col))
         if not row_name:
             continue
-        if row_type == norm(type_sel):
+        if not type_sel or row_type == norm(type_sel):
             candidates.append(row_name)
 
-    # apply search filter (current) then limit 25
+    # current フィルターして最大 25 件
     if current:
         candidates = [n for n in candidates if current.lower() in n.lower()]
-
     candidates = candidates[:25]
 
     return [app_commands.Choice(name=n, value=n) for n in candidates]
-
 
 # =========================
 # タスク実行ループ
@@ -405,3 +388,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
