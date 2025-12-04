@@ -238,7 +238,7 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
             need = int(need)
         msg += f"- {key}：{need}\n"
 
-    await interaction.followup.send(msg)
+    await interaction.followup.send(msg, ephemeral=True)
 
 # =======================================================
 # Autocomplete：type
@@ -394,4 +394,5 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
