@@ -214,25 +214,46 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 
 
 # =========================
-# /craft item Autocomplete（修正版）
+# craft オートコンプリート
 # =========================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
 
-    category = getattr(interaction.namespace, "category", None)
-    if category is None:
-        return []
+    category = interaction.namespace.category  # 選択されたカテゴリー（道具 or 武器）
 
-    url = TOOL_URL if category == "道具" else WEAPON_URL
-    sheet = await fetch_csv(url)
+    sheet = await fetch_csv(CRAFT_SHEET_URL)
 
-    names = [row.get("名前", "") for row in sheet if row.get("名前")]
+    names = []
 
-    return [
-        app_commands.Choice(name=n, value=n)
-        for n in names
-        if current.lower() in n.lower()
-    ][:25]
+    # カテゴリ判定（武器は必要列が少ない）
+    if category == "武器":
+        valid_keys = ["名前", "１回での作成個数", "労働力", "金属くず",
+                      "鋼鉄", "鉄", "銅", "アルミニウム", "プラスチック"]
+    else:
+        # 道具カテゴリ
+        valid_keys = ["名前"]  # 道具はシート上で名前だけ見れば OK
+
+    for row in sheet:
+        # "名前" が空なら無視
+        name = row.get("名前", "").strip()
+        if not name:
+            continue
+
+        # 行がカテゴリとして不適切な場合（「武器」なのに武器の素材が無いなど）除外
+        # → 誤検出を避けるため、行のキーが適切に存在するか確認
+        if category == "武器":
+            if not any(k in row and row[k] for k in ["鋼鉄", "鉄", "プラスチック"]):
+                continue  # 明らかに武器ではない行はスキップ
+
+        # 検索の絞り込み
+        if current.lower() in name.lower():
+            names.append(
+                app_commands.Choice(name=name, value=name)
+            )
+
+    # 最大25件（Discord制限）
+    return names[:25]
+
 
 
 # =========================
@@ -292,3 +313,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
