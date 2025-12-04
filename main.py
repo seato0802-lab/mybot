@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask
 from threading import Thread
 import aiohttp
+import math
 
 # =========================
 # 設定
@@ -41,6 +42,8 @@ async def fetch_csv(url):
     header = [h.strip() for h in lines[0].split(",")]
 
     for line in lines[1:]:
+        if not line:
+            continue
         cols = [c.strip() for c in line.split(",")]
         if len(cols) < len(header):
             cols += [""] * (len(header) - len(cols))
@@ -134,7 +137,7 @@ async def resetin_cmd(interaction: discord.Interaction, name: str):
     await interaction.response.send_message(f"**{name}** を削除しました。", ephemeral=True)
 
 
-# --- Autocomplete ---
+# --- Autocomplete ----
 @resetin_cmd.autocomplete("name")
 async def autocomplete_name(interaction: discord.Interaction, current: str):
     return [
@@ -160,33 +163,6 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
     ]
 )
 async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], item: str, count: int):
-# -------------------------
-# /craft item Autocomplete（修正版）
-# -------------------------
-@craft_cmd.autocomplete("item")
-async def autocomplete_item(interaction: discord.Interaction, current: str):
-
-    # category の取得（存在しない場合 None）
-    category = getattr(interaction.namespace, "category", None)
-
-    # カテゴリー未選択なら候補を出さない
-    if category is None:
-        return []
-
-    # 道具 or 武器で URL 切り替え
-    url = TOOL_URL if category == "道具" else WEAPON_URL
-    sheet = await fetch_csv(url)
-
-    # シートの名前一覧
-    names = [row.get("名前", "") for row in sheet if row.get("名前")]
-
-    # 入力に合うものだけ返す
-    return [
-        app_commands.Choice(name=n, value=n)
-        for n in names
-        if current.lower() in n.lower()
-    ][:25]
-
 
     await interaction.response.defer(ephemeral=True)
 
@@ -204,7 +180,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
 
-    # ---- 作成回数の計算（← 修正済み：切り上げ） ----
+    # ---- 作成回数の計算（切り上げ） ----
     try:
         make_per_once = float(target["１回での作成個数"])
     except:
@@ -221,17 +197,43 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         if key in ("名前", "１回での作成個数"):
             continue
 
-        # 数字かチェック
-        if value.replace(".", "", 1).isdigit():
+        # 数値ではない → スキップ
+        try:
+            v = float(value)
+        except:
+            continue
 
-            need = float(value) * craft_times
+        need = v * craft_times
 
-            if need > 0:
-                if need.is_integer():
-                    need = int(need)
-                msg += f"- {key}：{need}\n"
+        if need > 0:
+            if need.is_integer():
+                need = int(need)
+            msg += f"- {key}：{need}\n"
 
     await interaction.followup.send(msg)
+
+
+# =========================
+# /craft item Autocomplete（修正版）
+# =========================
+@craft_cmd.autocomplete("item")
+async def autocomplete_item(interaction: discord.Interaction, current: str):
+
+    category = getattr(interaction.namespace, "category", None)
+    if category is None:
+        return []
+
+    url = TOOL_URL if category == "道具" else WEAPON_URL
+    sheet = await fetch_csv(url)
+
+    names = [row.get("名前", "") for row in sheet if row.get("名前")]
+
+    return [
+        app_commands.Choice(name=n, value=n)
+        for n in names
+        if current.lower() in n.lower()
+    ][:25]
+
 
 # =========================
 # タスク実行ループ
@@ -290,5 +292,3 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
-
-
