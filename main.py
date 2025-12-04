@@ -230,6 +230,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     category_raw = interaction.namespace.category
     type_sel = interaction.namespace.type
 
+    # category は Choice の場合 value を取得
     category = getattr(category_raw, "value", category_raw)
 
     if not category or not type_sel:
@@ -239,20 +240,23 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     url = TOOL_URL if category == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
 
-    # アイテム抽出
+    # --- ① 種別一致のアイテムを抽出 ---
     items = [
         row["名前"] for row in sheet
         if row.get("種別") == type_sel and row.get("名前")
     ]
 
-    items = items[:25]  # 25件制限
+    # --- ② 検索文字列 current で絞り込み ---
+    if current:
+        items = [name for name in items if current.lower() in name.lower()]
+
+    # --- ③ Autocomplete 制限（25件） ---
+    items = items[:25]
 
     return [
         app_commands.Choice(name=name, value=name)
         for name in items
-        if current.lower() in name.lower()
     ]
-
 
 # =========================
 # タスク実行ループ
@@ -311,3 +315,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
