@@ -6,10 +6,15 @@ from discord import app_commands
 from datetime import datetime, timedelta, timezone
 from flask import Flask
 from threading import Thread
+import aiohttp
 
+# =========================
+# 設定
+# =========================
 JST = timezone(timedelta(hours=9))
 intents = discord.Intents.default()
 intents.message_content = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 tasks_data = {}
@@ -18,7 +23,34 @@ PLACE_LIST = [
     "飛行場", "客船", "ユニオン", "パレト", "ボブキャット"
 ]
 
-# --- Discord Bot ---
+# 公開 CSV の URL
+CRAFT_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?output=csv"
+
+
+# =========================
+# CSVダウンロード
+# =========================
+async def fetch_csv(url):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as r:
+            text = await r.text()
+
+    rows = []
+    lines = text.split("\n")
+    header = [h.strip() for h in lines[0].split(",")]
+
+    for line in lines[1:]:
+        cols = [c.strip() for c in line.split(",")]
+        if len(cols) < len(header):
+            cols += [""] * (len(header) - len(cols))
+        rows.append(dict(zip(header, cols)))
+
+    return rows
+
+
+# =========================
+# Discord Bot 起動
+# =========================
 @bot.event
 async def on_ready():
     await bot.tree.sync()
@@ -39,6 +71,7 @@ async def on_ready():
     name=[app_commands.Choice(name=p, value=p) for p in PLACE_LIST]
 )
 async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[str], minutes: int):
+
     if minutes < 1 or minutes > 1440:
         return await interaction.response.send_message(
             "分の指定は 1〜1440 の間で入力してください。",
@@ -47,56 +80,60 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
 
     now = datetime.now(JST)
     target_time = now + timedelta(minutes=minutes)
+
     tasks_data[name.value] = {
         "time": target_time,
         "channel": interaction.channel.id
     }
 
     await interaction.response.send_message(
-        f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始です。"
+        f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始です。",
+        ephemeral=True
     )
 
 
 # =========================
-# /list（一覧を表示）
+# /list
 # =========================
 @bot.tree.command(name="list", description="現在登録されているタスクを一覧表示します")
 async def list_cmd(interaction: discord.Interaction):
+
     if not tasks_data:
-        return await interaction.response.send_message("現在登録されているタスクはありません。")
+        return await interaction.response.send_message("現在登録されているタスクはありません。", ephemeral=True)
 
     msg = "【登録タスク一覧】\n"
     for name, data in tasks_data.items():
         time_str = data["time"].strftime("%H:%M")
         msg += f"・**{name}**：{time_str}\n"
 
-    await interaction.response.send_message(msg)
+    await interaction.response.send_message(msg, ephemeral=True)
 
 
 # =========================
-# /reset（全削除）
+# /reset
 # =========================
 @bot.tree.command(name="reset", description="登録されている全てのタスクを削除します")
 async def reset_cmd(interaction: discord.Interaction):
+
     tasks_data.clear()
-    await interaction.response.send_message("すべてのタスクを削除しました。")
+    await interaction.response.send_message("すべてのタスクを削除しました。", ephemeral=True)
 
 
 # =========================
-# /resetin（選択して削除）
-# ※ choices は動的に更新されないので Autocomplete を使用
+# /resetin
 # =========================
 @bot.tree.command(name="resetin", description="特定のタスクを選択して削除します")
 @app_commands.describe(name="削除するタスク名を入力してください")
 async def resetin_cmd(interaction: discord.Interaction, name: str):
+
     if name not in tasks_data:
-        return await interaction.response.send_message("そのタスクは存在しません。")
+        return await interaction.response.send_message("そのタスクは存在しません。", ephemeral=True)
 
     del tasks_data[name]
-    await interaction.response.send_message(f"**{name}** を削除しました。")
+    await interaction.response.send_message(f"**{name}** を削除しました。", ephemeral=True)
 
 
-# --- Autocomplete（resetin 用） ---
+# --- Autocomplete ---
 @resetin_cmd.autocomplete("name")
 async def autocomplete_name(interaction: discord.Interaction, current: str):
     return [
@@ -104,6 +141,38 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
         for n in tasks_data.keys()
         if current.lower() in n.lower()
     ]
+
+
+# =========================
+# /craft（スプレッドシート参照）
+# =========================
+@bot.tree.command(name="craft", description="必要素材を計算して表示します")
+@app_commands.describe(category="道具 or 武器", item="作りたいもの", count="作る個数")
+async def craft_cmd(interaction: discord.Interaction, category: str, item: str, count: int):
+
+    await interaction.response.defer(ephemeral=True)
+
+    sheet = await fetch_csv(CRAFT_SHEET_URL)
+
+    target = None
+    for row in sheet:
+        if row.get("名前") == item:
+            target = row
+            break
+
+    if not target:
+        return await interaction.followup.send("そのアイテムはシートにありません。")
+
+    msg = f"### **{item} を {count}個 作るために必要な素材**\n"
+
+    for key, value in target.items():
+        if key in ("名前", ""):
+            continue
+        if value.isdigit():
+            need = int(value) * count
+            msg += f"- {key}：{need}\n"
+
+    await interaction.followup.send(msg)
 
 
 # =========================
@@ -121,14 +190,15 @@ async def check_tasks():
             channel = bot.get_channel(data["channel"])
             if channel:
                 await channel.send(f"@here **{name}** の受注15分前です！")
-
             remove_list.append(name)
 
     for name in remove_list:
         del tasks_data[name]
 
 
-# --- keep_alive (Flask) ---
+# =========================
+# Flask Keep Alive（Render 用）
+# =========================
 app = Flask('')
 
 @app.route('/')
@@ -143,7 +213,9 @@ def keep_alive():
     t.start()
 
 
-# --- Bot start ---
+# =========================
+# Bot 起動
+# =========================
 async def start():
     TOKEN = os.getenv("DISCORD_TOKEN")
     if not TOKEN:
@@ -156,7 +228,6 @@ async def start():
         except Exception as e:
             print("Error:", e)
             await asyncio.sleep(5)
-
 
 if __name__ == "__main__":
     keep_alive()
