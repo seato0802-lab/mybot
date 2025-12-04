@@ -10,6 +10,7 @@ from threading import Thread
 import aiohttp
 import csv
 import io
+import time
 
 # =========================
 # 設定
@@ -30,7 +31,6 @@ PLACE_LIST = [
 TOOL_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=0&single=true&output=csv"
 WEAPON_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=793378898&single=true&output=csv"
 
-
 # =========================
 # CSVダウンロード（自動区切り判定）
 # =========================
@@ -39,12 +39,31 @@ async def fetch_csv(url):
         async with session.get(url) as r:
             text = await r.text()
 
-    # CSV / TSV 自動判別してパース
     f = io.StringIO(text)
     reader = csv.DictReader(f)
     rows = [row for row in reader]
     return rows
 
+# =========================
+# CSVキャッシュ（5分有効）
+# =========================
+CSV_CACHE = {
+    "道具": [],
+    "武器": [],
+    "timestamp": 0
+}
+
+async def get_csv(category: str):
+    now = time.time()
+    if CSV_CACHE["timestamp"] and now - CSV_CACHE["timestamp"] < 300:
+        return CSV_CACHE[category]
+
+    url = TOOL_URL if category == "道具" else WEAPON_URL
+    sheet = await fetch_csv(url)
+    if sheet:
+        CSV_CACHE[category] = sheet
+        CSV_CACHE["timestamp"] = now
+    return sheet
 
 # =========================
 # ヘルパー：option を安全に取得する
@@ -52,7 +71,6 @@ async def fetch_csv(url):
 def _safe_value(v):
     if v is None:
         return None
-    # Choice オブジェクトかもしれないが autocomplete passes raw in namespace; this handles common cases
     try:
         val = getattr(v, "value", v)
     except Exception:
@@ -61,25 +79,18 @@ def _safe_value(v):
         return val.strip()
     return val
 
-
 def _find_option_in_data(interaction_data, name):
-    """
-    interaction.data の options を再帰検索して name の value を返す（存在しなければ None）
-    """
     if not isinstance(interaction_data, dict):
         return None
     opts = interaction_data.get("options", [])
     for opt in opts:
-        # opt can be {name, value} or have nested options
         if opt.get("name") == name and "value" in opt:
             return opt.get("value")
-        # nested
         if "options" in opt:
             v = _find_option_in_data(opt, name)
             if v is not None:
                 return v
     return None
-
 
 # =========================
 # Discord Bot 起動
@@ -90,7 +101,6 @@ async def on_ready():
     if not check_tasks.is_running():
         check_tasks.start()
     print(f"Bot logged in as {bot.user}")
-
 
 # =========================
 # /time
@@ -104,7 +114,6 @@ async def on_ready():
     name=[app_commands.Choice(name=p, value=p) for p in PLACE_LIST]
 )
 async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[str], minutes: int):
-
     if minutes < 1 or minutes > 1440:
         return await interaction.response.send_message(
             "分の指定は 1〜1440 の間で入力してください。",
@@ -124,13 +133,11 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
         ephemeral=True
     )
 
-
 # =========================
 # /list
 # =========================
 @bot.tree.command(name="list", description="現在登録されているタスクを一覧表示します")
 async def list_cmd(interaction: discord.Interaction):
-
     if not tasks_data:
         return await interaction.response.send_message("現在登録されているタスクはありません。", ephemeral=True)
 
@@ -141,16 +148,13 @@ async def list_cmd(interaction: discord.Interaction):
 
     await interaction.response.send_message(msg, ephemeral=True)
 
-
 # =========================
 # /reset
 # =========================
 @bot.tree.command(name="reset", description="登録されている全てのタスクを削除します")
 async def reset_cmd(interaction: discord.Interaction):
-
     tasks_data.clear()
     await interaction.response.send_message("すべてのタスクを削除しました。", ephemeral=True)
-
 
 # =========================
 # /resetin
@@ -158,15 +162,12 @@ async def reset_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="resetin", description="特定のタスクを選択して削除します")
 @app_commands.describe(name="削除するタスク名を入力してください")
 async def resetin_cmd(interaction: discord.Interaction, name: str):
-
     if name not in tasks_data:
         return await interaction.response.send_message("そのタスクは存在しません。", ephemeral=True)
 
     del tasks_data[name]
     await interaction.response.send_message(f"**{name}** を削除しました。", ephemeral=True)
 
-
-# --- Autocomplete ---（タスク名）
 @resetin_cmd.autocomplete("name")
 async def autocomplete_name(interaction: discord.Interaction, current: str):
     return [
@@ -176,7 +177,7 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
     ]
 
 # =======================================================
-#          /craft（カテゴリ → 種別 → アイテム）
+# /craft（カテゴリ → 種別 → アイテム）
 # =======================================================
 @bot.tree.command(name="craft", description="必要素材を計算して表示します")
 @app_commands.describe(
@@ -192,17 +193,12 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
     ]
 )
 async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], type: str, item: str, count: int):
-
     await interaction.response.defer(ephemeral=True)
-
-    # URL 選択
-    url = TOOL_URL if category.value == "道具" else WEAPON_URL
-    sheet = await fetch_csv(url)
+    sheet = await get_csv(category.value)
 
     if not sheet:
         return await interaction.followup.send("シートの読み込みに失敗しました。")
 
-    # 列名取得関数（正規化対応）
     def find_col(cols, target):
         for c in cols:
             if c is None:
@@ -218,7 +214,6 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     if not name_col:
         return await interaction.followup.send("シートに '名前' 列が見つかりません。")
 
-    # アイテム検索
     target = next((row for row in sheet if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()), None)
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
@@ -245,9 +240,8 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 
     await interaction.followup.send(msg)
 
-
 # =======================================================
-# Autocomplete：type（安全版）
+# Autocomplete：type
 # =======================================================
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
@@ -277,9 +271,8 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
 
     return [app_commands.Choice(name=t, value=t) for t in filtered]
 
-
 # =======================================================
-# Autocomplete：item（修正版・正規化対応）
+# Autocomplete：item
 # =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
@@ -300,22 +293,21 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
 
     urls = []
     if category == "道具":
-        urls = [TOOL_URL]
+        urls = ["道具"]
     elif category == "武器":
-        urls = [WEAPON_URL]
+        urls = ["武器"]
     else:
-        urls = [TOOL_URL, WEAPON_URL]
+        urls = ["道具", "武器"]
 
     candidates = []
 
-    # 正規化関数（全角スペース削除 + trim + 小文字化）
     def normalize(s):
         if s is None:
             return ""
         return str(s).replace("\u3000", "").strip().lower()
 
-    for url in urls:
-        sheet = await fetch_csv(url)
+    for cat in urls:
+        sheet = await get_csv(cat)
         if not sheet:
             continue
 
@@ -336,11 +328,8 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         for row in sheet:
             row_name = (row.get(name_col) or "").replace("\u3000", "").strip()
             row_type = row.get(type_col)
-
             if not row_name:
                 continue
-
-            # type_sel と row_type を正規化して比較
             if not type_sel or normalize(row_type) == normalize(type_sel):
                 candidates.append(row_name)
 
@@ -349,6 +338,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
 
     candidates = candidates[:25]
     return [app_commands.Choice(name=n, value=n) for n in candidates]
+
 # =========================
 # タスク実行ループ
 # =========================
@@ -369,7 +359,6 @@ async def check_tasks():
     for name in remove_list:
         del tasks_data[name]
 
-
 # =========================
 # Flask Keep Alive（Render 用）
 # =========================
@@ -385,7 +374,6 @@ def run():
 def keep_alive():
     t = Thread(target=run)
     t.start()
-
 
 # =========================
 # Bot 起動
@@ -406,9 +394,3 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
-
-
-
-
-
-
