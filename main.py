@@ -203,7 +203,13 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
 
-    category = interaction.namespace.category.value  # ← 修正
+    category_raw = interaction.namespace.category
+
+    # Choice型なら .value、そうでなければそのまま
+    category = getattr(category_raw, "value", category_raw)
+
+    if not category:
+        return []
 
     if category == "道具":
         types = ["小型", "大型", "その他"]
@@ -218,19 +224,23 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
 
 
 
+
 # =======================================================
 # Autocomplete：item（種別で絞り込み）
 # =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
 
-    category = interaction.namespace.category.value  # ← 修正
-    type_sel = interaction.namespace.type            # これは string なのでOK
+    category_raw = interaction.namespace.category
+    type_sel = interaction.namespace.type
+
+    # Choice型なら .value、文字列ならそのまま
+    category = getattr(category_raw, "value", category_raw)
 
     if not category or not type_sel:
         return []
 
-    url = TOOL_URL if category == "道具" else WEAPON_URL  # ← 正しく動くようになる
+    url = TOOL_URL if category == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
 
     items = [
@@ -238,11 +248,11 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         if row.get("種別") == type_sel and row.get("名前")
     ]
 
-    limited = items[:25]
+    items = items[:25]  # Discord 仕様で最大25件まで
 
     return [
         app_commands.Choice(name=name, value=name)
-        for name in limited
+        for name in items
         if current.lower() in name.lower()
     ]
 
@@ -305,4 +315,5 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
