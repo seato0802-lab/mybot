@@ -258,11 +258,21 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 # =======================================================
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
+    # interaction.data から options を再帰検索して値を取得する関数
+    def find_option(data, name):
+        if not isinstance(data, dict):
+            return None
+        for opt in data.get("options", []):
+            if opt.get("name") == name and "value" in opt:
+                return opt["value"]
+            if "options" in opt:
+                v = find_option(opt, name)
+                if v is not None:
+                    return v
+        return None
+
     # category を取得
-    category_raw = getattr(interaction.namespace, "category", None)
-    category = _safe_value(category_raw)
-    if not category:
-        category = _find_option_in_data(interaction.data, "category")
+    category = find_option(interaction.data, "category")
 
     # category が未選択の場合、両方の候補を返す
     if not category:
@@ -272,12 +282,11 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
     else:
         types = ["弾", "武器", "アタッチメント", "その他"]
 
-    # フィルターして最大 25 件
-    return [
-        app_commands.Choice(name=t, value=t)
-        for t in types
-        if current.lower() in t.lower()
-    ][:25]
+    # current で絞り込み、最大 25 件
+    filtered = [t for t in types if current.lower() in t.lower()]
+    filtered = filtered[:25]
+
+    return [app_commands.Choice(name=t, value=t) for t in filtered]
 
 
 # =======================================================
@@ -410,6 +419,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
