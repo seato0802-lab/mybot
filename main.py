@@ -106,14 +106,14 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
     if minutes < 1 or minutes > 1440:
         return await interaction.response.send_message(
             "分の指定は 1〜1440 の間で入力してください。",
-            ephemeral=True
+            ephemeral=False
         )
     now = datetime.now(JST)
     target_time = now + timedelta(minutes=minutes)
     tasks_data[name.value] = {"time": target_time, "channel": interaction.channel.id}
     await interaction.response.send_message(
         f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始です。",
-        ephemeral=True
+        ephemeral=False
     )
 
 # =========================
@@ -122,12 +122,12 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
 @bot.tree.command(name="list", description="現在登録されているタスクを一覧表示します")
 async def list_cmd(interaction: discord.Interaction):
     if not tasks_data:
-        return await interaction.response.send_message("現在登録されているタスクはありません。", ephemeral=True)
+        return await interaction.response.send_message("現在登録されているタスクはありません。", ephemeral=False)
     msg = "【登録タスク一覧】\n"
     for name, data in tasks_data.items():
         time_str = data["time"].strftime("%H:%M")
         msg += f"・**{name}**：{time_str}\n"
-    await interaction.response.send_message(msg, ephemeral=True)
+    await interaction.response.send_message(msg, ephemeral=False)
 
 # =========================
 # /reset
@@ -135,7 +135,7 @@ async def list_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="reset", description="登録されている全てのタスクを削除します")
 async def reset_cmd(interaction: discord.Interaction):
     tasks_data.clear()
-    await interaction.response.send_message("すべてのタスクを削除しました。", ephemeral=True)
+    await interaction.response.send_message("すべてのタスクを削除しました。", ephemeral=False)
 
 # =========================
 # /resetin
@@ -144,9 +144,9 @@ async def reset_cmd(interaction: discord.Interaction):
 @app_commands.describe(name="削除するタスク名を入力してください")
 async def resetin_cmd(interaction: discord.Interaction, name: str):
     if name not in tasks_data:
-        return await interaction.response.send_message("そのタスクは存在しません。", ephemeral=True)
+        return await interaction.response.send_message("そのタスクは存在しません。", ephemeral=False)
     del tasks_data[name]
-    await interaction.response.send_message(f"**{name}** を削除しました。", ephemeral=True)
+    await interaction.response.send_message(f"**{name}** を削除しました。", ephemeral=False)
 
 @resetin_cmd.autocomplete("name")
 async def autocomplete_name(interaction: discord.Interaction, current: str):
@@ -368,4 +368,5 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
