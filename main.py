@@ -26,9 +26,9 @@ PLACE_LIST = [
     "飛行場", "客船", "ユニオン", "パレト", "ボブキャット"
 ]
 
-# ---- 道具 & 武器シート ----
+# ---- 道具 & 武器シート（CSV 出力 URL を利用）----
 TOOL_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=449437760&single=true&output=csv"
-WEAPON_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=2070131261&single=true&output=csv"
+WEAPON_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=793378898&single=true&output=csv"
 
 
 # =========================
@@ -42,9 +42,43 @@ async def fetch_csv(url):
     # CSV / TSV 自動判別してパース
     f = io.StringIO(text)
     reader = csv.DictReader(f)
-
     rows = [row for row in reader]
     return rows
+
+
+# =========================
+# ヘルパー：option を安全に取得する
+# =========================
+def _safe_value(v):
+    if v is None:
+        return None
+    # Choice オブジェクトかもしれないが autocomplete passes raw in namespace; this handles common cases
+    try:
+        val = getattr(v, "value", v)
+    except Exception:
+        val = v
+    if isinstance(val, str):
+        return val.strip()
+    return val
+
+
+def _find_option_in_data(interaction_data, name):
+    """
+    interaction.data の options を再帰検索して name の value を返す（存在しなければ None）
+    """
+    if not isinstance(interaction_data, dict):
+        return None
+    opts = interaction_data.get("options", [])
+    for opt in opts:
+        # opt can be {name, value} or have nested options
+        if opt.get("name") == name and "value" in opt:
+            return opt.get("value")
+        # nested
+        if "options" in opt:
+            v = _find_option_in_data(opt, name)
+            if v is not None:
+                return v
+    return None
 
 
 # =========================
@@ -167,13 +201,30 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     sheet = await fetch_csv(url)
 
     # アイテム検索
-    target = next((row for row in sheet if row.get("名前") == item), None)
+    # 列名が揺れる可能性に備えてゆるくマッピング
+    if not sheet:
+        return await interaction.followup.send("シートの読み込みに失敗しました。")
+
+    def find_col(cols, target):
+        for c in cols:
+            if target in c:
+                return c
+        return None
+
+    columns = sheet[0].keys()
+    name_col = find_col(columns, "名前")
+    make_col = find_col(columns, "１回での作成個数")
+
+    if not name_col:
+        return await interaction.followup.send("シートに '名前' 列が見つかりません。")
+
+    target = next((row for row in sheet if (row.get(name_col) or "").strip() == (item or "").strip()), None)
 
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
 
     # 作成回数
-    make_per_once = float(target.get("１回での作成個数", "1") or 1)
+    make_per_once = float(target.get(make_col, "1") or 1)
     craft_times = math.ceil(count / make_per_once)
 
     msg = f"### **{item} を {count}個 作るための必要素材**\n"
@@ -182,17 +233,22 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     # 素材計算
     for key, value in target.items():
 
-        if key in ("名前", "１回での作成個数", "種別"):
+        if key in (name_col, make_col, "種別"):
             continue
 
-        if value.replace(".", "", 1).isdigit() and float(value) > 0:
+        # 数字として扱えるか
+        try:
+            v = float(value)
+        except Exception:
+            continue
 
-            need = float(value) * craft_times
+        if v <= 0:
+            continue
 
-            if need.is_integer():
-                need = int(need)
-
-            msg += f"- {key}：{need}\n"
+        need = v * craft_times
+        if float(need).is_integer():
+            need = int(need)
+        msg += f"- {key}：{need}\n"
 
     await interaction.followup.send(msg)
 
@@ -203,8 +259,12 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
 
-    category_raw = interaction.namespace.category
-    category = getattr(category_raw, "value", category_raw)
+    # category may be Choice or str or None
+    category_raw = getattr(interaction.namespace, "category", None)
+    category = _safe_value(category_raw)
+    if not category:
+        # fallback to data
+        category = _find_option_in_data(interaction.data, "category")
 
     if not category:
         return []
@@ -222,63 +282,71 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
 
 
 # =======================================================
-# Autocomplete：item（種別で絞り込み）
+# Autocomplete：item（種別で絞り込み） — robust version
 # =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
 
-    category_raw = interaction.namespace.category
-    type_sel = interaction.namespace.type
+    # try various ways to get category and type
+    category_raw = getattr(interaction.namespace, "category", None)
+    type_raw = getattr(interaction.namespace, "type", None)
 
-    # category は Choice の場合 value を取得
-    category = getattr(category_raw, "value", category_raw)
+    category = _safe_value(category_raw)
+    type_sel = _safe_value(type_raw)
 
+    # if not present in namespace, try interaction.data (works during autocomplete)
+    if not category:
+        category = _find_option_in_data(interaction.data, "category")
+    if not type_sel:
+        type_sel = _find_option_in_data(interaction.data, "type")
+
+    # final safety
     if not category or not type_sel:
         return []
 
-    # URL 選択
+    # choose sheet url
     url = TOOL_URL if category == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
-
-    # ---------------------------
-    # 列名をゆるくマッピング
-    # ---------------------------
-    def find_col(cols, target):
-        for c in cols:
-            if target in c:  # 部分一致
-                return c
-        return None
-
     if not sheet:
         return []
+
+    # tolerant column mapping
+    def find_col(cols, target):
+        for c in cols:
+            if target in c:
+                return c
+        return None
 
     columns = sheet[0].keys()
     name_col = find_col(columns, "名前")
     type_col = find_col(columns, "種別")
 
     if not name_col or not type_col:
-        return []  # 列名が見つからないとき
+        return []
 
-    # ---------------------------
-    # 種別で抽出
-    # ---------------------------
-    items = [
-        row[name_col]
-        for row in sheet
-        if row.get(type_col) == type_sel and row.get(name_col)
-    ]
+    # build candidate list: compare normalized strings
+    def norm(s):
+        if s is None:
+            return ""
+        return str(s).replace("\u3000", "").strip()
 
-    # 検索フィルタ
+    candidates = []
+    for row in sheet:
+        row_type = norm(row.get(type_col))
+        row_name = norm(row.get(name_col))
+        if not row_name:
+            continue
+        if row_type == norm(type_sel):
+            candidates.append(row_name)
+
+    # apply search filter (current) then limit 25
     if current:
-        items = [n for n in items if current.lower() in n.lower()]
+        candidates = [n for n in candidates if current.lower() in n.lower()]
 
-    # 25件制限
-    items = items[:25]
+    candidates = candidates[:25]
 
-    return [
-        app_commands.Choice(name=item, value=item)
-        for item in items
-    ]
+    return [app_commands.Choice(name=n, value=n) for n in candidates]
+
 
 # =========================
 # タスク実行ループ
@@ -337,6 +405,3 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
-
-
-
