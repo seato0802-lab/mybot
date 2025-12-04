@@ -156,9 +156,9 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
         if current.lower() in n.lower()
     ]
 
-# =========================
-# /craft
-# =========================
+# =======================================================
+# /craft（カテゴリ → 種別 → アイテム）
+# =======================================================
 @bot.tree.command(name="craft", description="必要素材を計算して表示します")
 @app_commands.describe(
     category="道具 or 武器",
@@ -175,12 +175,14 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
 async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], type: str, item: str, count: int):
     await interaction.response.defer(ephemeral=True)
     sheet = await get_csv(category.value)
+
     if not sheet:
         return await interaction.followup.send("シートの読み込みに失敗しました。")
-    
+
     def find_col(cols, target):
         for c in cols:
-            if c is None: continue
+            if c is None:
+                continue
             if target in c.replace("\u3000", "").strip():
                 return c
         return None
@@ -188,10 +190,11 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     columns = sheet[0].keys()
     name_col = find_col(columns, "名前")
     make_col = find_col(columns, "１回での作成個数")
+
     if not name_col:
         return await interaction.followup.send("シートに '名前' 列が見つかりません。")
 
-    target = next((row for row in sheet if (row.get(name_col) or "").replace("\u3000","").strip() == (item or "").strip()), None)
+    target = next((row for row in sheet if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()), None)
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
 
@@ -200,63 +203,121 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 
     msg = f"### **{item} を {count}個 作るための必要素材**\n"
     msg += f"作成回数：**{craft_times} 回**\n\n"
+
     for key, value in target.items():
-        if key in (name_col, make_col, "種別"): continue
-        try: v = float(value)
-        except Exception: continue
-        if v <= 0: continue
+        if key in (name_col, make_col, "種別"):
+            continue
+        try:
+            v = float(value)
+        except Exception:
+            continue
+        if v <= 0:
+            continue
         need = v * craft_times
-        if float(need).is_integer(): need = int(need)
+        if float(need).is_integer():
+            need = int(need)
         msg += f"- {key}：{need}\n"
+
     await interaction.followup.send(msg)
 
-# =========================
-# Autocomplete type
-# =========================
+# =======================================================
+# Autocomplete：type
+# =======================================================
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
-    category = _find_option_in_data(interaction.data, "category")
-    if category == "道具":
-        types = ["小型", "大型", "その他"]
-    elif category == "武器":
-        types = ["弾", "武器", "アタッチメント", "その他"]
-    else:
-        types = ["小型", "大型", "その他", "弾", "武器", "アタッチメント"]
-    filtered = [t for t in types if current.lower() in t.lower()]
-    return [app_commands.Choice(name=t, value=t) for t in filtered[:25]]
+    def find_option(data, name):
+        if not isinstance(data, dict):
+            return None
+        for opt in data.get("options", []):
+            if opt.get("name") == name and "value" in opt:
+                return opt["value"]
+            if "options" in opt:
+                v = find_option(opt, name)
+                if v is not None:
+                    return v
+        return None
 
-# =========================
-# Autocomplete item
-# =========================
+    category = find_option(interaction.data, "category")
+
+    if not category:
+        types = ["小型", "大型", "その他", "弾", "武器", "アタッチメント"]
+    elif category == "道具":
+        types = ["小型", "大型", "その他"]
+    else:
+        types = ["弾", "武器", "アタッチメント", "その他"]
+
+    filtered = [t for t in types if current.lower() in t.lower()]
+    filtered = filtered[:25]
+
+    return [app_commands.Choice(name=t, value=t) for t in filtered]
+
+# =======================================================
+# Autocomplete：item
+# =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
-    category = _find_option_in_data(interaction.data, "category")
-    type_sel = _find_option_in_data(interaction.data, "type")
+    def find_option(data, name):
+        if not isinstance(data, dict):
+            return None
+        for opt in data.get("options", []):
+            if opt.get("name") == name and "value" in opt:
+                return opt["value"]
+            if "options" in opt:
+                v = find_option(opt, name)
+                if v is not None:
+                    return v
+        return None
+
+    category = find_option(interaction.data, "category")
+    type_sel = find_option(interaction.data, "type")
+
     urls = []
-    if category == "道具": urls = ["道具"]
-    elif category == "武器": urls = ["武器"]
-    else: urls = ["道具","武器"]
-    
+    if category == "道具":
+        urls = ["道具"]
+    elif category == "武器":
+        urls = ["武器"]
+    else:
+        urls = ["道具", "武器"]
+
     candidates = []
-    def normalize(s): return "" if s is None else str(s).replace("\u3000","").strip().lower()
-    
+
+    def normalize(s):
+        if s is None:
+            return ""
+        return str(s).replace("\u3000", "").strip().lower()
+
     for cat in urls:
         sheet = await get_csv(cat)
-        if not sheet: continue
-        name_col = next((c for c in sheet[0].keys() if "名前" in c.replace("\u3000","").strip()), None)
-        type_col = next((c for c in sheet[0].keys() if "種別" in c.replace("\u3000","").strip()), None)
-        if not name_col or not type_col: continue
+        if not sheet:
+            continue
+
+        def find_col(cols, target):
+            for c in cols:
+                if c is None:
+                    continue
+                if target in c.replace("\u3000", "").strip():
+                    return c
+            return None
+
+        columns = sheet[0].keys()
+        name_col = find_col(columns, "名前")
+        type_col = find_col(columns, "種別")
+        if not name_col or not type_col:
+            continue
+
         for row in sheet:
-            row_name = (row.get(name_col) or "").replace("\u3000","").strip()
+            row_name = (row.get(name_col) or "").replace("\u3000", "").strip()
             row_type = row.get(type_col)
-            if not row_name: continue
+            if not row_name:
+                continue
             if not type_sel or normalize(row_type) == normalize(type_sel):
                 candidates.append(row_name)
-    
+
     if current:
         candidates = [n for n in candidates if current.lower() in n.lower()]
-    return [app_commands.Choice(name=n, value=n) for n in candidates[:25]]
 
+    candidates = candidates[:25]
+    return [app_commands.Choice(name=n, value=n) for n in candidates]
 # =========================
 # タスク実行ループ
 # =========================
@@ -307,3 +368,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
