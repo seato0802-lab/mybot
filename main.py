@@ -227,21 +227,12 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
 
-    # --- category の取得 ---
-    # 通常の namespace では空になるため data から読む
-    category = None
-    type_sel = None
+    category_raw = interaction.namespace.category
+    type_sel = interaction.namespace.type
 
-    # interaction.data 内の options を参照
-    options = interaction.data.get("options", [])
-    for opt in options:
-        if opt["name"] == "category":
-            # Choice は value に入る
-            category = opt.get("value")
-        if opt["name"] == "type":
-            type_sel = opt.get("value")
+    # category は Choice の場合 value を取得
+    category = getattr(category_raw, "value", category_raw)
 
-    # 取得できなければ中断
     if not category or not type_sel:
         return []
 
@@ -249,22 +240,44 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     url = TOOL_URL if category == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
 
-    # --- 種別一致アイテム抽出 ---
+    # ---------------------------
+    # 列名をゆるくマッピング
+    # ---------------------------
+    def find_col(cols, target):
+        for c in cols:
+            if target in c:  # 部分一致
+                return c
+        return None
+
+    if not sheet:
+        return []
+
+    columns = sheet[0].keys()
+    name_col = find_col(columns, "名前")
+    type_col = find_col(columns, "種別")
+
+    if not name_col or not type_col:
+        return []  # 列名が見つからないとき
+
+    # ---------------------------
+    # 種別で抽出
+    # ---------------------------
     items = [
-        row["名前"] for row in sheet
-        if row.get("種別") == type_sel and row.get("名前")
+        row[name_col]
+        for row in sheet
+        if row.get(type_col) == type_sel and row.get(name_col)
     ]
 
-    # --- current で絞り込み ---
+    # 検索フィルタ
     if current:
-        items = [name for name in items if current.lower() in name.lower()]
+        items = [n for n in items if current.lower() in n.lower()]
 
-    # --- 25 件制限 ---
+    # 25件制限
     items = items[:25]
 
     return [
-        app_commands.Choice(name=name, value=name)
-        for name in items
+        app_commands.Choice(name=item, value=item)
+        for item in items
     ]
 
 # =========================
@@ -324,5 +337,6 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
