@@ -289,12 +289,8 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
     return [app_commands.Choice(name=t, value=t) for t in filtered]
 
 
-# =======================================================
-# Autocomplete：item（安全版）
-# =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
-    # interaction.data から options を再帰検索して値を取得する関数
     def find_option(data, name):
         if not isinstance(data, dict):
             return None
@@ -307,27 +303,29 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
                     return v
         return None
 
-    # 親オプション取得
     category = find_option(interaction.data, "category")
     type_sel = find_option(interaction.data, "type")
 
-    # 候補を作る対象シート URL
     urls = []
     if category == "道具":
         urls = [TOOL_URL]
     elif category == "武器":
         urls = [WEAPON_URL]
     else:
-        urls = [TOOL_URL, WEAPON_URL]  # 未選択なら両方
+        urls = [TOOL_URL, WEAPON_URL]
 
     candidates = []
+
+    def normalize(s):
+        if s is None:
+            return ""
+        return str(s).replace("\u3000", "").strip().lower()
 
     for url in urls:
         sheet = await fetch_csv(url)
         if not sheet:
             continue
 
-        # 列名自動判別
         def find_col(cols, target):
             for c in cols:
                 if target in c:
@@ -342,25 +340,20 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
 
         for row in sheet:
             row_name = (row.get(name_col) or "").replace("\u3000", "").strip()
-            row_type = (row.get(type_col) or "").replace("\u3000", "").strip()
+            row_type = row.get(type_col)
+
             if not row_name:
                 continue
 
-            # type が未選択なら category のシートから全アイテム追加
-            # type が選択済みなら type に一致するものだけ
-            if not type_sel or row_type == type_sel:
+            # 正規化して比較
+            if not type_sel or normalize(row_type) == normalize(type_sel):
                 candidates.append(row_name)
 
-    # current 文字列でフィルター
     if current:
         candidates = [n for n in candidates if current.lower() in n.lower()]
 
-    # 最大 25 件に制限
     candidates = candidates[:25]
-
-    # app_commands.Choice に変換
     return [app_commands.Choice(name=n, value=n) for n in candidates]
-
 
 # =========================
 # タスク実行ループ
@@ -419,6 +412,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
