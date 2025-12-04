@@ -1,5 +1,6 @@
 import os
 import asyncio
+import math
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -7,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask
 from threading import Thread
 import aiohttp
-import math
 
 # =========================
 # 設定
@@ -42,8 +42,6 @@ async def fetch_csv(url):
     header = [h.strip() for h in lines[0].split(",")]
 
     for line in lines[1:]:
-        if not line:
-            continue
         cols = [c.strip() for c in line.split(",")]
         if len(cols) < len(header):
             cols += [""] * (len(header) - len(cols))
@@ -137,7 +135,7 @@ async def resetin_cmd(interaction: discord.Interaction, name: str):
     await interaction.response.send_message(f"**{name}** を削除しました。", ephemeral=True)
 
 
-# --- Autocomplete ----
+# --- Autocomplete ---（タスク名）
 @resetin_cmd.autocomplete("name")
 async def autocomplete_name(interaction: discord.Interaction, current: str):
     return [
@@ -147,113 +145,109 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
     ]
 
 
-# =========================
-# /craft（道具・武器の必要素材計算）
-# =========================
+# =======================================================
+#          /craft（カテゴリ → 種別 → アイテム）
+# =======================================================
 @bot.tree.command(name="craft", description="必要素材を計算して表示します")
 @app_commands.describe(
     category="道具 or 武器",
-    item="作りたいもの",
+    type="種別を選択",
+    item="作りたいアイテム",
     count="作る個数"
 )
 @app_commands.choices(
     category=[
         app_commands.Choice(name="道具", value="道具"),
-        app_commands.Choice(name="武器", value="武器"),
+        app_commands.Choice(name="武器", value="武器")
     ]
 )
-async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], item: str, count: int):
+async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], type: str, item: str, count: int):
 
     await interaction.response.defer(ephemeral=True)
 
-    # ---- シート選択 ----
+    # ---- URL 選択 ----
     url = TOOL_URL if category.value == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
 
     # ---- アイテム検索 ----
-    target = None
-    for row in sheet:
-        if row.get("名前") == item:
-            target = row
-            break
+    target = next((row for row in sheet if row.get("名前") == item), None)
 
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
 
-    # ---- 作成回数の計算（切り上げ） ----
-    try:
-        make_per_once = float(target["１回での作成個数"])
-    except:
-        make_per_once = 1
-
+    # ---- 作成回数（切り上げ）----
+    make_per_once = float(target.get("１回での作成個数", "1") or 1)
     craft_times = math.ceil(count / make_per_once)
 
-    msg = f"### **{item} を {count} 個作るために必要な素材**\n"
+    msg = f"### **{item} を {count}個 作るための必要素材**\n"
     msg += f"作成回数：**{craft_times} 回**\n\n"
 
     # ---- 素材計算 ----
     for key, value in target.items():
 
-        if key in ("名前", "１回での作成個数"):
+        if key in ("名前", "１回での作成個数", "種別"):
             continue
 
-        # 数値ではない → スキップ
-        try:
-            v = float(value)
-        except:
-            continue
+        if value.replace(".", "", 1).isdigit() and float(value) > 0:
 
-        need = v * craft_times
+            need = float(value) * craft_times
 
-        if need > 0:
             if need.is_integer():
                 need = int(need)
+
             msg += f"- {key}：{need}\n"
 
     await interaction.followup.send(msg)
 
 
-# =========================
-# craft オートコンプリート
-# =========================
+# =======================================================
+# Autocomplete：種別
+# =======================================================
+@craft_cmd.autocomplete("type")
+async def autocomplete_type(interaction: discord.Interaction, current: str):
+
+    category = interaction.namespace.category
+
+    if category == "道具":
+        types = ["小型", "大型", "その他"]
+    else:
+        types = ["弾", "武器", "アタッチメント", "その他"]
+
+    return [
+        app_commands.Choice(name=t, value=t)
+        for t in types
+        if current.lower() in t.lower()
+    ]
+
+
+# =======================================================
+# Autocomplete：item（種別で絞り込み）
+# =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
 
-    category = interaction.namespace.category  # 選択されたカテゴリー（道具 or 武器）
+    category = interaction.namespace.category
+    type_sel = interaction.namespace.type
 
-    sheet = await fetch_csv(CRAFT_SHEET_URL)
+    if not category or not type_sel:
+        return []
 
-    names = []
+    url = TOOL_URL if category == "道具" else WEAPON_URL
+    sheet = await fetch_csv(url)
 
-    # カテゴリ判定（武器は必要列が少ない）
-    if category == "武器":
-        valid_keys = ["名前", "１回での作成個数", "労働力", "金属くず",
-                      "鋼鉄", "鉄", "銅", "アルミニウム", "プラスチック"]
-    else:
-        # 道具カテゴリ
-        valid_keys = ["名前"]  # 道具はシート上で名前だけ見れば OK
+    items = [
+        row["名前"] for row in sheet
+        if row.get("種別") == type_sel and row.get("名前")
+    ]
 
-    for row in sheet:
-        # "名前" が空なら無視
-        name = row.get("名前", "").strip()
-        if not name:
-            continue
+    # 25件制限対応
+    limited = items[:25]
 
-        # 行がカテゴリとして不適切な場合（「武器」なのに武器の素材が無いなど）除外
-        # → 誤検出を避けるため、行のキーが適切に存在するか確認
-        if category == "武器":
-            if not any(k in row and row[k] for k in ["鋼鉄", "鉄", "プラスチック"]):
-                continue  # 明らかに武器ではない行はスキップ
-
-        # 検索の絞り込み
-        if current.lower() in name.lower():
-            names.append(
-                app_commands.Choice(name=name, value=name)
-            )
-
-    # 最大25件（Discord制限）
-    return names[:25]
-
+    return [
+        app_commands.Choice(name=name, value=name)
+        for name in limited
+        if current.lower() in name.lower()
+    ]
 
 
 # =========================
@@ -313,4 +307,3 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
-
