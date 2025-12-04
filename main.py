@@ -227,12 +227,21 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
 
-    category_raw = interaction.namespace.category
-    type_sel = interaction.namespace.type
+    # --- category の取得 ---
+    # 通常の namespace では空になるため data から読む
+    category = None
+    type_sel = None
 
-    # category は Choice の場合 value を取得
-    category = getattr(category_raw, "value", category_raw)
+    # interaction.data 内の options を参照
+    options = interaction.data.get("options", [])
+    for opt in options:
+        if opt["name"] == "category":
+            # Choice は value に入る
+            category = opt.get("value")
+        if opt["name"] == "type":
+            type_sel = opt.get("value")
 
+    # 取得できなければ中断
     if not category or not type_sel:
         return []
 
@@ -240,17 +249,17 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     url = TOOL_URL if category == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
 
-    # --- ① 種別一致のアイテムを抽出 ---
+    # --- 種別一致アイテム抽出 ---
     items = [
         row["名前"] for row in sheet
         if row.get("種別") == type_sel and row.get("名前")
     ]
 
-    # --- ② 検索文字列 current で絞り込み ---
+    # --- current で絞り込み ---
     if current:
         items = [name for name in items if current.lower() in name.lower()]
 
-    # --- ③ Autocomplete 制限（25件） ---
+    # --- 25 件制限 ---
     items = items[:25]
 
     return [
@@ -315,4 +324,5 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
