@@ -200,13 +200,10 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     await interaction.followup.send(msg)
 
 
-# =======================================================
-# Autocomplete：種別
-# =======================================================
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
 
-    category = interaction.namespace.category
+    category = interaction.namespace.category.value  # ← 修正
 
     if category == "道具":
         types = ["小型", "大型", "その他"]
@@ -220,19 +217,20 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
     ]
 
 
+
 # =======================================================
 # Autocomplete：item（種別で絞り込み）
 # =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
 
-    category = interaction.namespace.category
-    type_sel = interaction.namespace.type
+    category = interaction.namespace.category.value  # ← 修正
+    type_sel = interaction.namespace.type            # これは string なのでOK
 
     if not category or not type_sel:
         return []
 
-    url = TOOL_URL if category == "道具" else WEAPON_URL
+    url = TOOL_URL if category == "道具" else WEAPON_URL  # ← 正しく動くようになる
     sheet = await fetch_csv(url)
 
     items = [
@@ -240,7 +238,6 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         if row.get("種別") == type_sel and row.get("名前")
     ]
 
-    # 25件制限対応
     limited = items[:25]
 
     return [
@@ -248,6 +245,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         for name in limited
         if current.lower() in name.lower()
     ]
+
 
 
 # =========================
@@ -307,3 +305,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
