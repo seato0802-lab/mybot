@@ -24,7 +24,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tasks_data = {}
 PLACE_LIST = [
     "パシフィック", "オイルリグ", "アーティファクト",
-    "飛行場", "客船", "ユニオン", "パレト", "ボブキャット"
+    "飛行場", "客船", "ユニオン", "パレト", "ボブキャット","市長の工場","アート"
 ]
 
 # ---- 道具 & 武器シート（CSV 出力 URL を利用）----
@@ -394,3 +394,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
