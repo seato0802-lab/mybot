@@ -160,6 +160,31 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
     ]
 )
 async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], item: str, count: int):
+    # -------------------------
+# /craft item Autocomplete
+# -------------------------
+@craft_cmd.autocomplete("item")
+async def autocomplete_item(interaction: discord.Interaction, current: str):
+
+    # category がまだ選ばれていない場合は空
+    category = interaction.namespace.get("category")
+    if not category:
+        return []
+
+    # 道具 or 武器で URL 切り替え
+    url = TOOL_URL if category == "道具" else WEAPON_URL
+    sheet = await fetch_csv(url)
+
+    # 名前の一覧を取得
+    names = [row.get("名前", "") for row in sheet]
+
+    # 入力している内容に一致するものだけ返す
+    return [
+        app_commands.Choice(name=n, value=n)
+        for n in names
+        if current.lower() in n.lower()
+    ][:25]  # Discord仕様で最大25件
+
 
     await interaction.response.defer(ephemeral=True)
 
@@ -263,3 +288,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
