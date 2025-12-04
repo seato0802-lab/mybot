@@ -292,43 +292,52 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     category = _safe_value(category_raw) or _find_option_in_data(interaction.data, "category")
     type_sel = _safe_value(type_raw) or _find_option_in_data(interaction.data, "type")
 
-    # category がない場合は全アイテムから候補作成
-    url = TOOL_URL if category == "道具" else WEAPON_URL
-    sheet = await fetch_csv(url)
-    if not sheet:
-        return []
+    # category が未選択の場合、両方のシートを取得して候補作成
+    urls = []
+    if category == "道具":
+        urls = [TOOL_URL]
+    elif category == "武器":
+        urls = [WEAPON_URL]
+    else:
+        urls = [TOOL_URL, WEAPON_URL]  # 未選択なら両方
 
-    # 列名マッピング
-    def find_col(cols, target):
-        for c in cols:
-            if target in c:
-                return c
-        return None
-
-    columns = sheet[0].keys()
-    name_col = find_col(columns, "名前")
-    type_col = find_col(columns, "種別")
-    if not name_col or not type_col:
-        return []
-
-    def norm(s):
-        return str(s).replace("\u3000", "").strip() if s else ""
-
-    # 候補作成
     candidates = []
-    for row in sheet:
-        row_type = norm(row.get(type_col))
-        row_name = norm(row.get(name_col))
-        if not row_name:
+
+    for url in urls:
+        sheet = await fetch_csv(url)
+        if not sheet:
             continue
-        if not type_sel or row_type == norm(type_sel):
-            candidates.append(row_name)
+
+        # 列名マッピング
+        def find_col(cols, target):
+            for c in cols:
+                if target in c:
+                    return c
+            return None
+
+        columns = sheet[0].keys()
+        name_col = find_col(columns, "名前")
+        type_col = find_col(columns, "種別")
+        if not name_col or not type_col:
+            continue
+
+        def norm(s):
+            return str(s).replace("\u3000", "").strip() if s else ""
+
+        for row in sheet:
+            row_name = norm(row.get(name_col))
+            row_type = norm(row.get(type_col))
+            if not row_name:
+                continue
+            # type が未選択なら全て追加、選択済みなら一致するものだけ
+            if not type_sel or row_type == norm(type_sel):
+                candidates.append(row_name)
 
     # current フィルターして最大 25 件
     if current:
         candidates = [n for n in candidates if current.lower() in n.lower()]
-    candidates = candidates[:25]
 
+    candidates = candidates[:25]
     return [app_commands.Choice(name=n, value=n) for n in candidates]
 
 # =========================
@@ -388,4 +397,5 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
