@@ -23,8 +23,9 @@ PLACE_LIST = [
     "飛行場", "客船", "ユニオン", "パレト", "ボブキャット"
 ]
 
-# 公開 CSV の URL
-CRAFT_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?output=csv"
+# ---- 道具 & 武器シート ----
+TOOL_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=449437760&single=true&output=csv"
+WEAPON_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=2070131261&single=true&output=csv"
 
 
 # =========================
@@ -144,16 +145,29 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
 
 
 # =========================
-# /craft（スプレッドシート参照）
+# /craft（道具・武器の必要素材計算）
 # =========================
 @bot.tree.command(name="craft", description="必要素材を計算して表示します")
-@app_commands.describe(category="道具 or 武器", item="作りたいもの", count="作る個数")
-async def craft_cmd(interaction: discord.Interaction, category: str, item: str, count: int):
+@app_commands.describe(
+    category="道具 or 武器",
+    item="作りたいもの",
+    count="作る個数"
+)
+@app_commands.choices(
+    category=[
+        app_commands.Choice(name="道具", value="道具"),
+        app_commands.Choice(name="武器", value="武器"),
+    ]
+)
+async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], item: str, count: int):
 
     await interaction.response.defer(ephemeral=True)
 
-    sheet = await fetch_csv(CRAFT_SHEET_URL)
+    # ---- シート選択 ----
+    url = TOOL_URL if category.value == "道具" else WEAPON_URL
+    sheet = await fetch_csv(url)
 
+    # ---- アイテム検索 ----
     target = None
     for row in sheet:
         if row.get("名前") == item:
@@ -163,17 +177,34 @@ async def craft_cmd(interaction: discord.Interaction, category: str, item: str, 
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
 
-    msg = f"### **{item} を {count}個 作るために必要な素材**\n"
+    # ---- 作成回数の計算（← 修正済み：切り上げ） ----
+    try:
+        make_per_once = float(target["１回での作成個数"])
+    except:
+        make_per_once = 1
 
+    craft_times = math.ceil(count / make_per_once)
+
+    msg = f"### **{item} を {count} 個作るために必要な素材**\n"
+    msg += f"作成回数：**{craft_times} 回**\n\n"
+
+    # ---- 素材計算 ----
     for key, value in target.items():
-        if key in ("名前", ""):
+
+        if key in ("名前", "１回での作成個数"):
             continue
-        if value.isdigit():
-            need = int(value) * count
-            msg += f"- {key}：{need}\n"
+
+        # 数字かチェック
+        if value.replace(".", "", 1).isdigit():
+
+            need = float(value) * craft_times
+
+            if need > 0:
+                if need.is_integer():
+                    need = int(need)
+                msg += f"- {key}：{need}\n"
 
     await interaction.followup.send(msg)
-
 
 # =========================
 # タスク実行ループ
