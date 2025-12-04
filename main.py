@@ -175,9 +175,9 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
         if current.lower() in n.lower()
     ]
 
-# =========================
-# /craft（個人表示）
-# =========================
+# =======================================================
+#          /craft（カテゴリ → 種別 → アイテム）
+# =======================================================
 @bot.tree.command(name="craft", description="必要素材を計算して表示します")
 @app_commands.describe(
     category="道具 or 武器",
@@ -192,12 +192,17 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
     ]
 )
 async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], type: str, item: str, count: int):
-    await interaction.response.defer(ephemeral=True)  # 個人表示
-    sheet = await get_csv(category.value)
+
+    await interaction.response.defer(ephemeral=True)
+
+    # URL 選択
+    url = TOOL_URL if category.value == "道具" else WEAPON_URL
+    sheet = await fetch_csv(url)
 
     if not sheet:
-        return await interaction.followup.send("シートの読み込みに失敗しました。", ephemeral=True)
+        return await interaction.followup.send("シートの読み込みに失敗しました。")
 
+    # 列名取得関数（正規化対応）
     def find_col(cols, target):
         for c in cols:
             if c is None:
@@ -211,11 +216,12 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     make_col = find_col(columns, "１回での作成個数")
 
     if not name_col:
-        return await interaction.followup.send("シートに '名前' 列が見つかりません。", ephemeral=True)
+        return await interaction.followup.send("シートに '名前' 列が見つかりません。")
 
+    # アイテム検索
     target = next((row for row in sheet if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()), None)
     if not target:
-        return await interaction.followup.send("そのアイテムはシートにありません。", ephemeral=True)
+        return await interaction.followup.send("そのアイテムはシートにありません。")
 
     make_per_once = float(target.get(make_col, "1") or 1)
     craft_times = math.ceil(count / make_per_once)
@@ -237,7 +243,113 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
             need = int(need)
         msg += f"- {key}：{need}\n"
 
-    await interaction.followup.send(msg, ephemeral=True)
+    await interaction.followup.send(msg)
+
+
+# =======================================================
+# Autocomplete：type（安全版）
+# =======================================================
+@craft_cmd.autocomplete("type")
+async def autocomplete_type(interaction: discord.Interaction, current: str):
+    def find_option(data, name):
+        if not isinstance(data, dict):
+            return None
+        for opt in data.get("options", []):
+            if opt.get("name") == name and "value" in opt:
+                return opt["value"]
+            if "options" in opt:
+                v = find_option(opt, name)
+                if v is not None:
+                    return v
+        return None
+
+    category = find_option(interaction.data, "category")
+
+    if not category:
+        types = ["小型", "大型", "その他", "弾", "武器", "アタッチメント"]
+    elif category == "道具":
+        types = ["小型", "大型", "その他"]
+    else:
+        types = ["弾", "武器", "アタッチメント", "その他"]
+
+    filtered = [t for t in types if current.lower() in t.lower()]
+    filtered = filtered[:25]
+
+    return [app_commands.Choice(name=t, value=t) for t in filtered]
+
+
+# =======================================================
+# Autocomplete：item（修正版・正規化対応）
+# =======================================================
+@craft_cmd.autocomplete("item")
+async def autocomplete_item(interaction: discord.Interaction, current: str):
+    def find_option(data, name):
+        if not isinstance(data, dict):
+            return None
+        for opt in data.get("options", []):
+            if opt.get("name") == name and "value" in opt:
+                return opt["value"]
+            if "options" in opt:
+                v = find_option(opt, name)
+                if v is not None:
+                    return v
+        return None
+
+    category = find_option(interaction.data, "category")
+    type_sel = find_option(interaction.data, "type")
+
+    urls = []
+    if category == "道具":
+        urls = [TOOL_URL]
+    elif category == "武器":
+        urls = [WEAPON_URL]
+    else:
+        urls = [TOOL_URL, WEAPON_URL]
+
+    candidates = []
+
+    # 正規化関数（全角スペース削除 + trim + 小文字化）
+    def normalize(s):
+        if s is None:
+            return ""
+        return str(s).replace("\u3000", "").strip().lower()
+
+    for url in urls:
+        sheet = await fetch_csv(url)
+        if not sheet:
+            continue
+
+        def find_col(cols, target):
+            for c in cols:
+                if c is None:
+                    continue
+                if target in c.replace("\u3000", "").strip():
+                    return c
+            return None
+
+        columns = sheet[0].keys()
+        name_col = find_col(columns, "名前")
+        type_col = find_col(columns, "種別")
+        if not name_col or not type_col:
+            continue
+
+        for row in sheet:
+            row_name = (row.get(name_col) or "").replace("\u3000", "").strip()
+            row_type = row.get(type_col)
+
+            if not row_name:
+                continue
+
+            # type_sel と row_type を正規化して比較
+            if not type_sel or normalize(row_type) == normalize(type_sel):
+                candidates.append(row_name)
+
+    if current:
+        candidates = [n for n in candidates if current.lower() in n.lower()]
+
+    candidates = candidates[:25]
+    return [app_commands.Choice(name=n, value=n) for n in candidates]
+
 
 # =========================
 # タスク実行ループ（全体通知）
@@ -293,3 +405,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
