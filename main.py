@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask
 from threading import Thread
 import aiohttp
+import csv
+import io
 
 # =========================
 # 設定
@@ -30,23 +32,18 @@ WEAPON_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkG
 
 
 # =========================
-# CSVダウンロード
+# CSVダウンロード（自動区切り判定）
 # =========================
 async def fetch_csv(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as r:
             text = await r.text()
 
-    rows = []
-    lines = text.split("\n")
-    header = [h.strip() for h in lines[0].split(",")]
+    # CSV / TSV 自動判別してパース
+    f = io.StringIO(text)
+    reader = csv.DictReader(f)
 
-    for line in lines[1:]:
-        cols = [c.strip() for c in line.split(",")]
-        if len(cols) < len(header):
-            cols += [""] * (len(header) - len(cols))
-        rows.append(dict(zip(header, cols)))
-
+    rows = [row for row in reader]
     return rows
 
 
@@ -165,24 +162,24 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 
     await interaction.response.defer(ephemeral=True)
 
-    # ---- URL 選択 ----
+    # URL 選択
     url = TOOL_URL if category.value == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
 
-    # ---- アイテム検索 ----
+    # アイテム検索
     target = next((row for row in sheet if row.get("名前") == item), None)
 
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
 
-    # ---- 作成回数（切り上げ）----
+    # 作成回数
     make_per_once = float(target.get("１回での作成個数", "1") or 1)
     craft_times = math.ceil(count / make_per_once)
 
     msg = f"### **{item} を {count}個 作るための必要素材**\n"
     msg += f"作成回数：**{craft_times} 回**\n\n"
 
-    # ---- 素材計算 ----
+    # 素材計算
     for key, value in target.items():
 
         if key in ("名前", "１回での作成個数", "種別"):
@@ -200,12 +197,13 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     await interaction.followup.send(msg)
 
 
+# =======================================================
+# Autocomplete：type
+# =======================================================
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
 
     category_raw = interaction.namespace.category
-
-    # Choice型なら .value、そうでなければそのまま
     category = getattr(category_raw, "value", category_raw)
 
     if not category:
@@ -223,8 +221,6 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
     ]
 
 
-
-
 # =======================================================
 # Autocomplete：item（種別で絞り込み）
 # =======================================================
@@ -234,28 +230,28 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     category_raw = interaction.namespace.category
     type_sel = interaction.namespace.type
 
-    # Choice型なら .value、文字列ならそのまま
     category = getattr(category_raw, "value", category_raw)
 
     if not category or not type_sel:
         return []
 
+    # URL 選択
     url = TOOL_URL if category == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
 
+    # アイテム抽出
     items = [
         row["名前"] for row in sheet
         if row.get("種別") == type_sel and row.get("名前")
     ]
 
-    items = items[:25]  # Discord 仕様で最大25件まで
+    items = items[:25]  # 25件制限
 
     return [
         app_commands.Choice(name=name, value=name)
         for name in items
         if current.lower() in name.lower()
     ]
-
 
 
 # =========================
@@ -315,5 +311,3 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
-
-
