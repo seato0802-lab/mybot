@@ -27,7 +27,7 @@ PLACE_LIST = [
 ]
 
 # ---- 道具 & 武器シート（CSV 出力 URL を利用）----
-TOOL_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=449437760&single=true&output=csv"
+TOOL_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=0&single=true&output=csv"
 WEAPON_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=793378898&single=true&output=csv"
 
 
@@ -175,7 +175,6 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
         if current.lower() in n.lower()
     ]
 
-
 # =======================================================
 #          /craft（カテゴリ → 種別 → アイテム）
 # =======================================================
@@ -200,14 +199,15 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     url = TOOL_URL if category.value == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
 
-    # アイテム検索
-    # 列名が揺れる可能性に備えてゆるくマッピング
     if not sheet:
         return await interaction.followup.send("シートの読み込みに失敗しました。")
 
+    # 列名取得関数（正規化対応）
     def find_col(cols, target):
         for c in cols:
-            if target in c:
+            if c is None:
+                continue
+            if target in c.replace("\u3000", "").strip():
                 return c
         return None
 
@@ -218,33 +218,26 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     if not name_col:
         return await interaction.followup.send("シートに '名前' 列が見つかりません。")
 
-    target = next((row for row in sheet if (row.get(name_col) or "").strip() == (item or "").strip()), None)
-
+    # アイテム検索
+    target = next((row for row in sheet if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()), None)
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
 
-    # 作成回数
     make_per_once = float(target.get(make_col, "1") or 1)
     craft_times = math.ceil(count / make_per_once)
 
     msg = f"### **{item} を {count}個 作るための必要素材**\n"
     msg += f"作成回数：**{craft_times} 回**\n\n"
 
-    # 素材計算
     for key, value in target.items():
-
         if key in (name_col, make_col, "種別"):
             continue
-
-        # 数字として扱えるか
         try:
             v = float(value)
         except Exception:
             continue
-
         if v <= 0:
             continue
-
         need = v * craft_times
         if float(need).is_integer():
             need = int(need)
@@ -258,7 +251,6 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 # =======================================================
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
-    # interaction.data から options を再帰検索して値を取得する関数
     def find_option(data, name):
         if not isinstance(data, dict):
             return None
@@ -271,10 +263,8 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
                     return v
         return None
 
-    # category を取得
     category = find_option(interaction.data, "category")
 
-    # category が未選択の場合、両方の候補を返す
     if not category:
         types = ["小型", "大型", "その他", "弾", "武器", "アタッチメント"]
     elif category == "道具":
@@ -282,13 +272,15 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
     else:
         types = ["弾", "武器", "アタッチメント", "その他"]
 
-    # current で絞り込み、最大 25 件
     filtered = [t for t in types if current.lower() in t.lower()]
     filtered = filtered[:25]
 
     return [app_commands.Choice(name=t, value=t) for t in filtered]
 
 
+# =======================================================
+# Autocomplete：item（修正版・正規化対応）
+# =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
     def find_option(data, name):
@@ -316,6 +308,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
 
     candidates = []
 
+    # 正規化関数（全角スペース削除 + trim + 小文字化）
     def normalize(s):
         if s is None:
             return ""
@@ -328,7 +321,9 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
 
         def find_col(cols, target):
             for c in cols:
-                if target in c:
+                if c is None:
+                    continue
+                if target in c.replace("\u3000", "").strip():
                     return c
             return None
 
@@ -345,7 +340,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
             if not row_name:
                 continue
 
-            # 正規化して比較
+            # type_sel と row_type を正規化して比較
             if not type_sel or normalize(row_type) == normalize(type_sel):
                 candidates.append(row_name)
 
@@ -354,7 +349,6 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
 
     candidates = candidates[:25]
     return [app_commands.Choice(name=n, value=n) for n in candidates]
-
 # =========================
 # タスク実行ループ
 # =========================
@@ -412,6 +406,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
