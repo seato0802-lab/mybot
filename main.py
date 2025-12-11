@@ -252,12 +252,9 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
     return [app_commands.Choice(name=t, value=t) for t in filtered[:25]]
 
 
-# =======================================================
-# Autocomplete：item（CSVキャッシュ利用 & 高速）
-# =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
-
+    # interaction.data から値を再帰検索するヘルパー（既存と同じ）
     def find_option(data, name):
         if not isinstance(data, dict):
             return None
@@ -273,62 +270,69 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     category = find_option(interaction.data, "category")
     type_sel = find_option(interaction.data, "type")
 
-    # キャッシュ済みのカテゴリ選択
-    targets = []
+    # 参照するキャッシュカテゴリリスト
+    cats = []
     if category == "道具":
-        targets = ["道具"]
+        cats = ["道具"]
     elif category == "武器":
-        targets = ["武器"]
+        cats = ["武器"]
     else:
-        targets = ["道具", "武器"]
-
-    candidates = []
+        cats = ["道具", "武器"]
 
     def normalize(s):
         if s is None:
             return ""
         return str(s).replace("\u3000", "").strip().lower()
 
-    for cat in targets:
+    seen = set()
+    candidates = []
+
+    for cat in cats:
         sheet = CSV_CACHE.get(cat, [])
         if not sheet:
+            # キャッシュが空なら skip（事前ロードが失敗している場合）
             continue
 
-        # 列名を探す
+        # 列名探索（柔軟）
         columns = sheet[0].keys()
-
-        def find_col(cols, target):
-            for c in cols:
-                if c and target in c.replace("\u3000", "").strip():
-                    return c
-            return None
-
-        name_col = find_col(columns, "名前")
-        type_col = find_col(columns, "種別")
-
-        if not name_col or not type_col:
+        name_col = None
+        type_col = None
+        for c in columns:
+            if c and "名前" in c.replace("\u3000", "").strip():
+                name_col = c
+            if c and "種別" in c.replace("\u3000", "").strip():
+                type_col = c
+        if not name_col:
             continue
 
         for row in sheet:
-            row_name = normalize(row.get(name_col))
-            row_type = normalize(row.get(type_col))
-
-            if not row_name:
+            raw_name = row.get(name_col) or ""
+            disp_name = raw_name.replace("\u3000", "").strip()
+            if not disp_name:
                 continue
 
-            # 種別一致
-            if type_sel:
-                if row_type != normalize(type_sel):
+            # 種別がある場合は type_sel と比較（なければ全て）
+            if type_col and type_sel:
+                row_type = row.get(type_col)
+                if normalize(row_type) != normalize(type_sel):
                     continue
 
-            candidates.append(row_name)
+            key = disp_name.lower()
+            if key in seen:
+                continue
+            # current（入力）で部分一致フィルタ（小文字比較）
+            if current and current.lower() not in key:
+                continue
 
-    # 部分一致フィルタ
-    if current:
-        candidates = [n for n in candidates if current.lower() in n]
+            seen.add(key)
+            candidates.append(disp_name)
 
-    # 最大25件
-    return [app_commands.Choice(name=n, value=n) for n in candidates[:25]]
+            if len(candidates) >= 25:
+                break
+        if len(candidates) >= 25:
+            break
+
+    return [app_commands.Choice(name=n, value=n) for n in candidates]
 
 # =========================
 # タスク実行ループ
@@ -380,6 +384,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
