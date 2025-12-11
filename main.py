@@ -221,10 +221,11 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     await interaction.followup.send(msg)
 
 # =======================================================
-# Autocomplete：type
+# Autocomplete：type（CSVを読まない高速版）
 # =======================================================
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
+
     def find_option(data, name):
         if not isinstance(data, dict):
             return None
@@ -239,23 +240,24 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
 
     category = find_option(interaction.data, "category")
 
-    if not category:
-        types = ["小型", "大型", "その他", "弾", "武器", "アタッチメント"]
-    elif category == "道具":
+    # CSV を読まない・固定の高速処理
+    if category == "道具":
         types = ["小型", "大型", "その他"]
-    else:
+    elif category == "武器":
         types = ["弾", "武器", "アタッチメント", "その他"]
+    else:
+        types = ["小型", "大型", "その他", "弾", "武器", "アタッチメント"]
 
     filtered = [t for t in types if current.lower() in t.lower()]
-    filtered = filtered[:25]
+    return [app_commands.Choice(name=t, value=t) for t in filtered[:25]]
 
-    return [app_commands.Choice(name=t, value=t) for t in filtered]
 
 # =======================================================
-# Autocomplete：item
+# Autocomplete：item（CSVキャッシュ利用 & 高速）
 # =======================================================
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
+
     def find_option(data, name):
         if not isinstance(data, dict):
             return None
@@ -271,13 +273,14 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     category = find_option(interaction.data, "category")
     type_sel = find_option(interaction.data, "type")
 
-    urls = []
+    # キャッシュ済みのカテゴリ選択
+    targets = []
     if category == "道具":
-        urls = ["道具"]
+        targets = ["道具"]
     elif category == "武器":
-        urls = ["武器"]
+        targets = ["武器"]
     else:
-        urls = ["道具", "武器"]
+        targets = ["道具", "武器"]
 
     candidates = []
 
@@ -286,38 +289,47 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
             return ""
         return str(s).replace("\u3000", "").strip().lower()
 
-    for cat in urls:
-        sheet = await get_csv(cat)
+    for cat in targets:
+        sheet = CSV_CACHE.get(cat, [])
         if not sheet:
             continue
 
+        # 列名を探す
+        columns = sheet[0].keys()
+
         def find_col(cols, target):
             for c in cols:
-                if c is None:
-                    continue
-                if target in c.replace("\u3000", "").strip():
+                if c and target in c.replace("\u3000", "").strip():
                     return c
             return None
 
-        columns = sheet[0].keys()
         name_col = find_col(columns, "名前")
         type_col = find_col(columns, "種別")
+
         if not name_col or not type_col:
             continue
 
         for row in sheet:
-            row_name = (row.get(name_col) or "").replace("\u3000", "").strip()
-            row_type = row.get(type_col)
+            row_name = normalize(row.get(name_col))
+            row_type = normalize(row.get(type_col))
+
             if not row_name:
                 continue
-            if not type_sel or normalize(row_type) == normalize(type_sel):
-                candidates.append(row_name)
 
+            # 種別一致
+            if type_sel:
+                if row_type != normalize(type_sel):
+                    continue
+
+            candidates.append(row_name)
+
+    # 部分一致フィルタ
     if current:
-        candidates = [n for n in candidates if current.lower() in n.lower()]
+        candidates = [n for n in candidates if current.lower() in n]
 
-    candidates = candidates[:25]
-    return [app_commands.Choice(name=n, value=n) for n in candidates]
+    # 最大25件
+    return [app_commands.Choice(name=n, value=n) for n in candidates[:25]]
+
 # =========================
 # タスク実行ループ
 # =========================
@@ -368,5 +380,6 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
