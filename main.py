@@ -19,16 +19,17 @@ JST = timezone(timedelta(hours=9))
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-
 tasks_data = {}
+
 PLACE_LIST = [
-    "パシフィック", "オイルリグ", "アーティファクト",
-    "飛行場", "客船", "ユニオン", "パレト", "ボブキャット","市長の工場","アート"
+    "パシフィック", "オイルリグ", "アーティファクト", "飛行場", "客船",
+    "ユニオン", "パレト", "ボブキャット", "市長の工場", "アート"
 ]
 
 # 道具 & 武器シート（CSV 出力 URL を利用）
 TOOL_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=0&single=true&output=csv"
 WEAPON_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=793378898&single=true&output=csv"
+
 
 # =========================
 # CSVダウンロード
@@ -37,9 +38,11 @@ async def fetch_csv(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as r:
             text = await r.text()
+
     f = io.StringIO(text)
     reader = csv.DictReader(f)
     return [row for row in reader]
+
 
 # CSVキャッシュ（5分有効）
 CSV_CACHE = {"道具": [], "武器": [], "timestamp": 0}
@@ -48,18 +51,23 @@ async def get_csv(category: str):
     now = time.time()
     if CSV_CACHE["timestamp"] and now - CSV_CACHE["timestamp"] < 300:
         return CSV_CACHE[category]
+
     url = TOOL_URL if category == "道具" else WEAPON_URL
     sheet = await fetch_csv(url)
+
     if sheet:
         CSV_CACHE[category] = sheet
         CSV_CACHE["timestamp"] = now
+
     return sheet
+
 
 # =========================
 # ヘルパー
 # =========================
 def _safe_value(v):
-    if v is None: return None
+    if v is None:
+        return None
     try:
         val = getattr(v, "value", v)
     except Exception:
@@ -68,9 +76,11 @@ def _safe_value(v):
         return val.strip()
     return val
 
+
 def _find_option_in_data(interaction_data, name):
     if not isinstance(interaction_data, dict):
         return None
+
     opts = interaction_data.get("options", [])
     for opt in opts:
         if opt.get("name") == name and "value" in opt:
@@ -81,6 +91,7 @@ def _find_option_in_data(interaction_data, name):
                 return v
     return None
 
+
 # =========================
 # Discord Bot 起動
 # =========================
@@ -90,6 +101,7 @@ async def on_ready():
     if not check_tasks.is_running():
         check_tasks.start()
     print(f"Bot logged in as {bot.user}")
+
 
 # =========================
 # /time
@@ -108,13 +120,17 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
             "分の指定は 1〜1440 の間で入力してください。",
             ephemeral=False
         )
+
     now = datetime.now(JST)
     target_time = now + timedelta(minutes=minutes)
+
     tasks_data[name.value] = {"time": target_time, "channel": interaction.channel.id}
+
     await interaction.response.send_message(
         f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始です。",
         ephemeral=False
     )
+
 
 # =========================
 # /list
@@ -122,12 +138,18 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
 @bot.tree.command(name="list", description="現在登録されているタスクを一覧表示します")
 async def list_cmd(interaction: discord.Interaction):
     if not tasks_data:
-        return await interaction.response.send_message("現在登録されているタスクはありません。", ephemeral=False)
+        return await interaction.response.send_message(
+            "現在登録されているタスクはありません。",
+            ephemeral=False
+        )
+
     msg = "【登録タスク一覧】\n"
     for name, data in tasks_data.items():
         time_str = data["time"].strftime("%H:%M")
         msg += f"・**{name}**：{time_str}\n"
+
     await interaction.response.send_message(msg, ephemeral=False)
+
 
 # =========================
 # /reset
@@ -135,7 +157,8 @@ async def list_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="reset", description="登録されている全てのタスクを削除します")
 async def reset_cmd(interaction: discord.Interaction):
     tasks_data.clear()
-    await interaction.response.send_message("すべてのタスクを削除しました。", ephemeral=False)
+    await interaction.response.send_message("すべてのタスクを削除しました.", ephemeral=False)
+
 
 # =========================
 # /resetin
@@ -145,8 +168,10 @@ async def reset_cmd(interaction: discord.Interaction):
 async def resetin_cmd(interaction: discord.Interaction, name: str):
     if name not in tasks_data:
         return await interaction.response.send_message("そのタスクは存在しません。", ephemeral=False)
+
     del tasks_data[name]
     await interaction.response.send_message(f"**{name}** を削除しました。", ephemeral=False)
+
 
 @resetin_cmd.autocomplete("name")
 async def autocomplete_name(interaction: discord.Interaction, current: str):
@@ -155,6 +180,7 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
         for n in tasks_data.keys()
         if current.lower() in n.lower()
     ]
+
 
 # =======================================================
 # /craft（カテゴリ → 種別 → アイテム）
@@ -169,13 +195,14 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
 @app_commands.choices(
     category=[
         app_commands.Choice(name="道具", value="道具"),
-        app_commands.Choice(name="武器", value="武器")
+        app_commands.Choice(name="武器", value="武器"),
     ]
 )
 async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], type: str, item: str, count: int):
-    await interaction.response.defer(ephemeral=True)
-    sheet = await get_csv(category.value)
 
+    await interaction.response.defer(ephemeral=True)
+
+    sheet = await get_csv(category.value)
     if not sheet:
         return await interaction.followup.send("シートの読み込みに失敗しました。")
 
@@ -194,7 +221,10 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     if not name_col:
         return await interaction.followup.send("シートに '名前' 列が見つかりません。")
 
-    target = next((row for row in sheet if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()), None)
+    target = next(
+        (row for row in sheet if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()),
+        None
+    )
     if not target:
         return await interaction.followup.send("そのアイテムはシートにありません。")
 
@@ -211,14 +241,18 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
             v = float(value)
         except Exception:
             continue
+
         if v <= 0:
             continue
+
         need = v * craft_times
         if float(need).is_integer():
             need = int(need)
+
         msg += f"- {key}：{need}\n"
 
     await interaction.followup.send(msg)
+
 
 # =======================================================
 # Autocomplete：type
@@ -247,9 +281,7 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
     else:
         types = ["弾", "武器", "アタッチメント", "その他"]
 
-    filtered = [t for t in types if current.lower() in t.lower()]
-    filtered = filtered[:25]
-
+    filtered = [t for t in types if current.lower() in t.lower()][:25]
     return [app_commands.Choice(name=t, value=t) for t in filtered]
 
 
@@ -312,7 +344,6 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         for row in sheet:
             row_name = (row.get(name_col) or "").replace("\u3000", "").strip()
             row_type = row.get(type_col)
-
             if not row_name:
                 continue
 
@@ -323,8 +354,8 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
         candidates = [n for n in candidates if current.lower() in n.lower()]
 
     candidates = candidates[:25]
-
     return [app_commands.Choice(name=n, value=n) for n in candidates]
+
 
 # =========================
 # タスク実行ループ
@@ -333,6 +364,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
 async def check_tasks():
     now = datetime.now(JST)
     remove_list = []
+
     for name, data in tasks_data.items():
         notify_time = data["time"] - timedelta(minutes=15)
         if notify_time <= now:
@@ -340,23 +372,29 @@ async def check_tasks():
             if channel:
                 await channel.send(f"@here **{name}** の受注15分前です！")
             remove_list.append(name)
+
     for name in remove_list:
         del tasks_data[name]
+
 
 # =========================
 # Flask Keep Alive
 # =========================
 app = Flask('')
+
 @app.route('/')
 def home():
     return "Bot is running!", 200
 
+
 def run():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 def keep_alive():
     t = Thread(target=run)
     t.start()
+
 
 # =========================
 # Bot 起動
@@ -366,6 +404,7 @@ async def start():
     if not TOKEN:
         print("DISCORD_TOKEN not set!")
         return
+
     while True:
         try:
             await bot.start(TOKEN)
@@ -373,11 +412,7 @@ async def start():
             print("Error:", e)
             await asyncio.sleep(5)
 
+
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
-
-
-
-
-
