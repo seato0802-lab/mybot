@@ -366,11 +366,11 @@ async def check_tasks():
     remove_list = []
 
     for name, data in tasks_data.items():
-        notify_time = data["time"] - timedelta(minutes=15)
+        notify_time = data["time"] - timedelta(minutes=10)
         if notify_time <= now:
             channel = bot.get_channel(data["channel"])
             if channel:
-                await channel.send(f"@here **{name}** の受注15分前です！")
+                await channel.send(f"@here **{name}** の受注10分前です！")
             remove_list.append(name)
 
     for name in remove_list:
@@ -416,3 +416,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
