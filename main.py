@@ -148,6 +148,8 @@ async def join_cmd(
         if target_time <= now:
             target_time += timedelta(days=1)
 
+     time_text = f"{target_time.strftime('%H:%M')}〆"
+
     # =========================
     # 募集メッセージ送信
     # =========================
@@ -548,6 +550,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
