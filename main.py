@@ -110,7 +110,7 @@ async def on_ready():
 # =========================
 @bot.tree.command(name="join", description="参加募集をするのだ")
 @app_commands.describe(
-    place="場所を選択するのだ",
+    place="場所",
     time_str="締切時間（HH:MM）",
     count="募集人数"
 )
@@ -125,9 +125,9 @@ async def join_cmd(
 ):
     try:
         hour, minute = map(int, time_str.split(":"))
-    except Exception:
+    except:
         return await interaction.response.send_message(
-            "時間は HH:MM 形式でいれるのだ",
+            "時間は HH:MM 形式で入力するのだ",
             ephemeral=False
         )
 
@@ -136,33 +136,92 @@ async def join_cmd(
     if target_time <= now:
         target_time += timedelta(days=1)
 
-    join_tasks[(place.value, target_time)] = {
+    msg = await interaction.channel.send(
+        f"@here {place.value} @{count} {target_time.strftime('%H:%M')}〆\n"
+        f"👍で参加（0 / {count}）"
+    )
+    await msg.add_reaction("👍")
+
+    join_tasks[msg.id] = {
         "place": place.value,
         "time": target_time,
         "count": count,
-        "channel": interaction.channel.id
+        "members": set(),
+        "channel": interaction.channel.id,
+        "message_id": msg.id
     }
 
-    await interaction.response.send_message(
-        f"@here {place.value} @{count} {target_time.strftime('%H:%M')}〆なのだ",
-        ephemeral=False
+    await interaction.response.send_message("募集を開始したのだ", ephemeral=True)
+
+# =========================
+# 👍 リアクション参加
+# =========================
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    if payload.user_id == bot.user.id:
+        return
+    if str(payload.emoji) != "👍":
+        return
+    if payload.message_id not in join_tasks:
+        return
+
+    data = join_tasks[payload.message_id]
+    user_id = payload.user_id
+
+    if user_id in data["members"]:
+        return
+
+    data["members"].add(user_id)
+
+    channel = bot.get_channel(data["channel"])
+    message = await channel.fetch_message(payload.message_id)
+
+    # 募集人数到達
+    if len(data["members"]) >= data["count"]:
+        await channel.send(f"{data['place']} 〆なのだ")
+        del join_tasks[payload.message_id]
+        return
+
+    await message.edit(
+        content=(
+            f"@here {data['place']} @{data['count']} "
+            f"{data['time'].strftime('%H:%M')}〆\n"
+            f"👍で参加（{len(data['members'])} / {data['count']}）"
+        )
     )
 
 # =========================
-# join 締切監視
+# /joinf（強制〆）
+# =========================
+@bot.tree.command(name="joinf", description="募集を強制終了するのだ")
+@app_commands.describe(place="場所")
+@app_commands.choices(
+    place=[app_commands.Choice(name=p, value=p) for p in PLACE_LIST]
+)
+async def joinf_cmd(interaction: discord.Interaction, place: app_commands.Choice[str]):
+    for msg_id, data in list(join_tasks.items()):
+        if data["place"] == place.value:
+            channel = bot.get_channel(data["channel"])
+            if channel:
+                await channel.send(f"{data['place']} 〆なのだ")
+            del join_tasks[msg_id]
+            await interaction.response.send_message("募集を〆たのだ", ephemeral=True)
+            return
+
+    await interaction.response.send_message("該当する募集がないのだ", ephemeral=True)
+
+# =========================
+# 時間締切監視
 # =========================
 @tasks.loop(seconds=30)
 async def check_join_tasks():
     now = datetime.now(JST)
-    remove = []
-    for key, data in join_tasks.items():
+    for msg_id, data in list(join_tasks.items()):
         if now >= data["time"]:
             channel = bot.get_channel(data["channel"])
             if channel:
-                await channel.send(f"{data['place']} 〆なのだ")
-            remove.append(key)
-    for k in remove:
-        del join_tasks[k]
+                await channel.send(f"{data['place']} 〆")
+            del join_tasks[msg_id]
 
 # =========================
 # /time
@@ -477,5 +536,6 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
