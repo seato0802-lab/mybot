@@ -111,7 +111,7 @@ async def on_ready():
 @bot.tree.command(name="join", description="参加募集をするのだ")
 @app_commands.describe(
     place="場所",
-    time_str="締切時間（HH:MM）※0で時間なし",
+    time_str="締切時間（HH:MM）※0で締切なし",
     count="募集人数"
 )
 @app_commands.choices(
@@ -123,48 +123,53 @@ async def join_cmd(
     time_str: str,
     count: int
 ):
- # =========================
- # 締切時間なし（0）
- # =========================
-if time_str == "0":
-    target_time = None
-     time_text = "人数〆なのだ"
-
- # =========================
- # 締切時間あり（HH:MM）
-# =========================
-else:
-    
-    try:
-        hour, minute = map(int, time_str.split(":"))
-    except:
-        return await interaction.response.send_message(
-            "時間は HH:MM 形式でいれるのだ",
-            ephemeral=False
-        )
-
     now = datetime.now(JST)
-    target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target_time <= now:
-        target_time += timedelta(days=1)
 
+    # =========================
+    # 締切時間なし
+    # =========================
+    if time_str == "0":
+        target_time = None
+        time_text = "人数〆なのだ"
+
+    # =========================
+    # 締切時間あり
+    # =========================
+    else:
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except:
+            return await interaction.response.send_message(
+                "時間は HH:MM または 0 で入力するのだ",
+                ephemeral=False
+            )
+
+        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target_time <= now:
+            target_time += timedelta(days=1)
+
+        time_text = f"{target_time.strftime('%H:%M')}〆なのだ"
+
+    # =========================
+    # 募集メッセージ送信（これだけ）
+    # =========================
     msg = await interaction.channel.send(
-        f"@here {place.value} @{count} {target_time.strftime('%H:%M')}〆なのだ\n"
+        f"@here {place.value} @{count} {time_text}なのだ\n"
         f"👍で参加なのだ"
     )
     await msg.add_reaction("👍")
 
     join_tasks[msg.id] = {
         "place": place.value,
-        "time": target_time,
+        "time": target_time,   # None の場合あり
         "count": count,
         "members": set(),
         "channel": interaction.channel.id,
         "message_id": msg.id
     }
 
-    await interaction.response.send_message("募集を開始したのだ!", ephemeral=True)
-    
+    # ★ interaction.response.send_message は送らない
+
 # =========================
 # /join 実行時：/time の1時間以内タスクを削除
 # =========================
@@ -546,6 +551,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
