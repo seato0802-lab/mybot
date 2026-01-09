@@ -151,6 +151,19 @@ async def join_cmd(
         "message_id": msg.id
     }
      await interaction.response.defer()
+# =========================
+# /join 実行時：/time の1時間以内タスクを削除
+# =========================
+now = datetime.now(JST)
+remove_targets = []
+
+for name, data in tasks_data.items():
+    diff = abs((data["time"] - now).total_seconds())
+    if diff <= 3600:  # 1時間 = 3600秒
+        remove_targets.append(name)
+
+for name in remove_targets:
+    del tasks_data[name]
 
 # =========================
 # 👍 リアクション参加
@@ -535,6 +548,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
