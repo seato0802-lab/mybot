@@ -123,6 +123,7 @@ async def join_cmd(
     time_str: str,
     count: int
 ):
+    await interaction.response.send_message("募集を開始したのだ", ephemeral=True)
     now = datetime.now(JST)
     
     # =========================
@@ -550,6 +551,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
