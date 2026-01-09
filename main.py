@@ -137,8 +137,8 @@ async def join_cmd(
         target_time += timedelta(days=1)
 
     msg = await interaction.channel.send(
-        f"@here {place.value} @{count} {target_time.strftime('%H:%M')}〆\n"
-        f"👍で参加（0 / {count}）"
+        f"@here {place.value} @{count} {target_time.strftime('%H:%M')}〆なのだ\n"
+        f"👍で参加なのだ（0 / {count}）"
     )
     await msg.add_reaction("👍")
 
@@ -548,6 +548,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
