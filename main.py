@@ -20,10 +20,11 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tasks_data = {}
+join_tasks = {}
 
 PLACE_LIST = [
     "パシフィック", "オイルリグ", "アーティファクト", "飛行場", "客船",
-    "ユニオン", "パレト", "ボブキャット", "市長の工場", "アート"
+    "ユニオン", "パレト", "ボブキャット", "市長の工場"
 ]
 
 # 道具 & 武器シート（CSV 出力 URL を利用）
@@ -100,16 +101,76 @@ async def on_ready():
     await bot.tree.sync()
     if not check_tasks.is_running():
         check_tasks.start()
+    if not check_join_tasks.is_running():
+        check_join_tasks.start()
     print(f"Bot logged in as {bot.user}")
 
+# =========================
+# /join
+# =========================
+@bot.tree.command(name="join", description="参加募集をするのだ")
+@app_commands.describe(
+    place="場所を選択するのだ",
+    time_str="締切時間（HH:MM）",
+    count="募集人数"
+)
+@app_commands.choices(
+    place=[app_commands.Choice(name=p, value=p) for p in PLACE_LIST]
+)
+async def join_cmd(
+    interaction: discord.Interaction,
+    place: app_commands.Choice[str],
+    time_str: str,
+    count: int
+):
+    try:
+        hour, minute = map(int, time_str.split(":"))
+    except Exception:
+        return await interaction.response.send_message(
+            "時間は HH:MM 形式でいれるのだ",
+            ephemeral=False
+        )
+
+    now = datetime.now(JST)
+    target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target_time <= now:
+        target_time += timedelta(days=1)
+
+    join_tasks[(place.value, target_time)] = {
+        "place": place.value,
+        "time": target_time,
+        "count": count,
+        "channel": interaction.channel.id
+    }
+
+    await interaction.response.send_message(
+        f"@here {place.value} @{count} {target_time.strftime('%H:%M')}〆なのだ",
+        ephemeral=False
+    )
+
+# =========================
+# join 締切監視
+# =========================
+@tasks.loop(seconds=30)
+async def check_join_tasks():
+    now = datetime.now(JST)
+    remove = []
+    for key, data in join_tasks.items():
+        if now >= data["time"]:
+            channel = bot.get_channel(data["channel"])
+            if channel:
+                await channel.send(f"{data['place']} 〆なのだ")
+            remove.append(key)
+    for k in remove:
+        del join_tasks[k]
 
 # =========================
 # /time
 # =========================
-@bot.tree.command(name="time", description="受注時間をセットする")
+@bot.tree.command(name="time", description="受注時間をセットするのだ")
 @app_commands.describe(
-    name="場所を選択してください",
-    minutes="何分後に受注が開始しますか？"
+    name="場所を選ぶのだ",
+    minutes="何分後に受注が開始するのだ？"
 )
 @app_commands.choices(
     name=[app_commands.Choice(name=p, value=p) for p in PLACE_LIST]
@@ -117,7 +178,7 @@ async def on_ready():
 async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[str], minutes: int):
     if minutes < 1 or minutes > 1440:
         return await interaction.response.send_message(
-            "分の指定は 1〜1440 の間で入力してください。",
+            "分の指定は 1〜1440 の間で入力するのだ",
             ephemeral=False
         )
 
@@ -127,7 +188,7 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
     tasks_data[name.value] = {"time": target_time, "channel": interaction.channel.id}
 
     await interaction.response.send_message(
-        f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始です。",
+        f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始なのだ。",
         ephemeral=False
     )
 
@@ -135,11 +196,11 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
 # =========================
 # /list
 # =========================
-@bot.tree.command(name="list", description="現在登録されているタスクを一覧表示します")
+@bot.tree.command(name="list", description="現在登録されているタスクを一覧表示するのだ")
 async def list_cmd(interaction: discord.Interaction):
     if not tasks_data:
         return await interaction.response.send_message(
-            "現在登録されているタスクはありません。",
+            "現在登録されているタスクはないのだ",
             ephemeral=False
         )
 
@@ -154,23 +215,23 @@ async def list_cmd(interaction: discord.Interaction):
 # =========================
 # /reset
 # =========================
-@bot.tree.command(name="reset", description="登録されている全てのタスクを削除します")
+@bot.tree.command(name="reset", description="登録されている全てのタスクを消すのだ")
 async def reset_cmd(interaction: discord.Interaction):
     tasks_data.clear()
-    await interaction.response.send_message("すべてのタスクを削除しました.", ephemeral=False)
+    await interaction.response.send_message("すべてのタスクを消したのだ", ephemeral=False)
 
 
 # =========================
 # /resetin
 # =========================
-@bot.tree.command(name="resetin", description="特定のタスクを選択して削除します")
-@app_commands.describe(name="削除するタスク名を入力してください")
+@bot.tree.command(name="resetin", description="特定のタスクを選択して消すのだ")
+@app_commands.describe(name="削除するタスク名を入力するのだ")
 async def resetin_cmd(interaction: discord.Interaction, name: str):
     if name not in tasks_data:
-        return await interaction.response.send_message("そのタスクは存在しません。", ephemeral=False)
+        return await interaction.response.send_message("そのタスクはないのだ", ephemeral=False)
 
     del tasks_data[name]
-    await interaction.response.send_message(f"**{name}** を削除しました。", ephemeral=False)
+    await interaction.response.send_message(f"**{name}** を消したのだ", ephemeral=False)
 
 
 @resetin_cmd.autocomplete("name")
@@ -185,7 +246,7 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
 # =======================================================
 # /craft（カテゴリ → 種別 → アイテム）
 # =======================================================
-@bot.tree.command(name="craft", description="必要素材を計算して表示します")
+@bot.tree.command(name="craft", description="必要素材を計算して表示するのだ")
 @app_commands.describe(
     category="道具 or 武器",
     type="種別を選択",
@@ -204,7 +265,7 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 
     sheet = await get_csv(category.value)
     if not sheet:
-        return await interaction.followup.send("シートの読み込みに失敗しました。")
+        return await interaction.followup.send("シートの読み込みに失敗しました")
 
     def find_col(cols, target):
         for c in cols:
@@ -219,14 +280,14 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     make_col = find_col(columns, "１回での作成個数")
 
     if not name_col:
-        return await interaction.followup.send("シートに '名前' 列が見つかりません。")
+        return await interaction.followup.send("シートに '名前' 列が見つかりません")
 
     target = next(
         (row for row in sheet if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()),
         None
     )
     if not target:
-        return await interaction.followup.send("そのアイテムはシートにありません。")
+        return await interaction.followup.send("そのアイテムはシートにありません")
 
     make_per_once = float(target.get(make_col, "1") or 1)
     craft_times = math.ceil(count / make_per_once)
@@ -370,7 +431,7 @@ async def check_tasks():
         if notify_time <= now:
             channel = bot.get_channel(data["channel"])
             if channel:
-                await channel.send(f"@here **{name}** の受注10分前です！")
+                await channel.send(f"@here **{name}** の受注10分前なのだ！")
             remove_list.append(name)
 
     for name in remove_list:
@@ -416,4 +477,5 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
