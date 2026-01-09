@@ -138,7 +138,7 @@ async def join_cmd(
 
     msg = await interaction.channel.send(
         f"@here {place.value} @{count} {target_time.strftime('%H:%M')}〆なのだ\n"
-        f"👍で参加（0 / {count}）"
+        f"👍で参加なのだ（0 / {count}）"
     )
     await msg.add_reaction("👍")
 
@@ -196,11 +196,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         del join_tasks[payload.message_id]
         return
 
-    await message.edit(
-        content=(
-            f"@here {data['place']} @{data['count']} "
-            f"{data['time'].strftime('%H:%M')}〆\n"
-            f"👍で参加（{len(data['members'])} / {data['count']}）"
         )
     )
 
@@ -550,6 +545,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
