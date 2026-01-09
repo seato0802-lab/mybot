@@ -127,7 +127,7 @@ async def join_cmd(
         hour, minute = map(int, time_str.split(":"))
     except:
         return await interaction.response.send_message(
-            "時間は HH:MM 形式で入力するのだ",
+            "時間は HH:MM 形式でいれるのだ",
             ephemeral=False
         )
 
@@ -138,7 +138,7 @@ async def join_cmd(
 
     msg = await interaction.channel.send(
         f"@here {place.value} @{count} {target_time.strftime('%H:%M')}〆なのだ\n"
-        f"👍で参加なのだ（0 / {count}）"
+        f"👍で参加（0 / {count}）"
     )
     await msg.add_reaction("👍")
 
@@ -150,7 +150,9 @@ async def join_cmd(
         "channel": interaction.channel.id,
         "message_id": msg.id
     }
-    await interaction.response.send_message("募集を開始したのだ", ephemeral=True）
+
+    await interaction.response.send_message("募集を開始したのだ", ephemeral=True)
+    
 # =========================
 # /join 実行時：/time の1時間以内タスクを削除
 # =========================
@@ -548,6 +550,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
