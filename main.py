@@ -123,16 +123,17 @@ async def join_cmd(
     time_str: str,
     count: int
 ):
+    await interaction.response.defer(ephemeral=True)
+    
     now = datetime.now(JST)
 
-await interaction.response.defer(ephemeral=True)
 
     # =========================
     # 締切時間なし
     # =========================
     if time_str == "0":
         target_time = None
-        time_text = "人数〆なのだ"
+        time_text = ""
 
     # =========================
     # 締切時間あり
@@ -551,6 +552,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
