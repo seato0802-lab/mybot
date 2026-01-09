@@ -211,15 +211,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         del join_tasks[payload.message_id]
         return
 
-    await message.edit(
-        content=(
-            f"@here {data['place']} @{data['count']} "
-            f"{data['time'].strftime('%H:%M')}〆なのだ\n"
-            f"👍で参加なのだ（{len(data['members'])} / {data['count']}）"
-        )
-    )
-
-
 
 # =========================
 # /joinf
@@ -559,6 +550,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
