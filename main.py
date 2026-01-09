@@ -125,6 +125,9 @@ async def join_cmd(
 ):
     now = datetime.now(JST)
 
+await interaction.response.defer(ephemeral=True)
+
+    
     # =========================
     # 締切時間なし
     # =========================
@@ -166,8 +169,6 @@ async def join_cmd(
         "channel": interaction.channel.id,
         "message_id": msg.id
     }
-
-await interaction.response.defer()
 
 
 # =========================
@@ -551,6 +552,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
