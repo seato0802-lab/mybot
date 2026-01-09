@@ -151,8 +151,6 @@ async def join_cmd(
         "message_id": msg.id
     }
 
-    await interaction.response.send_message("募集を開始したのだ", ephemeral=True)
-
 # =========================
 # 👍 リアクション参加
 # =========================
@@ -536,6 +534,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
