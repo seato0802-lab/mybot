@@ -150,6 +150,7 @@ async def join_cmd(
         "channel": interaction.channel.id,
         "message_id": msg.id
     }
+    await interaction.response.send_message("募集を開始したのだ", ephemeral=True）
 # =========================
 # /join 実行時：/time の1時間以内タスクを削除
 # =========================
@@ -547,6 +548,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
