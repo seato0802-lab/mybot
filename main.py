@@ -148,8 +148,6 @@ async def join_cmd(
         if target_time <= now:
             target_time += timedelta(days=1)
 
-        time_text = f"{target_time.strftime('%H:%M')}〆なのだ"
-
     # =========================
     # 募集メッセージ送信（これだけ）
     # =========================
@@ -216,7 +214,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 # =========================
 # /joinf
 # =========================
-@bot.tree.command(name="joinf", description="全ての募集を締切のだ")
+@bot.tree.command(name="joinf", description="全ての募集を締切なのだ")
 async def joinf_cmd(interaction: discord.Interaction):
 
     # 募集データを全削除
@@ -551,6 +549,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
