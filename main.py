@@ -108,10 +108,10 @@ async def on_ready():
 # =========================
 # /join
 # =========================
-@bot.tree.command(name="join", description="参加募集をするのだ")
+@bot.tree.command(name="join", description="参加募集を行います")
 @app_commands.describe(
     place="場所",
-    time_str="締切時間（HH:MM）※0で締切なし",
+    time_str="締切時間（HH:MM）※0で時間なし",
     count="募集人数"
 )
 @app_commands.choices(
@@ -123,11 +123,8 @@ async def join_cmd(
     time_str: str,
     count: int
 ):
-    await interaction.response.defer(ephemeral=True)
-    
     now = datetime.now(JST)
-
-
+    
     # =========================
     # 締切時間なし
     # =========================
@@ -151,7 +148,6 @@ async def join_cmd(
         if target_time <= now:
             target_time += timedelta(days=1)
 
-     time_text = f"{target_time.strftime('%H:%M')}〆なのだ"
     
     # =========================
     # 募集メッセージ送信（これだけ）
@@ -553,6 +549,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
