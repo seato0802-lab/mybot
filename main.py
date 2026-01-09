@@ -150,6 +150,7 @@ async def join_cmd(
         "channel": interaction.channel.id,
         "message_id": msg.id
     }
+     await interaction.response.defer()
 
 # =========================
 # 👍 リアクション参加
@@ -534,6 +535,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
