@@ -127,7 +127,6 @@ async def join_cmd(
 
 await interaction.response.defer(ephemeral=True)
 
-    
     # =========================
     # 締切時間なし
     # =========================
@@ -552,6 +551,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
