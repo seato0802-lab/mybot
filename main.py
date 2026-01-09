@@ -196,8 +196,6 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         del join_tasks[payload.message_id]
         return
 
-        )
-
 # =========================
 # /joinf（強制〆）
 # =========================
@@ -544,6 +542,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
