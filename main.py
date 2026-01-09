@@ -220,7 +220,7 @@ async def check_join_tasks():
         if now >= data["time"]:
             channel = bot.get_channel(data["channel"])
             if channel:
-                await channel.send(f"{data['place']} 〆")
+                await channel.send(f"{data['place']} 〆なのだ")
             del join_tasks[msg_id]
 
 # =========================
@@ -536,6 +536,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
