@@ -108,7 +108,7 @@ async def on_ready():
 # =========================
 # /join
 # =========================
-@bot.tree.command(name="join", description="参加募集を行います")
+@bot.tree.command(name="join", description="参加募集をするのだ")
 @app_commands.describe(
     place="場所",
     time_str="締切時間（HH:MM）※0で時間なし",
@@ -140,7 +140,7 @@ async def join_cmd(
             hour, minute = map(int, time_str.split(":"))
         except:
             return await interaction.response.send_message(
-                "時間は HH:MM または 0 で入力してください。",
+                "時間は HH:MM または 0 で入力するのだ",
                 ephemeral=False
             )
 
@@ -148,14 +148,14 @@ async def join_cmd(
         if target_time <= now:
             target_time += timedelta(days=1)
 
-        time_text = f"{target_time.strftime('%H:%M')}〆"
+        time_text = f"{target_time.strftime('%H:%M')}〆なのだ"
 
     # =========================
     # 募集メッセージ送信
     # =========================
     msg = await interaction.channel.send(
-        f"@here {place.value} @{count} {time_text}\n"
-        f"👍で参加（0 / {count}）"
+        f"@here {place.value} @{count} {time_text}なのだ\n"
+        f"👍で参加なのだ"
     )
     await msg.add_reaction("👍")
 
@@ -214,8 +214,8 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     await message.edit(
         content=(
             f"@here {data['place']} @{data['count']} "
-            f"{data['time'].strftime('%H:%M')}〆\n"
-            f"👍で参加（{len(data['members'])} / {data['count']}）"
+            f"{data['time'].strftime('%H:%M')}〆なのだ\n"
+            f"👍で参加なのだ（{len(data['members'])} / {data['count']}）"
         )
     )
 
@@ -559,6 +559,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
