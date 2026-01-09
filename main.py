@@ -124,48 +124,50 @@ async def join_cmd(
     count: int
 ):
     now = datetime.now(JST)
-    
+
     # =========================
-    # 締切時間なし
+    # 締切時間なし（0）
     # =========================
     if time_str == "0":
         target_time = None
         time_text = ""
 
     # =========================
-    # 締切時間あり
+    # 締切時間あり（HH:MM）
     # =========================
     else:
         try:
             hour, minute = map(int, time_str.split(":"))
         except:
             return await interaction.response.send_message(
-                "時間は HH:MM または 0 で入力するのだ",
+                "時間は HH:MM または 0 で入力してください。",
                 ephemeral=False
             )
 
         target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if target_time <= now:
             target_time += timedelta(days=1)
-    
+
+        time_text = f"{target_time.strftime('%H:%M')}〆"
+
     # =========================
-    # 募集メッセージ送信（これだけ）
+    # 募集メッセージ送信
     # =========================
     msg = await interaction.channel.send(
-        f"@here {place.value} @{count} {time_text}なのだ\n"
-        f"👍で参加なのだ"
+        f"@here {place.value} @{count} {time_text}\n"
+        f"👍で参加（0 / {count}）"
     )
     await msg.add_reaction("👍")
 
     join_tasks[msg.id] = {
         "place": place.value,
-        "time": target_time,   # None の場合あり
+        "time": target_time,   # None の可能性あり
         "count": count,
         "members": set(),
         "channel": interaction.channel.id,
         "message_id": msg.id
     }
-
+    
 # =========================
 # /join 実行時：/time の1時間以内タスクを削除
 # =========================
@@ -205,9 +207,19 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
     # 募集人数到達
     if len(data["members"]) >= data["count"]:
-        await channel.send(f"{data['place']} 〆なのだ")
+        await channel.send(f"{data['place']} 〆")
         del join_tasks[payload.message_id]
         return
+
+    await message.edit(
+        content=(
+            f"@here {data['place']} @{data['count']} "
+            f"{data['time'].strftime('%H:%M')}〆\n"
+            f"👍で参加（{len(data['members'])} / {data['count']}）"
+        )
+    )
+
+
 
 # =========================
 # /joinf
@@ -547,6 +559,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
