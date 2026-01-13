@@ -128,17 +128,17 @@ async def join_cmd(
 # =========================
 # 締切時間あり / なし 判定
 # =========================
-if time_str == "0":
-    target_time = None
-    time_text = ""
-else:
-    try:
-        hour, minute = map(int, time_str.split(":"))
-    except ValueError:
-        return await interaction.response.send_message(
-            "時間は HH:MM 形式、または 0 を入力するのだ",
-            ephemeral=False
-        )
+    if time_str == "0":
+        target_time = None
+        time_text = ""
+    else:
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except ValueError:
+            return await interaction.response.send_message(
+                "時間は HH:MM 形式、または 0 を入力するのだ",
+                ephemeral=False
+            )
 
     target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target_time <= now:
@@ -608,6 +608,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
