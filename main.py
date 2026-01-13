@@ -149,32 +149,30 @@ async def on_ready():
 # =========================
 # /ai
 # =========================
-@bot.tree.command(name="ai", description="ずんだもんとおしゃべりするのだ")
-@app_commands.describe(message="ずんだもんに話しかける内容")
+@bot.tree.command(name="ai", description="ずんだもんと会話するのだ")
+@app_commands.describe(message="話しかける内容")
 async def ai_cmd(interaction: discord.Interaction, message: str):
 
+    await interaction.response.defer()
+
     try:
-        response = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": ZUNDAMON_SYSTEM},
                 {"role": "user", "content": message}
             ],
-            max_tokens=200,
-            temperature=0.8
+            temperature=0.8,
+            max_tokens=200
         )
 
-        reply = response.choices[0].message.content
-
-        await interaction.response.send_message(
-            f"🗣 **あなた**：{message}\n\n"
-            f"🟢 **ずんだもん**：{reply}"
-        )
+        # 👇 ここがポイント
+        reply = res.choices[0].message.content.strip()
+        await interaction.followup.send(reply)
 
     except Exception as e:
-        await interaction.response.send_message(
-            f"エラーなのだ 💦\n```{e}```"
-        )
+        print("AI error:", e)
+        await interaction.followup.send("ごめんなのだ…うまく話せなかったのだ💦")
 
 # =========================
 # /dice
@@ -746,6 +744,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
