@@ -11,6 +11,8 @@ import aiohttp
 import csv
 import io
 import time
+import openai
+import os
 
 # =========================
 # 設定
@@ -19,6 +21,7 @@ JST = timezone(timedelta(hours=9))
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+openai.api_key = os.getenv("OPENAI_API_KEY")
 tasks_data = {}
 join_tasks = {}
 
@@ -91,8 +94,13 @@ def _find_option_in_data(interaction_data, name):
             if v is not None:
                 return v
     return None
-
-
+ZUNDAMON_SYSTEM = """
+あなたは「ずんだもん」なのだ。
+語尾は必ず「〜なのだ」「〜なのだよ」を使うのだ。
+元気でフレンドリーな性格なのだ。
+Discord向けに短く分かりやすく答えるのだ。
+難しい説明は避けるのだ。
+"""
 # =========================
 # Discord Bot 起動
 # =========================
@@ -104,6 +112,100 @@ async def on_ready():
     if not check_join_tasks.is_running():
         check_join_tasks.start()
     print(f"Bot logged in as {bot.user}")
+
+# =========================
+# /ai
+# =========================
+@bot.tree.command(name="ai", description="ずんだもんとおしゃべりするのだ")
+@app_commands.describe(message="ずんだもんに話しかける内容")
+async def ai_cmd(interaction: discord.Interaction, message: str):
+
+    await interaction.response.defer(ephemeral=False)
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": ZUNDAMON_SYSTEM},
+                {"role": "user", "content": message}
+            ],
+            max_tokens=200,
+            temperature=0.8
+        )
+
+        reply = response.choices[0].message.content.strip()
+        await interaction.followup.send(reply)
+
+    except Exception as e:
+        await interaction.followup.send(
+            "ごめんなのだ…今はうまく答えられないのだ 💦"
+        )
+        print("AI error:", e)
+
+import random
+
+# =========================
+# /dice
+# =========================
+@bot.tree.command(name="dice", description="ちんちろを振るのだ")
+async def chinchiro_cmd(interaction: discord.Interaction):
+
+    def roll_dice():
+        return sorted([random.randint(1, 6) for _ in range(3)])
+
+    def judge(dice):
+        a, b, c = dice
+
+        if dice == [1, 1, 1]:
+            return "🎉 ピンゾロ"
+        if dice == [6, 6, 6]:
+            return "🎉 シゴロ"
+        if dice == [1, 2, 3]:
+            return "💀 ヒフミ"
+        if dice == [4, 5, 6]:
+            return "🔥 シゴロ"
+
+        # ゾロ目＋1
+        if a == b and b != c:
+            return f"👉 目：{c}"
+        if b == c and a != b:
+            return f"👉 目：{a}"
+        if a == c and b != a:
+            return f"👉 目：{b}"
+
+        return None  # 役なし
+
+    results = []
+    role = None
+
+    for i in range(1, 4):
+        dice = roll_dice()
+        role = judge(dice)
+        results.append((i, dice, role))
+
+        if role:
+            break
+
+    # =========================
+    # 表示メッセージ作成
+    # =========================
+    msg = "🎲 **ちんちろ開始なのだ！**\n\n"
+
+    for i, dice, role in results:
+        dice_text = " ".join(str(d) for d in dice)
+        msg += f"【{i}回目】🎲 {dice_text}\n"
+        if role:
+            msg += f"➡️ **{role}**\n"
+            break
+        else:
+            msg += "➡️ 役なし…\n"
+
+    if not role:
+        msg += "\n❌ **目なしなのだ…**"
+
+    # interaction 応答（必須）
+    await interaction.response.send_message(msg)
+
 
 # =========================
 # /join
@@ -612,6 +714,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
