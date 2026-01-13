@@ -149,57 +149,38 @@ async def on_ready():
 # =========================
 # /ai
 # =========================
-@bot.tree.command(name="ai", description="ずんだもんとお話しするのだ")
+@bot.tree.command(name="ai", description="ずんだもんとおしゃべりするのだ")
 @app_commands.describe(message="ずんだもんに話しかける内容")
 async def ai_cmd(interaction: discord.Interaction, message: str):
 
+    # 応答猶予（個人DMにしない）
     await interaction.response.defer(ephemeral=False)
 
     try:
-        response = openai.ChatCompletion.create(
+        # ===== ChatGPT 呼び出し =====
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": ZUNDAMON_SYSTEM},
                 {"role": "user", "content": message}
             ],
-            temperature=0.6,
-            max_tokens=300
+            max_tokens=200,
+            temperature=0.8
         )
 
-        data = json.loads(response.choices[0].message.content)
+        reply = response.choices[0].message.content.strip()
 
-        # =========================
-        # 会話
-        # =========================
-        if data["type"] == "chat":
-            await interaction.followup.send(data["reply"])
-            return
-
-        # =========================
-        # コマンド
-        # =========================
-        if data["type"] == "command":
-            cmd = data["command"]
-            args = data.get("args", {})
-
-            if cmd not in AI_COMMANDS:
-                await interaction.followup.send(
-                    "その命令はまだ覚えていないのだ"
-                )
-                return
-
-            # 実行
-            await globals()[AI_COMMANDS[cmd]](
-                interaction.channel,
-                **args
-            )
-            return
+        # ===== 入力内容＋返答を表示 =====
+        await interaction.followup.send(
+            f"🗨 **あなた**\n{message}\n\n"
+            f"🌱 **ずんだもん**\n{reply}"
+        )
 
     except Exception as e:
-        print("AI error:", e)
         await interaction.followup.send(
-            "うまく理解できなかったのだ 💦"
+            "ごめんなのだ…うまくお話できなかったのだ 💦"
         )
+        print("AI error:", e)
 
 # =========================
 # /dice
@@ -771,6 +752,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
