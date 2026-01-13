@@ -125,7 +125,7 @@ async def join_cmd(
 ):
     now = datetime.now(JST)
 
-     =========================
+# =========================
 # 締切時間あり / なし 判定
 # =========================
 if time_str == "0":
@@ -150,7 +150,7 @@ else:
     # 募集メッセージ送信
     # =========================
     msg = await interaction.channel.send(
-        f"@here {place.value} @{count} {time_text}なのだ\n"
+        f"@everyone {place.value} @{count} {time_text}なのだ\n"
         f"👍で参加なのだ"
     )
     await msg.add_reaction("👍")
@@ -207,6 +207,68 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         del join_tasks[payload.message_id]
         return
 
+# =========================
+# /jointime
+# =========================
+@bot.tree.command(name="jointime", description="締切なし募集に時間と人数を設定して再募集するのだ")
+@app_commands.describe(
+    time_str="締切時間（HH:MM）",
+    count="募集人数"
+)
+async def jointime_cmd(
+    interaction: discord.Interaction,
+    time_str: str,
+    count: int
+):
+    # 時刻パース
+    try:
+        hour, minute = map(int, time_str.split(":"))
+    except ValueError:
+        return await interaction.response.send_message(
+            "時間は HH:MM 形式で入力するのだ",
+            ephemeral=False
+        )
+
+    now = datetime.now(JST)
+    target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target_time <= now:
+        target_time += timedelta(days=1)
+
+    # =========================
+    # 締切なし募集を削除
+    # =========================
+    removed = []
+    for msg_id, data in list(join_tasks.items()):
+        if data["time"] is None:
+            removed.append(msg_id)
+            del join_tasks[msg_id]
+
+    if not removed:
+        return await interaction.response.send_message(
+            "締切なしの募集がないのだ",
+            ephemeral=False
+        )
+
+    # =========================
+    # 再募集
+    # =========================
+    channel = interaction.channel
+    msg = await channel.send(
+        f"@everyone 再募集 @{count} {target_time.strftime('%H:%M')}〆なのだ\n"
+        f"👍で参加なのだ"
+    )
+    await msg.add_reaction("👍")
+
+    join_tasks[msg.id] = {
+        "place": "再募集",
+        "time": target_time,
+        "count": count,
+        "members": set(),
+        "channel": channel.id,
+        "message_id": msg.id
+    }
+
+    # interaction.response は使わない（個人メッセージ防止）
 
 # =========================
 # /joinf
@@ -218,7 +280,7 @@ async def joinf_cmd(interaction: discord.Interaction):
     join_tasks.clear()
 
     # チャンネルに〆だけ送信
-    await interaction.channel.send("〆なのだ")
+    await interaction.channel.send("@everyone〆なのだ")
 
 # =========================
 # 時間締切監視
@@ -500,7 +562,7 @@ async def check_tasks():
         if notify_time <= now:
             channel = bot.get_channel(data["channel"])
             if channel:
-                await channel.send(f"@here **{name}** の受注10分前なのだ！")
+                await channel.send(f"@everyone **{name}** の受注10分前なのだ！")
             remove_list.append(name)
 
     for name in remove_list:
@@ -546,6 +608,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
