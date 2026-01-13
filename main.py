@@ -125,30 +125,26 @@ async def join_cmd(
 ):
     now = datetime.now(JST)
 
-    # =========================
-    # 締切時間なし（0）
-    # =========================
-    if time_str == "0":
-        target_time = None
-        time_text = ""
+     =========================
+# 締切時間あり / なし 判定
+# =========================
+if time_str == "0":
+    target_time = None
+    time_text = ""
+else:
+    try:
+        hour, minute = map(int, time_str.split(":"))
+    except ValueError:
+        return await interaction.response.send_message(
+            "時間は HH:MM 形式、または 0 を入力するのだ",
+            ephemeral=False
+        )
 
-    # =========================
-    # 締切時間あり（HH:MM）
-    # =========================
-    else:
-        try:
-            hour, minute = map(int, time_str.split(":"))
-        except:
-            return await interaction.response.send_message(
-                "時間は HH:MM または 0 で入力するのだ",
-                ephemeral=False
-            )
+    target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target_time <= now:
+        target_time += timedelta(days=1)
 
-        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target_time <= now:
-            target_time += timedelta(days=1)
-
-     time_text = f"{target_time.strftime('%H:%M')}〆なのだ"
+    time_text = f"{target_time.strftime('%H:%M')}〆なのだ"
 
     # =========================
     # 募集メッセージ送信
@@ -550,6 +546,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
