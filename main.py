@@ -146,11 +146,15 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         )
         print("AI error:", e)
 
+import random
+
 # =========================
-# /dice
+# /dice（ちんちろ）
 # =========================
 @bot.tree.command(name="dice", description="ちんちろを振るのだ")
 async def chinchiro_cmd(interaction: discord.Interaction):
+
+    await interaction.response.defer(ephemeral=False)
 
     def roll_dice():
         return sorted([random.randint(1, 6) for _ in range(3)])
@@ -177,16 +181,28 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
         return None  # 役なし
 
-    results = []
+    results_text = []
     role = None
 
     for i in range(1, 4):
         dice = roll_dice()
         role = judge(dice)
-        results.append((i, dice, role))
 
+        dice_text = "・".join(map(str, dice))
         if role:
+            results_text.append(f"{i}回目：🎲 {dice_text} → **{role}**")
             break
+        else:
+            results_text.append(f"{i}回目：🎲 {dice_text} → 役なし")
+
+    if not role:
+        role = "❌ メなし"
+
+    await interaction.followup.send(
+        "🎲 **ちんちろ結果なのだ！**\n"
+        + "\n".join(results_text)
+        + f"\n\n👉 **最終結果：{role}**"
+    )
 
     # =========================
     # 表示メッセージ作成
@@ -716,6 +732,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
