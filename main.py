@@ -11,8 +11,7 @@ import aiohttp
 import csv
 import io
 import time
-import openai
-from openai
+from openai import OpenAI
 import os
 
 # =========================
@@ -747,6 +746,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
