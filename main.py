@@ -125,44 +125,49 @@ async def join_cmd(
 ):
     now = datetime.now(JST)
 
-# =========================
-# 締切時間あり / なし 判定
-# =========================
+    # =========================
+    # 締切時間 判定
+    # =========================
     if time_str == "0":
         target_time = None
-        time_text = ""
+        time_text = "締切なし"
     else:
         try:
             hour, minute = map(int, time_str.split(":"))
         except ValueError:
             return await interaction.response.send_message(
                 "時間は HH:MM 形式、または 0 を入力するのだ",
-                ephemeral=False
+                ephemeral=True
             )
 
-    target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target_time <= now:
-        target_time += timedelta(days=1)
+        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target_time <= now:
+            target_time += timedelta(days=1)
 
-    time_text = f"{target_time.strftime('%H:%M')}〆なのだ"
+        time_text = f"{target_time.strftime('%H:%M')}〆なのだ"
+
+    # interaction 応答（必須）
+    await interaction.response.send_message("募集を開始したのだ", ephemeral=True)
 
     # =========================
-    # 募集メッセージ送信
+    # 募集メッセージ
     # =========================
     msg = await interaction.channel.send(
-        f"@everyone {place.value} @{count} {time_text}なのだ\n"
+        f"@everyone {place.value} @{count} {time_text}\n"
         f"👍で参加なのだ"
     )
     await msg.add_reaction("👍")
 
+    join_tasks.clear()  # 1件のみ
     join_tasks[msg.id] = {
         "place": place.value,
-        "time": target_time,   # None の可能性あり
+        "time": target_time,  # None 可
         "count": count,
         "members": set(),
         "channel": interaction.channel.id,
         "message_id": msg.id
     }
+
     
 # =========================
 # /join 実行時：/time の1時間以内タスクを削除
@@ -220,13 +225,12 @@ async def jointime_cmd(
     time_str: str,
     count: int
 ):
-    # 時刻パース
     try:
         hour, minute = map(int, time_str.split(":"))
     except ValueError:
         return await interaction.response.send_message(
             "時間は HH:MM 形式で入力するのだ",
-            ephemeral=False
+            ephemeral=True
         )
 
     now = datetime.now(JST)
@@ -234,26 +238,25 @@ async def jointime_cmd(
     if target_time <= now:
         target_time += timedelta(days=1)
 
-    # =========================
-    # 締切なし募集を削除
-    # =========================
-    removed = []
-    for msg_id, data in list(join_tasks.items()):
+    # 締切なし募集を探す
+    no_time_task = None
+    for msg_id, data in join_tasks.items():
         if data["time"] is None:
-            removed.append(msg_id)
-            del join_tasks[msg_id]
+            no_time_task = msg_id
+            break
 
-    if not removed:
+    if not no_time_task:
         return await interaction.response.send_message(
             "締切なしの募集がないのだ",
-            ephemeral=False
+            ephemeral=True
         )
 
-    # =========================
-    # 再募集
-    # =========================
-    channel = interaction.channel
-    msg = await channel.send(
+    del join_tasks[no_time_task]
+
+    # 全体再募集
+    await interaction.response.send_message("再募集を行ったのだ", ephemeral=True)
+
+    msg = await interaction.channel.send(
         f"@everyone 再募集 @{count} {target_time.strftime('%H:%M')}〆なのだ\n"
         f"👍で参加なのだ"
     )
@@ -264,11 +267,9 @@ async def jointime_cmd(
         "time": target_time,
         "count": count,
         "members": set(),
-        "channel": channel.id,
+        "channel": interaction.channel.id,
         "message_id": msg.id
     }
-
-    # interaction.response は使わない（個人メッセージ防止）
 
 # =========================
 # /joinf
@@ -289,6 +290,9 @@ async def joinf_cmd(interaction: discord.Interaction):
 async def check_join_tasks():
     now = datetime.now(JST)
     for msg_id, data in list(join_tasks.items()):
+        if data["time"] is None:
+            continue
+
         if now >= data["time"]:
             channel = bot.get_channel(data["channel"])
             if channel:
@@ -608,6 +612,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
