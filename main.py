@@ -21,7 +21,7 @@ JST = timezone(timedelta(hours=9))
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI()
 tasks_data = {}
 join_tasks = {}
 
@@ -746,6 +746,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
