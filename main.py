@@ -11,6 +11,7 @@ import aiohttp
 import csv
 import io
 import time
+from openai
 import openai
 import os
 
@@ -153,11 +154,7 @@ async def on_ready():
 @app_commands.describe(message="ずんだもんに話しかける内容")
 async def ai_cmd(interaction: discord.Interaction, message: str):
 
-    # 応答猶予（個人DMにしない）
-    await interaction.response.defer(ephemeral=False)
-
     try:
-        # ===== ChatGPT 呼び出し =====
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -168,19 +165,17 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
             temperature=0.8
         )
 
-        reply = response.choices[0].message.content.strip()
+        reply = response.choices[0].message.content
 
-        # ===== 入力内容＋返答を表示 =====
-        await interaction.followup.send(
-            f"🗨 **あなた**\n{message}\n\n"
-            f"🌱 **ずんだもん**\n{reply}"
+        await interaction.response.send_message(
+            f"🗣 **あなた**：{message}\n\n"
+            f"🟢 **ずんだもん**：{reply}"
         )
 
     except Exception as e:
-        await interaction.followup.send(
-            "ごめんなのだ…うまくお話できなかったのだ 💦"
+        await interaction.response.send_message(
+            f"エラーなのだ 💦\n```{e}```"
         )
-        print("AI error:", e)
 
 # =========================
 # /dice
@@ -752,6 +747,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
