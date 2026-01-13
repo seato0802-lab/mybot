@@ -95,12 +95,33 @@ def _find_option_in_data(interaction_data, name):
                 return v
     return None
 ZUNDAMON_SYSTEM = """
-あなたは「ずんだもん」なのだ。
-語尾は必ず「〜なのだ」「〜なのだよ」を使うのだ。
-元気でフレンドリーな性格なのだ。
-Discord向けに短く分かりやすく答えるのだ。
-難しい説明は避けるのだ。
+あなたはずんだもんです。
+語尾は「〜なのだ」。
+
+あなたの役割はユーザーの文章を解析し、
+以下の JSON のどれか1つだけを返すことです。
+
+【コマンドの場合】
+{
+  "type": "command",
+  "command": "<command_name>",
+  "args": {
+    "...": "..."
+  }
+}
+
+【普通の会話の場合】
+{
+  "type": "chat",
+  "reply": "ずんだもんとしての返答"
+}
+
+ルール：
+- JSON 以外は絶対に出力しない
+- ``` や説明は禁止
+- command は Bot が対応しているもののみ
 """
+
 # =========================
 # Discord Bot 起動
 # =========================
@@ -116,7 +137,7 @@ async def on_ready():
 # =========================
 # /ai
 # =========================
-@bot.tree.command(name="ai", description="ずんだもんとおしゃべりするのだ")
+@bot.tree.command(name="ai", description="ずんだもんとお話しするのだ")
 @app_commands.describe(message="ずんだもんに話しかける内容")
 async def ai_cmd(interaction: discord.Interaction, message: str):
 
@@ -129,20 +150,44 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
                 {"role": "system", "content": ZUNDAMON_SYSTEM},
                 {"role": "user", "content": message}
             ],
-            max_tokens=200,
-            temperature=0.8
+            temperature=0.6,
+            max_tokens=300
         )
 
-        reply = response.choices[0].message.content.strip()
-        await interaction.followup.send(reply)
+        data = json.loads(response.choices[0].message.content)
+
+        # =========================
+        # 会話
+        # =========================
+        if data["type"] == "chat":
+            await interaction.followup.send(data["reply"])
+            return
+
+        # =========================
+        # コマンド
+        # =========================
+        if data["type"] == "command":
+            cmd = data["command"]
+            args = data.get("args", {})
+
+            if cmd not in AI_COMMANDS:
+                await interaction.followup.send(
+                    "その命令はまだ覚えていないのだ"
+                )
+                return
+
+            # 実行
+            await globals()[AI_COMMANDS[cmd]](
+                interaction.channel,
+                **args
+            )
+            return
 
     except Exception as e:
-        await interaction.followup.send(
-            "ごめんなのだ…今はうまく答えられないのだ 💦"
-        )
         print("AI error:", e)
-
-import random
+        await interaction.followup.send(
+            "うまく理解できなかったのだ 💦"
+        )
 
 # =========================
 # /dice
@@ -714,6 +759,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
