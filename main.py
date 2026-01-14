@@ -292,17 +292,42 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
     await interaction.response.defer(ephemeral=False)
 
-    def roll_dice():
-        return sorted([random.randint(1, 6) for _ in range(3)])
+    BASE_JACKPOT_RATE = 1 / 5000      # 通常ジャックポット確率
+    BOOSTED_JACKPOT_RATE = 1 / 500    # 7・7・BAR後の確率UP
+    SEVEN_BAR_RATE = 1 / 3000         # 7・7・BARの確率
+
+    def roll_dice(turn, jackpot_boost):
+        r = random.random()
+
+        jackpot_rate = BOOSTED_JACKPOT_RATE if jackpot_boost else BASE_JACKPOT_RATE
+
+        # 🎰 7・7・7（ジャックポット）
+        if r < jackpot_rate:
+            return ["7", "7", "7"]
+
+        # 🎰 7・7・BAR（1回目・2回目のみ）
+        if turn < 3 and r < jackpot_rate + SEVEN_BAR_RATE:
+            return ["7", "7", "BAR"]
+
+        # 通常サイコロ
+        return sorted([str(random.randint(1, 6)) for _ in range(3)])
 
     def judge(dice):
-        a, b, c = dice
+        # 特殊役
+        if dice == ["7", "7", "7"]:
+            return "🎰 ジャックポット！"
 
-        if dice == [1, 1, 1]:
+        if dice == ["7", "7", "BAR"]:
+            return None  # 役なし（そのまま流す）
+
+        nums = sorted(map(int, dice))
+        a, b, c = nums
+
+        if nums == [1, 1, 1]:
             return "🎉 ピンゾロ"
-        if dice == [1, 2, 3]:
+        if nums == [1, 2, 3]:
             return "💀 ヒフミ"
-        if dice == [4, 5, 6]:
+        if nums == [4, 5, 6]:
             return "🔥 シゴロ"
 
         if a == b and b != c:
@@ -316,11 +341,15 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
     results_text = []
     role = None
+    seven_bar_triggered = False
 
     for i in range(1, 4):
-        dice = roll_dice()
+        dice = roll_dice(i, seven_bar_triggered)
         role = judge(dice)
-        dice_text = "・".join(map(str, dice))
+        dice_text = "・".join(dice)
+
+        if dice == ["7", "7", "BAR"]:
+            seven_bar_triggered = True  # 次回ジャックポット確率UP
 
         if role:
             results_text.append(f"{i}回目：🎲 {dice_text} → **{role}**")
@@ -336,6 +365,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
         + "\n".join(results_text)
         + f"\n\n👉 **最終結果：{role}**"
     )
+
 
 # =========================
 # /join
@@ -844,6 +874,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
