@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask
 from threading import Thread
 import aiohttp
+import sqlite3
 import csv
 import io
 import time
@@ -65,6 +66,90 @@ async def get_csv(category: str):
 
     return sheet
 
+# =========================
+# SQLite 初期化
+# =========================
+conn = sqlite3.connect("ai_memory.db")
+cur = conn.cursor()
+
+# ユーザーごとの要約
+cur.execute("""
+CREATE TABLE IF NOT EXISTS user_summary (
+    user_id INTEGER PRIMARY KEY,
+    summary TEXT
+)
+""")
+
+# 会話ログ（3件たまったら要約）
+cur.execute("""
+CREATE TABLE IF NOT EXISTS chat_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+conn.commit()
+conn.close()
+
+# =========================
+# AI メモリ関係
+# =========================
+def save_chat(user_id: int, message: str):
+    conn = sqlite3.connect("ai_memory.db")
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO chat_log (user_id, message) VALUES (?, ?)",
+        (user_id, message)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_recent_chats(user_id: int, limit=3):
+    conn = sqlite3.connect("ai_memory.db")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT message FROM chat_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, limit)
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [r[0] for r in reversed(rows)]
+
+
+def clear_chats(user_id: int):
+    conn = sqlite3.connect("ai_memory.db")
+    cur = conn.cursor()
+    cur.execute("DELETE FROM chat_log WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_summary(user_id: int):
+    conn = sqlite3.connect("ai_memory.db")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT summary FROM user_summary WHERE user_id=?",
+        (user_id,)
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else ""
+
+
+def save_summary(user_id: int, summary: str):
+    conn = sqlite3.connect("ai_memory.db")
+    cur = conn.cursor()
+    cur.execute("""
+    INSERT INTO user_summary (user_id, summary)
+    VALUES (?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET summary=excluded.summary
+    """, (user_id, summary))
+    conn.commit()
+    conn.close()
+
 
 # =========================
 # ヘルパー
@@ -121,24 +206,64 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
 
     await interaction.response.defer(ephemeral=False)
 
+    user_id = interaction.user.id
+
+    # ① 会話を保存
+    save_chat(user_id, message)
+
+    # ② 過去要約を取得
+    summary = get_summary(user_id)
+
+    # ③ 直近3件を取得
+    recent_chats = get_recent_chats(user_id)
+
+    messages = [
+        {"role": "system", "content": ZUNDAMON_SYSTEM},
+    ]
+
+    if summary:
+        messages.append({
+            "role": "system",
+            "content": f"このユーザーの傾向メモ（非公開）:\n{summary}"
+        })
+
+    for m in recent_chats:
+        messages.append({"role": "user", "content": m})
+
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": ZUNDAMON_SYSTEM},
-                {"role": "user", "content": message}
-            ],
+            messages=messages,
             max_tokens=200,
             temperature=0.8
         )
 
         reply = response.choices[0].message.content.strip()
 
-        # 👇 ここがポイント
         await interaction.followup.send(
             f"🗣 **あなた**：{message}\n\n"
             f"🟢 **ずんだもん**：{reply}"
         )
+
+        # ④ 3件たまったら要約
+        if len(recent_chats) >= 3:
+            summary_prompt = [
+                {"role": "system", "content": ZUNDAMON_SYSTEM},
+                {"role": "system", "content": "以下の会話から、この人の話し方や好みを短く要約してください。"},
+            ]
+            for m in recent_chats:
+                summary_prompt.append({"role": "user", "content": m})
+
+            s = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=summary_prompt,
+                max_tokens=150,
+                temperature=0.5
+            )
+
+            new_summary = s.choices[0].message.content.strip()
+            save_summary(user_id, new_summary)
+            clear_chats(user_id)
 
     except Exception as e:
         await interaction.followup.send(
@@ -146,7 +271,6 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         )
         print("AI error:", e)
 
-import random
 
 # =========================
 # /dice（ちんちろ）
@@ -732,6 +856,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
