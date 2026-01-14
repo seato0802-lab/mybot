@@ -288,8 +288,6 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
         if dice == [1, 1, 1]:
             return "🎉 ピンゾロ"
-        if dice == [6, 6, 6]:
-            return "🎉 シゴロ"
         if dice == [1, 2, 3]:
             return "💀 ヒフミ"
         if dice == [4, 5, 6]:
@@ -856,6 +854,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
