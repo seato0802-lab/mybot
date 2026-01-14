@@ -231,12 +231,19 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         messages.append({"role": "user", "content": m})
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            max_tokens=200,
-            temperature=0.8
+        loop = asyncio.get_running_loop()
+
+        response = await loop.run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    max_tokens=200,
+                    temperature=0.8
+            )
         )
+
+
 
         reply = response.choices[0].message.content.strip()
 
@@ -254,11 +261,14 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
             for m in recent_chats:
                 summary_prompt.append({"role": "user", "content": m})
 
-            s = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=summary_prompt,
-                max_tokens=150,
-                temperature=0.5
+            s = await loop.run_in_executor(
+                None,
+                lambda: client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=summary_prompt,
+                        max_tokens=150,
+                        temperature=0.5
+                )
             )
 
             new_summary = s.choices[0].message.content.strip()
@@ -293,7 +303,6 @@ async def chinchiro_cmd(interaction: discord.Interaction):
         if dice == [4, 5, 6]:
             return "🔥 シゴロ"
 
-        # ゾロ目＋1
         if a == b and b != c:
             return f"👉 目：{c}"
         if b == c and a != b:
@@ -301,7 +310,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
         if a == c and b != a:
             return f"👉 目：{b}"
 
-        return None  # 役なし
+        return None
 
     results_text = []
     role = None
@@ -309,8 +318,8 @@ async def chinchiro_cmd(interaction: discord.Interaction):
     for i in range(1, 4):
         dice = roll_dice()
         role = judge(dice)
-
         dice_text = "・".join(map(str, dice))
+
         if role:
             results_text.append(f"{i}回目：🎲 {dice_text} → **{role}**")
             break
@@ -325,27 +334,6 @@ async def chinchiro_cmd(interaction: discord.Interaction):
         + "\n".join(results_text)
         + f"\n\n👉 **最終結果：{role}**"
     )
-
-    # =========================
-    # 表示メッセージ作成
-    # =========================
-    msg = "🎲 **ちんちろ開始なのだ！**\n\n"
-
-    for i, dice, role in results:
-        dice_text = " ".join(str(d) for d in dice)
-        msg += f"【{i}回目】🎲 {dice_text}\n"
-        if role:
-            msg += f"➡️ **{role}**\n"
-            break
-        else:
-            msg += "➡️ 役なし…\n"
-
-    if not role:
-        msg += "\n❌ **目なしなのだ…**"
-
-    # interaction 応答（必須）
-    await interaction.response.send_message(msg)
-
 
 # =========================
 # /join
@@ -854,6 +842,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
