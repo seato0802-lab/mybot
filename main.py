@@ -294,7 +294,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
     BASE_JACKPOT_RATE = 1 / 5000      # 通常ジャックポット確率
     BOOSTED_JACKPOT_RATE = 1 / 500    # 7・7・BAR後の確率UP
-    SEVEN_BAR_RATE = 1 / 2         # 7・7・BARの確率
+    SEVEN_BAR_RATE = 1 / 3000         # 7・7・BARの確率
 
     def roll_dice(turn, jackpot_boost):
         r = random.random()
@@ -876,6 +876,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
