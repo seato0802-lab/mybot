@@ -14,6 +14,8 @@ import io
 import time
 from openai import OpenAI
 import os
+import random
+
 
 # =========================
 # 設定
@@ -842,6 +844,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
