@@ -325,6 +325,8 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
         if nums == [1, 1, 1]:
             return "🎉 ピンゾロ"
+        if a == b == c:
+            return f"🌪 {a}のアラシ"
         if nums == [1, 2, 3]:
             return "💀 ヒフミ"
         if nums == [4, 5, 6]:
@@ -874,6 +876,7 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
 
 
