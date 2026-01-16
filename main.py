@@ -803,12 +803,14 @@ class ShopEntryView(discord.ui.View):
         view.add_item(TitleAssignSelect(options))
         await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
 
-    @discord.ui.button(label="🎁 ログインボーナス", style=discord.ButtonStyle.success, custom_id="shop_daily_btn")
-    async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+   @discord.ui.button(label="🎁 ログインボーナス", style=discord.ButtonStyle.success, custom_id="shop_daily_btn")
+async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+        return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
-        await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+
+    try:
         u = store.get_user(interaction.user.id)
 
         today = datetime.now(JST).date()
@@ -860,6 +862,11 @@ class ShopEntryView(discord.ui.View):
         await interaction.followup.send(msg, ephemeral=True)
 
         await maybe_award_hidden_titles(interaction, u, just_events=set())
+
+    except Exception as e:
+        print("shop daily error:", e)
+        await interaction.followup.send("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）", ephemeral=True)
+
 
     @discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
     async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1707,6 +1714,7 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
         self.balance = balance
 
     async def on_submit(self, interaction: discord.Interaction):
+    try:
         if not is_in_channel(interaction, BJ_CHANNEL_ID):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
@@ -2053,11 +2061,7 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
 
 class BJEndView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)  # ✅ 永続
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # 終了後はセッションが消えるので本人チェックだけ
-        return True
+        super().__init__(timeout=None)
 
     @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary, custom_id="bj_restart_btn")
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2068,8 +2072,6 @@ class BJEndView(discord.ui.View):
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("終了したのだ", ephemeral=True)
 
-    except Exception as e:
-        print("BetModal error:", e)
         try:
             await interaction.response.send_message("掛け金処理でエラーが出たのだ…（ログを確認してほしいのだ）", ephemeral=True)
         except Exception:
@@ -2142,6 +2144,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
