@@ -852,9 +852,8 @@ class ShopEntryView(discord.ui.View):
         options = []
         for rid in sorted(owned):
             role = interaction.guild.get_role(rid)
-            if not role:
-                continue
-            options.append(discord.SelectOption(label=role.name, value=str(rid)))
+            if role:
+                options.append(discord.SelectOption(label=role.name, value=str(rid)))
 
         if not options:
             return await interaction.followup.send("付与できる称号がないのだ", ephemeral=True)
@@ -900,8 +899,9 @@ class ShopEntryView(discord.ui.View):
             fortune, fortune_msg = await ai_fortune_message()
             fortune_gain = FORTUNE_COIN.get(fortune, 0)
 
-            u["coins"] += (streak_gain + fortune_gain)
-            u["total_earned"] += (streak_gain + fortune_gain)
+            gain = streak_gain + fortune_gain
+            u["coins"] += gain
+            u["total_earned"] += gain
 
             if fortune == "大吉":
                 u["daikichi_count"] += 1
@@ -924,13 +924,17 @@ class ShopEntryView(discord.ui.View):
             await maybe_award_hidden_titles(interaction, u, just_events=set())
 
         except Exception as e:
-            print("shop daily error:", e)
+            print("shop daily error:", repr(e))
+            traceback.print_exc()
             await interaction.followup.send("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）", ephemeral=True)
 
     @discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
     async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_in_channel(interaction, SHOP_CHANNEL_ID):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+        u = store.get_user(interaction.user.id)
+        await interaction.response.send_message(f"現在の残高：{u['coins']} コインなのだ", ephemeral=True)
+
 
         u = store.get_user(interaction.user.id)
         await interaction.response.send_message(f"現在の残高：{u['coins']} コインなのだ", ephemeral=True)
@@ -1782,31 +1786,29 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
         self.balance = balance
 
     async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             if not is_in_channel(interaction, BJ_CHANNEL_ID):
-                return await interaction.response.send_message(
-                    "このチャンネルでは使えないのだ",
-                    ephemeral=True
-                )
+                return await interaction.followup.send("このチャンネルでは使えないのだ", ephemeral=True)
 
             u = store.get_user(interaction.user.id)
 
             try:
                 bet_val = int(str(self.bet.value).strip())
             except Exception:
-                return await interaction.response.send_message(
+                return await interaction.followup.send(
                     f"現在の残高：{u['coins']} コイン\n数字を入力するのだ",
                     ephemeral=True
                 )
 
             if bet_val <= 0:
-                return await interaction.response.send_message(
+                return await interaction.followup.send(
                     f"現在の残高：{u['coins']} コイン\n1以上で入力するのだ",
                     ephemeral=True
                 )
 
             if bet_val > u["coins"]:
-                return await interaction.response.send_message(
+                return await interaction.followup.send(
                     f"現在の残高：{u['coins']} コイン\nコインが足りないのだ",
                     ephemeral=True
                 )
@@ -1836,7 +1838,7 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
 
             bj_sessions[interaction.user.id] = session
 
-            await interaction.response.send_message("配札したのだ", ephemeral=True)
+            await interaction.followup.send("配札したのだ", ephemeral=True)
 
             if hand_value(session["dealer"]) == 21:
                 await bj_finish(interaction, u, immediate_dealer_bj=True)
@@ -1850,12 +1852,12 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
             await bj_send_state(interaction, u)
 
         except Exception as e:
-            print("BetModal on_submit error:", e)
-            try:
-                await interaction.response.send_message(
-                    "掛け金処理でエラーが出たのだ…（ログを確認してほしいのだ）",
-                    ephemeral=True
-                )
+            print("BetModal on_submit error:", repr(e))
+            traceback.print_exc()
+            await interaction.followup.send(
+                "掛け金処理でエラーが出たのだ…（Renderログを確認してほしいのだ）",
+                ephemeral=True
+            )
             except Exception:
                 pass
 
@@ -2230,6 +2232,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
