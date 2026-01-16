@@ -939,6 +939,27 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
     except Exception:
         await interaction.followup.send("取り上げに失敗したのだ", ephemeral=True)
 
+@bot.tree.command(name="starter100", description="初回特典で100コインを受け取るのだ（1回のみ）")
+async def starter100_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    u = store.get_user(interaction.user.id)
+    key = "STARTER_100"
+
+    if key in award_keys_set(u):
+        return await interaction.followup.send("もう受け取っているのだ", ephemeral=True)
+
+    u["coins"] += 100
+    u["total_earned"] += 100
+    set_award_key(u, key)
+
+    await sheets_upsert_async(u)
+
+    await interaction.followup.send(
+        f"🎁 初回特典なのだ！\n+100コイン\n\n現在の残高：{u['coins']} コインなのだ",
+        ephemeral=True
+    )
+
 # =========================================================
 # /ai（既存：表示形式そのまま）
 # =========================================================
@@ -1093,12 +1114,9 @@ async def chinchiro_cmd(interaction: discord.Interaction):
     if not role:
         role = "❌ メなし"
 
-    await interaction.followup.send(
-        "🎲 **ちんちろ結果なのだ！**\n"
-        + "\n".join(results_text)
-        + f"\n\n👉 **最終結果：{role}**"
-    )
-
+    # =========================
+    # 結果表示（1回だけ）
+    # =========================
     await interaction.followup.send(
         "🎲 **ちんちろ結果なのだ！**\n"
         + "\n".join(results_text)
@@ -1106,7 +1124,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
     )
 
     # =========================
-    # /dice コイン増減処理
+    # /dice コイン増減処理（消費後に適用）
     # =========================
     delta = 0
 
@@ -1117,11 +1135,15 @@ async def chinchiro_cmd(interaction: discord.Interaction):
         delta = 10
 
     elif role and "のアラシ" in role:
+        # 例: "🌪 3のアラシ"
         try:
-            num = int(role.split("の")[0].replace("🌪", "").strip())
+            # "🌪 3のアラシ" -> "3"
+            left = role.split("の")[0]
+            left = left.replace("🌪", "").strip()
+            num = int(left)
             delta = num * 5
         except Exception:
-            pass
+            delta = 0
 
     elif role == "🎰 ジャックポット！":
         delta = 500
@@ -1139,34 +1161,33 @@ async def chinchiro_cmd(interaction: discord.Interaction):
             else:
                 delta = 5
         except Exception:
-            pass
+            delta = 0
 
     if delta != 0:
         u["coins"] += delta
         if delta > 0:
             u["total_earned"] += delta
 
+    # =========================
+    # 称号・実績トリガー用の記録
+    # =========================
+    just_events = set()
+
+    if final_dice == ["7", "7", "7"]:
+        u["jackpot_count"] += 1
+        just_events.add("JP_EVENT")
+
+    if had_seven_bar and final_dice != ["7", "7", "7"]:
+        just_events.add("BAR_MISS_EVENT")
+
     await sheets_upsert_async(u)
 
+    # 本人だけに称号演出
     try:
-        u = store.get_user(interaction.user.id)
-        just_events = set()
-
-        if final_dice == ["7", "7", "7"]:
-            u["jackpot_count"] += 1
-            just_events.add("JP_EVENT")
-
-        if had_seven_bar and final_dice != ["7", "7", "7"]:
-            just_events.add("BAR_MISS_EVENT")
-
-        await sheets_upsert_async(u)
-
-        # 本人だけに称号演出
         await interaction.followup.send(" ", ephemeral=True)
         await maybe_award_hidden_titles(interaction, u, just_events=just_events)
-
     except Exception as e:
-        print("dice update error:", e)
+        print("dice award error:", e)
 
 # =========================================================
 # /join（既存：表示形式を変えない）
@@ -1976,5 +1997,6 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
