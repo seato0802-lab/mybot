@@ -494,6 +494,111 @@ def calc_login_extra(streak: int) -> int:
 
     return min(b1 + b2, 20)
 
+async def do_login_bonus_with_fortune(interaction: discord.Interaction):
+    try:
+        # まず3秒以内に応答確保
+        await interaction.response.defer(ephemeral=True)
+
+        user_id = interaction.user.id
+        u = store.get_user(user_id)
+
+        # =========================
+        # ここで「今日ログイン済み判定」
+        # =========================
+        today = datetime.now(JST).strftime("%Y-%m-%d")
+        if u.get("last_login_ymd") == today:
+            return await interaction.followup.send("今日はもうログイン済みなのだ", ephemeral=True)
+
+        # =========================
+        # ログイン計算（あなたの確定ルール）
+        # =========================
+        # 通常 +10
+        base = 10
+
+        # streak 更新（前日なら+1、違えば1に戻す）
+        yesterday = (datetime.now(JST) - timedelta(days=1)).strftime("%Y-%m-%d")
+        if u.get("last_login_ymd") == yesterday:
+            u["login_streak"] = int(u.get("login_streak", 0)) + 1
+        else:
+            u["login_streak"] = 1
+
+        u["login_total"] = int(u.get("login_total", 0)) + 1
+        u["last_login_ymd"] = today
+
+        # 連続ボーナス（あなたが確定した仕様）
+        def streak_bonus(streak: int) -> int:
+            # 1週目テーブル（追加分）
+            table = {1: 0, 2: 3, 3: 5, 4: 5, 5: 8, 6: 8, 7: 10}
+            if streak <= 7:
+                return table.get(streak, 0)
+            # 8日以降：最大+20で頭打ち
+            if 8 <= streak <= 14:
+                # 8=10+3 / 9=10+5 / 10=10+8 / 11=10+10 / 12-14=20
+                plus = {8: 13, 9: 15, 10: 18, 11: 20, 12: 20, 13: 20, 14: 20}
+                return plus[streak]
+            return 20
+
+        cont = streak_bonus(u["login_streak"])
+        gain = base + cont
+
+        u["coins"] = int(u.get("coins", 0)) + gain
+        u["total_earned"] = int(u.get("total_earned", 0)) + gain
+
+        # =========================
+        # 占い（例：大吉/中吉/吉/凶/大凶）※ここはあなたの既存ロジックに合わせてOK
+        # =========================
+        fortune_list = [
+            ("大吉", 0.08),
+            ("中吉", 0.17),
+            ("吉",   0.35),
+            ("小吉", 0.25),
+            ("凶",   0.10),
+            ("大凶", 0.05),
+        ]
+        r = random.random()
+        acc = 0.0
+        fortune = "吉"
+        for name, p in fortune_list:
+            acc += p
+            if r < acc:
+                fortune = name
+                break
+
+        # カウント反映
+        if fortune == "大吉":
+            u["daikichi_count"] = int(u.get("daikichi_count", 0)) + 1
+        if fortune == "大凶":
+            u["daikyo_count"] = int(u.get("daikyo_count", 0)) + 1
+
+        # 保存（Sheets + メモリ）
+        await sheets_upsert_async(u)
+
+        # 称号判定（必要なら）
+        try:
+            await maybe_award_hidden_titles(interaction, u, just_events=set())
+        except Exception as e:
+            print("login award error:", e)
+
+        # =========================
+        # ✅ ここが「必ず表示される」メッセージ
+        # =========================
+        await interaction.followup.send(
+            f"✅ ログインボーナスなのだ！\n"
+            f"+{gain} コイン（通常+10 / 連続+{cont}）\n"
+            f"連続ログイン：{u['login_streak']}日\n"
+            f"総ログイン：{u['login_total']}日\n\n"
+            f"🔮 今日の占い：**{fortune}**\n\n"
+            f"現在の残高：{u['coins']} コインなのだ",
+            ephemeral=True
+        )
+
+    except Exception as e:
+        print("login error:", e)
+        try:
+            await interaction.followup.send("ログイン処理でエラーが出たのだ…（ログを確認してほしいのだ）", ephemeral=True)
+        except Exception:
+            pass
+
 # =========================================================
 # 占い（AI）
 # =========================================================
@@ -1997,6 +2102,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
