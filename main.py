@@ -1781,64 +1781,82 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
         self.balance = balance
 
     async def on_submit(self, interaction: discord.Interaction):
-    try:
-        if not is_in_channel(interaction, BJ_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
-
-        u = store.get_user(interaction.user.id)
         try:
-            bet_val = int(str(self.bet.value).strip())
-        except Exception:
-            return await interaction.response.send_message(f"現在の残高：{u['coins']} コイン\n数字を入力するのだ", ephemeral=True)
+            if not is_in_channel(interaction, BJ_CHANNEL_ID):
+                return await interaction.response.send_message(
+                    "このチャンネルでは使えないのだ",
+                    ephemeral=True
+                )
 
-        if bet_val <= 0:
-            return await interaction.response.send_message(f"現在の残高：{u['coins']} コイン\n1以上で入力するのだ", ephemeral=True)
+            u = store.get_user(interaction.user.id)
 
-        if bet_val > u["coins"]:
-            return await interaction.response.send_message(f"現在の残高：{u['coins']} コイン\nコインが足りないのだ", ephemeral=True)
+            try:
+                bet_val = int(str(self.bet.value).strip())
+            except Exception:
+                return await interaction.response.send_message(
+                    f"現在の残高：{u['coins']} コイン\n数字を入力するのだ",
+                    ephemeral=True
+                )
 
-        u["coins"] -= bet_val
-        await sheets_upsert_async(u)
+            if bet_val <= 0:
+                return await interaction.response.send_message(
+                    f"現在の残高：{u['coins']} コイン\n1以上で入力するのだ",
+                    ephemeral=True
+                )
 
-        session = {
-            "deck": new_deck(),
-            "dealer": [],
-            "hands": [[]],
-            "bets": [bet_val],
-            "active": 0,
-            "can_split": False,
-            "finished_hands": [False],
-            "doubled": [False],
-            "was_split": False,          # スプリットしたか
-            "is_natural_bj": [False],    # 初期手札BJ（手ごと）
-        }
+            if bet_val > u["coins"]:
+                return await interaction.response.send_message(
+                    f"現在の残高：{u['coins']} コイン\nコインが足りないのだ",
+                    ephemeral=True
+                )
 
-        deck = session["deck"]
-        session["hands"][0] = [draw_card(deck), draw_card(deck)]
-        session["dealer"] = [draw_card(deck), draw_card(deck)]
+            u["coins"] -= bet_val
+            await sheets_upsert_async(u)
 
-        # スプリット条件：初期手札合計20のみ
-        session["can_split"] = (hand_value(session["hands"][0]) == 20)
+            session = {
+                "deck": new_deck(),
+                "dealer": [],
+                "hands": [[]],
+                "bets": [bet_val],
+                "active": 0,
+                "can_split": False,
+                "finished_hands": [False],
+                "doubled": [False],
+                "was_split": False,
+                "is_natural_bj": [False],
+            }
 
-        # 初期手札ブラックジャック（2枚で21）
-        session["is_natural_bj"][0] = (hand_value(session["hands"][0]) == 21)
+            deck = session["deck"]
+            session["hands"][0] = [draw_card(deck), draw_card(deck)]
+            session["dealer"] = [draw_card(deck), draw_card(deck)]
 
-        bj_sessions[interaction.user.id] = session
+            session["can_split"] = (hand_value(session["hands"][0]) == 20)
+            session["is_natural_bj"][0] = (hand_value(session["hands"][0]) == 21)
 
-        await interaction.response.send_message("配札したのだ", ephemeral=True)
+            bj_sessions[interaction.user.id] = session
 
-        # ディーラーが21なら即終了
-        if hand_value(session["dealer"]) == 21:
-            await bj_finish(interaction, u, immediate_dealer_bj=True)
-            return
+            await interaction.response.send_message("配札したのだ", ephemeral=True)
 
-        # プレイヤーが初期BJなら即スタンド扱い（ディーラーへ）
-        if session["is_natural_bj"][0]:
-            session["finished_hands"][0] = True
-            await bj_dealer_turn(interaction, u)
-            return
+            if hand_value(session["dealer"]) == 21:
+                await bj_finish(interaction, u, immediate_dealer_bj=True)
+                return
 
-        await bj_send_state(interaction, u)
+            if session["is_natural_bj"][0]:
+                session["finished_hands"][0] = True
+                await bj_dealer_turn(interaction, u)
+                return
+
+            await bj_send_state(interaction, u)
+
+        except Exception as e:
+            print("BetModal on_submit error:", e)
+            try:
+                await interaction.response.send_message(
+                    "掛け金処理でエラーが出たのだ…（ログを確認してほしいのだ）",
+                    ephemeral=True
+                )
+            except Exception:
+                pass
 
 class BJActionView(discord.ui.View):
     def __init__(self):
@@ -2211,6 +2229,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
