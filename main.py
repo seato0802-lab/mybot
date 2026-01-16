@@ -1818,7 +1818,7 @@ async def bj_send_state(interaction: discord.Interaction, u: dict):
     if not session:
         return await interaction.followup.send("セッションがないのだ", ephemeral=True)
 
-    view = BJActionView(interaction.user.id)
+    view = BJActionView()
     active = session["active"]
     hand = session["hands"][active]
 
@@ -2044,7 +2044,7 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
 
     await maybe_award_hidden_titles(interaction, u, just_events=just_events)
 
-    view = BJEndView(interaction.user.id)
+    view = BJEndView()
     await interaction.followup.send("次はどうするのだ？", view=view, ephemeral=True)
 
     bj_sessions.pop(interaction.user.id, None)
@@ -2074,13 +2074,11 @@ class BJEndView(discord.ui.View):
 async def on_ready():
     await bot.tree.sync()
 
-    # 永続ボタン（Persistent View）を再登録
+    # ✅ 永続ボタン（Persistent View）を再登録
     bot.add_view(ShopEntryView())
-    bot.add_view(BJEntryView())
-
-    # ▼ もしブラックジャックのプレイ中ボタン(View)が別クラスなら、それも必須
-    # 例：bot.add_view(BlackjackActionView())
-    # 例：bot.add_view(BlackjackBetView())
+    bot.add_view(BjEntryView())     # ← 名前を合わせる
+    bot.add_view(BJActionView())    # ← 追加（BJ中のボタン）
+    bot.add_view(BJEndView())       # ← 追加（最後のボタン）
 
     if not check_tasks.is_running():
         check_tasks.start()
@@ -2125,6 +2123,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
