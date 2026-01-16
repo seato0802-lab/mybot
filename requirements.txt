@@ -1,5 +1,7 @@
 discord.py==2.6.4
 Flask
 openai>=1.0.0
+gspread
+google-auth
 
 
