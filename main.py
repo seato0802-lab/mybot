@@ -803,7 +803,66 @@ class ShopEntryView(discord.ui.View):
         view.add_item(TitleAssignSelect(options))
         await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
 
-   @discord.ui.button(label="🎁 ログインボーナス", style=discord.ButtonStyle.success, custom_id="shop_daily_btn")
+class ShopEntryView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🛒 ショップを開く", style=discord.ButtonStyle.primary, custom_id="shop_open_btn")
+    async def shop_open(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        u = store.get_user(interaction.user.id)
+
+        owned = title_inventory(u)
+        options = []
+        for it in SHOP_ITEMS:
+            rid = it.get("role_id")
+            if not rid:
+                continue
+            if rid in owned:
+                continue
+            options.append(discord.SelectOption(
+                label=f"{it['name']}（{it['price']}）",
+                value=it["key"],
+                description="購入するのだ"
+            ))
+
+        msg = f"🏷️ 称号ショップ\n\n現在の残高：{u['coins']} コイン\n"
+        if not options:
+            msg += "\n購入できる称号はないのだ"
+            return await interaction.followup.send(msg, ephemeral=True)
+
+        view = discord.ui.View(timeout=60)
+        select = ShopBuySelect(options)
+        view.add_item(select)
+        await interaction.followup.send(msg + "\n購入する称号を選ぶのだ", view=view, ephemeral=True)
+
+    @discord.ui.button(label="🎖️ 称号を付与する", style=discord.ButtonStyle.secondary, custom_id="shop_title_assign_btn")
+    async def title_assign(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        u = store.get_user(interaction.user.id)
+        owned = title_inventory(u)
+
+        options = []
+        for rid in sorted(owned):
+            role = interaction.guild.get_role(rid)
+            if not role:
+                continue
+            options.append(discord.SelectOption(label=role.name, value=str(rid)))
+
+        if not options:
+            return await interaction.followup.send("付与できる称号がないのだ", ephemeral=True)
+
+        view = discord.ui.View(timeout=60)
+        view.add_item(TitleAssignSelect(options))
+        await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
+
+    @discord.ui.button(label="🎁 ログインボーナス", style=discord.ButtonStyle.success, custom_id="shop_daily_btn")
     async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_in_channel(interaction, SHOP_CHANNEL_ID):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
@@ -866,6 +925,15 @@ class ShopEntryView(discord.ui.View):
         except Exception as e:
             print("shop daily error:", e)
             await interaction.followup.send("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）", ephemeral=True)
+
+    @discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
+    async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+
+        u = store.get_user(interaction.user.id)
+        await interaction.response.send_message(f"現在の残高：{u['coins']} コインなのだ", ephemeral=True)
+
 
     @discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
     async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2143,6 +2211,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
