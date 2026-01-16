@@ -1707,7 +1707,6 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
         self.balance = balance
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
         if not is_in_channel(interaction, BJ_CHANNEL_ID):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
@@ -2143,6 +2142,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
