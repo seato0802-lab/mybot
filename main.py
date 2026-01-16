@@ -14,6 +14,7 @@ import io
 import time
 import random
 import json
+import traceback
 
 from openai import OpenAI
 
@@ -2229,6 +2230,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
