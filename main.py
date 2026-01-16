@@ -1857,7 +1857,8 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
             await interaction.followup.send(
                 "掛け金処理でエラーが出たのだ…（Renderログを確認してほしいのだ）",
                 ephemeral=True
-
+            )
+                
 class BJActionView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)  # ✅ 永続
@@ -2229,6 +2230,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
