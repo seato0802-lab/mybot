@@ -804,69 +804,68 @@ class ShopEntryView(discord.ui.View):
         await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
 
    @discord.ui.button(label="🎁 ログインボーナス", style=discord.ButtonStyle.success, custom_id="shop_daily_btn")
-async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
-    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-        return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+    async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
-    await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
 
-    try:
-        u = store.get_user(interaction.user.id)
+        try:
+            u = store.get_user(interaction.user.id)
 
-        today = datetime.now(JST).date()
-        last = None
-        if u.get("last_login_ymd"):
-            try:
-                y, m, d = map(int, u["last_login_ymd"].split("-"))
-                last = date(y, m, d)
-            except Exception:
-                last = None
+            today = datetime.now(JST).date()
+            last = None
+            if u.get("last_login_ymd"):
+                try:
+                    y, m, d = map(int, u["last_login_ymd"].split("-"))
+                    last = date(y, m, d)
+                except Exception:
+                    last = None
 
-        if last == today:
-            return await interaction.followup.send("今日はもう受け取っているのだ", ephemeral=True)
+            if last == today:
+                return await interaction.followup.send("今日はもう受け取っているのだ", ephemeral=True)
 
-        if last == (today - timedelta(days=1)):
-            u["login_streak"] += 1
-        else:
-            u["login_streak"] = 1
+            if last == (today - timedelta(days=1)):
+                u["login_streak"] += 1
+            else:
+                u["login_streak"] = 1
 
-        u["login_total"] += 1
-        u["last_login_ymd"] = today.strftime("%Y-%m-%d")
+            u["login_total"] += 1
+            u["last_login_ymd"] = today.strftime("%Y-%m-%d")
 
-        base = 10
-        extra = calc_login_extra(u["login_streak"])
-        streak_gain = base + extra
+            base = 10
+            extra = calc_login_extra(u["login_streak"])
+            streak_gain = base + extra
 
-        fortune, fortune_msg = await ai_fortune_message()
-        fortune_gain = FORTUNE_COIN.get(fortune, 0)
+            fortune, fortune_msg = await ai_fortune_message()
+            fortune_gain = FORTUNE_COIN.get(fortune, 0)
 
-        u["coins"] += (streak_gain + fortune_gain)
-        u["total_earned"] += (streak_gain + fortune_gain)
+            u["coins"] += (streak_gain + fortune_gain)
+            u["total_earned"] += (streak_gain + fortune_gain)
 
-        if fortune == "大吉":
-            u["daikichi_count"] += 1
-        if fortune == "大凶":
-            u["daikyo_count"] += 1
+            if fortune == "大吉":
+                u["daikichi_count"] += 1
+            if fortune == "大凶":
+                u["daikyo_count"] += 1
 
-        await sheets_upsert_async(u)
+            await sheets_upsert_async(u)
 
-        msg = (
-            f"🎁 ログインボーナスなのだ\n\n"
-            f"連続ログイン：{u['login_streak']}日\n"
-            f"+{streak_gain} コイン\n\n"
-            f"🔮 今日の占い：{fortune}\n"
-            f"{fortune_msg}\n"
-            f"+{fortune_gain} コイン\n\n"
-            f"現在の残高：{u['coins']} コイン"
-        )
-        await interaction.followup.send(msg, ephemeral=True)
+            msg = (
+                f"🎁 ログインボーナスなのだ\n\n"
+                f"連続ログイン：{u['login_streak']}日\n"
+                f"+{streak_gain} コイン\n\n"
+                f"🔮 今日の占い：{fortune}\n"
+                f"{fortune_msg}\n"
+                f"+{fortune_gain} コイン\n\n"
+                f"現在の残高：{u['coins']} コイン"
+            )
+            await interaction.followup.send(msg, ephemeral=True)
 
-        await maybe_award_hidden_titles(interaction, u, just_events=set())
+            await maybe_award_hidden_titles(interaction, u, just_events=set())
 
-    except Exception as e:
-        print("shop daily error:", e)
-        await interaction.followup.send("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）", ephemeral=True)
-
+        except Exception as e:
+            print("shop daily error:", e)
+            await interaction.followup.send("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）", ephemeral=True)
 
     @discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
     async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2144,6 +2143,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
