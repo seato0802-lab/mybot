@@ -2065,7 +2065,7 @@ class BJEndView(discord.ui.View):
     @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary, custom_id="bj_quit_btn")
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("終了したのだ", ephemeral=True)
-)
+    )
 
 # =========================================================
 # 起動イベント
@@ -2123,6 +2123,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
