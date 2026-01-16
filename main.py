@@ -611,22 +611,41 @@ async def ai_fortune_message() -> tuple[str, str]:
         weights=[5, 12, 16, 25, 18, 16, 8],
         k=1
     )[0]
-    prompt = [
-        {"role": "system", "content": ZUNDAMON_SYSTEM},
-        {"role": "user", "content": f"今日の占い結果は「{fortune}」なのだ。短めに一言コメントしてほしいのだ。"}
-    ]
-    loop = asyncio.get_running_loop()
-    resp = await loop.run_in_executor(
-        None,
-        lambda: client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=prompt,
-            max_tokens=80,
-            temperature=0.8
+
+    try:
+        prompt = [
+            {"role": "system", "content": ZUNDAMON_SYSTEM},
+            {"role": "user", "content": f"今日の占い結果は「{fortune}」なのだ。短めに一言コメントしてほしいのだ。"}
+        ]
+        loop = asyncio.get_running_loop()
+        resp = await loop.run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=prompt,
+                max_tokens=80,
+                temperature=0.8
+            )
         )
-    )
-    msg = resp.choices[0].message.content.strip()
-    return fortune, msg
+        msg = resp.choices[0].message.content.strip()
+        if not msg:
+            msg = "今日は肩の力を抜くのだよ。"
+        return fortune, msg
+
+    except Exception as e:
+        print("ai_fortune_message error:", e)
+        # ✅ AIが死んでも必ず返す（表示されない事故を防ぐ）
+        fallback = {
+            "大吉": "今日は強気でいくのだ！",
+            "中吉": "いい流れなのだよ。",
+            "小吉": "コツコツが勝つのだ。",
+            "吉":   "安定がいちばんのだ。",
+            "末吉": "焦らずいくのだよ。",
+            "凶":   "慎重に行動するのだ。",
+            "大凶": "今日は守りに徹するのだ…！",
+        }
+        return fortune, fallback.get(fortune, "無理せずいくのだ。")
+
 
 async def maybe_award_hidden_titles(interaction: discord.Interaction, u: dict, just_events: set[str]):
     member = interaction.user
@@ -1745,36 +1764,37 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
         await bj_send_state(interaction, u)
 
 class BJActionView(discord.ui.View):
-    def __init__(self, user_id: int):
-        super().__init__(timeout=120)
-        self.user_id = user_id
+    def __init__(self):
+        super().__init__(timeout=None)  # ✅ 永続
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return interaction.user.id == self.user_id
+        # ✅ セッションが本人のものとして存在する人だけ押せる
+        return interaction.user.id in bj_sessions
 
-    @discord.ui.button(label="ヒット", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="ヒット", style=discord.ButtonStyle.primary, custom_id="bj_hit_btn")
     async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         u = store.get_user(interaction.user.id)
         await bj_hit(interaction, u)
 
-    @discord.ui.button(label="スタンド", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="スタンド", style=discord.ButtonStyle.secondary, custom_id="bj_stand_btn")
     async def stand(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         u = store.get_user(interaction.user.id)
         await bj_stand(interaction, u)
 
-    @discord.ui.button(label="ダブルダウン", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="ダブルダウン", style=discord.ButtonStyle.danger, custom_id="bj_double_btn")
     async def double(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         u = store.get_user(interaction.user.id)
         await bj_double(interaction, u)
 
-    @discord.ui.button(label="スプリット", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="スプリット", style=discord.ButtonStyle.success, custom_id="bj_split_btn")
     async def split(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         u = store.get_user(interaction.user.id)
         await bj_split(interaction, u)
+
 
 def bj_state_text(session: dict) -> str:
     dealer = session["dealer"]
@@ -2030,21 +2050,22 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
     bj_sessions.pop(interaction.user.id, None)
 
 class BJEndView(discord.ui.View):
-    def __init__(self, user_id: int):
-        super().__init__(timeout=120)
-        self.user_id = user_id
+    def __init__(self):
+        super().__init__(timeout=None)  # ✅ 永続
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return interaction.user.id == self.user_id
+        # 終了後はセッションが消えるので本人チェックだけ
+        return True
 
-    @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary, custom_id="bj_restart_btn")
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         u = store.get_user(interaction.user.id)
         await interaction.response.send_modal(BetModal(balance=u["coins"]))
 
-    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary, custom_id="bj_quit_btn")
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("終了したのだ", ephemeral=True)
+)
 
 # =========================================================
 # 起動イベント
@@ -2104,6 +2125,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
