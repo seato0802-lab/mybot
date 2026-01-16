@@ -1946,13 +1946,12 @@ class BJEndView(discord.ui.View):
 # =========================================================
 @bot.event
 async def on_ready():
-    try:
-        await sheets_init_async()
-        print("Sheets connected.")
-    except Exception as e:
-        print("Sheets init error:", e)
-
     await bot.tree.sync()
+
+    # ✅ 永続ボタン（Persistent View）を再登録
+    # ※ ShopEntryView / BJEntryView がこの on_ready より上で定義されている必要があります
+    bot.add_view(ShopEntryView())
+    bot.add_view(BJEntryView())
 
     if not check_tasks.is_running():
         check_tasks.start()
@@ -1960,6 +1959,7 @@ async def on_ready():
         check_join_tasks.start()
 
     print(f"Bot logged in as {bot.user}")
+
 
 # =========================================================
 # Flask Keep Alive
@@ -1997,6 +1997,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
