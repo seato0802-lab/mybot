@@ -1099,6 +1099,51 @@ async def chinchiro_cmd(interaction: discord.Interaction):
         + f"\n\n👉 **最終結果：{role}**"
     )
 
+        # =========================
+        # /dice コイン増減処理
+        # =========================
+        delta = 0
+
+        if role == "🎉 ピンゾロ":
+            delta = 50
+
+        elif role == "🔥 シゴロ":
+            delta = 10
+
+        elif role and "のアラシ" in role:
+            # 例: "🌪 3のアラシ"
+            try:
+                num = int(role.split("の")[0].replace("🌪", "").strip())
+                delta = num * 5
+            except Exception:
+                pass
+
+        elif role == "🎰 ジャックポット！":
+            delta = 1000
+
+        elif role == "💀 ヒフミ":
+            delta = -10
+
+        elif role and role.startswith("👉 目："):
+            try:
+                num = int(role.replace("👉 目：", "").strip())
+                if num <= 2:
+                    delta = 1
+                elif num <= 4:
+                    delta = 3
+                else:
+                    delta = 5
+            except Exception:
+                pass
+
+        # 反映
+        if delta != 0:
+            u["coins"] += delta
+            if delta > 0:
+                u["total_earned"] += delta
+
+        await sheets_upsert_async(u)
+
     try:
         u = store.get_user(interaction.user.id)
         just_events = set()
@@ -1927,3 +1972,4 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
