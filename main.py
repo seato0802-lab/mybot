@@ -494,13 +494,15 @@ def calc_login_extra(streak: int) -> int:
 
     return min(b1 + b2, 20)
 
-async def do_login_bonus_with_fortune(interaction: discord.Interaction):
-    try:
-        # まず3秒以内に応答確保
-        await interaction.response.defer(ephemeral=True)
+@discord.ui.button(label="🎁 ログインボーナス", style=discord.ButtonStyle.success, custom_id="shop_daily_btn")
+async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+        return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
-        user_id = interaction.user.id
-        u = store.get_user(user_id)
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        u = store.get_user(interaction.user.id)
 
         # =========================
         # ここで「今日ログイン済み判定」
@@ -2069,15 +2071,27 @@ class BJEndView(discord.ui.View):
 # =========================================================
 # 起動イベント
 # =========================================================
+STORE_READY = False
+
 @bot.event
 async def on_ready():
+    global STORE_READY
+
+    # ✅ ここを追加（最優先）
+    if not STORE_READY:
+        try:
+            await sheets_init_async()
+            STORE_READY = True
+            print("SheetsStore initialized")
+        except Exception as e:
+            print("SheetsStore init failed:", e)
+
     await bot.tree.sync()
 
-    # ✅ 永続ボタン（Persistent View）を再登録
     bot.add_view(ShopEntryView())
-    bot.add_view(BjEntryView())     # ← 名前を合わせる
-    bot.add_view(BJActionView())    # ← 追加（BJ中のボタン）
-    bot.add_view(BJEndView())       # ← 追加（最後のボタン）
+    bot.add_view(BjEntryView())
+    bot.add_view(BJActionView())
+    bot.add_view(BJEndView())
 
     if not check_tasks.is_running():
         check_tasks.start()
@@ -2122,6 +2136,7 @@ if __name__ == "__main__":
     init_ai_memory_db()
     keep_alive()
     asyncio.run(start())
+
 
 
 
