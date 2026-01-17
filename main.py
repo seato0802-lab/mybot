@@ -2018,10 +2018,9 @@ STORE_READY = False
 
 @bot.event
 async def on_ready():
-    global STORE_READY
-            STORE_READY = False
-            VIEWS_READY = False
-     if not STORE_READY:
+    global STORE_READY, VIEWS_READY
+
+    if not STORE_READY:
         try:
             await sheets_init_async()
             STORE_READY = True
@@ -2029,26 +2028,18 @@ async def on_ready():
         except Exception as e:
             print("SheetsStore init failed:", e)
             traceback.print_exc()
-            # ✅ 初期化失敗のまま動かすのは危険なので終了
-            try:
-                await bot.close()
-            finally:
-                os._exit(1)
+            await bot.close()
+            os._exit(1)
 
-    try:
-        await bot.tree.sync()
-    except Exception as e:
-        print("tree sync failed:", e)
-        traceback.print_exc()
-
-        # 永続View登録（再接続でも重複登録しない）
-    global VIEWS_READY
+    # 永続View登録（1回だけ）
     if not VIEWS_READY:
         bot.add_view(ShopEntryView())
         bot.add_view(BjEntryView())
         bot.add_view(BJActionView())
         bot.add_view(BJEndView())
         VIEWS_READY = True
+
+    await bot.tree.sync()
 
     if not check_tasks.is_running():
         check_tasks.start()
@@ -2095,3 +2086,4 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
