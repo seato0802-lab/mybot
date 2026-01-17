@@ -2014,39 +2014,22 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
 # =========================================================
 # 起動イベント
 # =========================================================
-STORE_READY = False
-
 @bot.event
 async def on_ready():
-    global STORE_READY, VIEWS_READY
-
-    if not STORE_READY:
-        try:
-            await sheets_init_async()
-            STORE_READY = True
-            print("SheetsStore initialized")
-        except Exception as e:
-            print("SheetsStore init failed:", e)
-            traceback.print_exc()
-            await bot.close()
-            os._exit(1)
-
-    # 永続View登録（1回だけ）
-    if not VIEWS_READY:
-        bot.add_view(ShopEntryView())
-        bot.add_view(BjEntryView())
-        bot.add_view(BJActionView())
-        bot.add_view(BJEndView())
-        VIEWS_READY = True
-
     await bot.tree.sync()
+
+    # 永続ボタン（Persistent View）を再登録
+    bot.add_view(ShopEntryView())
+    bot.add_view(BJEntryView())
+
+    # ▼ もしブラックジャックのプレイ中ボタン(View)が別クラスなら、それも必須
+    # 例：bot.add_view(BlackjackActionView())
+    # 例：bot.add_view(BlackjackBetView())
 
     if not check_tasks.is_running():
         check_tasks.start()
     if not check_join_tasks.is_running():
         check_join_tasks.start()
-    if not cleanup_bj_sessions.is_running():
-        cleanup_bj_sessions.start()
 
     print(f"Bot logged in as {bot.user}")
 
@@ -2086,4 +2069,5 @@ async def start():
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(start())
+
 
