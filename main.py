@@ -61,7 +61,7 @@ VIEWS_READY = False
 
 # =========================================================
 # ユーザー単位ロック（コイン/セッションの競合防止）
-#  - 修正: ロック辞書が増え続けないよう LRU + locked 回避で掃除
+#  - ロック辞書が増え続けないよう LRU + locked 回避で掃除
 # =========================================================
 _user_locks: "OrderedDict[int, asyncio.Lock]" = OrderedDict()
 _USER_LOCKS_MAX = 3000  # サーバ規模に応じて調整
@@ -327,12 +327,15 @@ def normalize_spreadsheet_id(s: str) -> str:
     s = s.split("/edit")[0]
     s = s.split("?")[0]
     return s.strip()
+
+
 def _parse_ymd(s: str):
     try:
         y, m, d = map(int, (s or "").split("-"))
         return date(y, m, d)
     except Exception:
         return None
+
 
 def merge_user_rows(base: dict, incoming: dict) -> dict:
     """
@@ -345,22 +348,18 @@ def merge_user_rows(base: dict, incoming: dict) -> dict:
     """
     out = dict(base)
 
-    # coins: 大きい方
     out["coins"] = max(int(base.get("coins", 0) or 0), int(incoming.get("coins", 0) or 0))
 
-    # カウント類: 大きい方（分散していても安全に寄せる）
     for k in [
         "login_streak", "login_total", "daikichi_count", "daikyo_count",
         "bj_play_count", "bj_win_streak", "total_earned", "jackpot_count"
     ]:
         out[k] = max(int(base.get(k, 0) or 0), int(incoming.get(k, 0) or 0))
 
-    # title_role_id: 0じゃない方を優先（incomingが非0ならそっち）
     btr = int(base.get("title_role_id", 0) or 0)
     itr = int(incoming.get("title_role_id", 0) or 0)
     out["title_role_id"] = itr if itr != 0 else btr
 
-    # last_login_ymd: 新しい方
     bd = _parse_ymd(str(base.get("last_login_ymd", "") or ""))
     id_ = _parse_ymd(str(incoming.get("last_login_ymd", "") or ""))
     if bd and id_:
@@ -372,7 +371,6 @@ def merge_user_rows(base: dict, incoming: dict) -> dict:
     else:
         out["last_login_ymd"] = str(base.get("last_login_ymd", "") or "") or str(incoming.get("last_login_ymd", "") or "")
 
-    # CSV集合: union
     def csv_set(v):
         return set([x.strip() for x in str(v or "").split(",") if x.strip()])
 
@@ -383,6 +381,7 @@ def merge_user_rows(base: dict, incoming: dict) -> dict:
     out["award_keys"] = ",".join(sorted(awards)) if awards else ""
 
     return out
+
 
 class SheetsStore:
     """
@@ -404,8 +403,22 @@ class SheetsStore:
         self._uid_to_row: dict[int, int] = {}         # 管理: user_id -> row
         self._uid_to_row_coins: dict[int, int] = {}   # 読み取り用: user_id -> row
 
-        self.ws_coins = None
-        self._uid_to_row_coins: dict[int, int] = {}
+    # ---- 小物 ----
+    @staticmethod
+    def _to_int_maybe(v) -> int:
+        s = str(v or "").strip()
+        if not s:
+            return 0
+        m = re.search(r"\d+", s)
+        return int(m.group(0)) if m else 0
+
+    @staticmethod
+    def _find_col_idx(header: list[str], key: str) -> int | None:
+        key = key.strip().lower()
+        for i, h in enumerate(header):
+            if (h or "").strip().lower() == key:
+                return i
+        return None
 
     def init(self):
         if not GS_SERVICE_ACCOUNT_JSON or not GS_SPREADSHEET_ID:
@@ -453,94 +466,23 @@ class SheetsStore:
         with self._lock:
             header = self.ws_users.row_values(1)
             if not header:
-                self.ws_users.update("A1", [USER_HEADERS])
+                self.ws_users.update(range_name="A1", values=[USER_HEADERS])
                 return
             if header != USER_HEADERS:
                 merged = list(header)
                 for h in USER_HEADERS:
                     if h not in merged:
                         merged.append(h)
-                self.ws_users.update("A1", [merged])
+                self.ws_users.update(range_name="A1", values=[merged])
+
     def _ensure_headers_coins(self):
         with self._lock:
             header = self.ws_coins.row_values(1)
             if not header:
-                self.ws_coins.update("A1", [COINS_HEADERS])
+                self.ws_coins.update(range_name="A1", values=[COINS_HEADERS])
                 return
             if len(header) < 2 or header[0] != "user_id" or header[1] != "coins":
-                self.ws_coins.update("A1", [COINS_HEADERS + header[2:]])
-
-    def _load_coins_and_apply(self):
-        # user_id/coins の列をヘッダ優先で探し、なければA,B固定で読む
-        def _to_int_maybe(v) -> int:
-            s = str(v or "").strip()
-            if not s:
-                return 0
-            m = re.search(r"\d+", s)
-            return int(m.group(0)) if m else 0
-
-        def _find_col_idx(header: list[str], key: str):
-            key = key.strip().lower()
-            for i, h in enumerate(header):
-                if (h or "").strip().lower() == key:
-                    return i
-            return None
-
-        with self._lock:
-            values = self.ws_coins.get_all_values()
-            if not values or len(values) < 2:
-                self._uid_to_row_coins = {}
-                print("[Coins] empty sheet or only header")
-                return
-
-            header = values[0]
-            uid_col = _find_col_idx(header, "user_id")
-            coin_col = _find_col_idx(header, "coins")
-
-            if uid_col is None:
-                uid_col = 0
-            if coin_col is None:
-                coin_col = 1
-
-            uid_to_row = {}
-            coins_map: dict[int, int] = {}
-
-            for row_idx, row in enumerate(values[1:], start=2):
-                if not row:
-                    continue
-                uid = _to_int_maybe(row[uid_col] if uid_col < len(row) else "")
-                if uid <= 0:
-                    continue
-                coins = _to_int_maybe(row[coin_col] if coin_col < len(row) else "")
-                uid_to_row[uid] = row_idx
-                coins_map[uid] = coins
-
-            self._uid_to_row_coins = uid_to_row
-
-            applied = 0
-            for uid, c in coins_map.items():
-                if uid in self.users:
-                    self.users[uid]["coins"] = c
-                else:
-                    self.users[uid] = {
-                        "user_id": uid,
-                        "coins": c,
-                        "title_role_id": 0,
-                        "login_streak": 0,
-                        "login_total": 0,
-                        "daikichi_count": 0,
-                        "daikyo_count": 0,
-                        "bj_play_count": 0,
-                        "bj_win_streak": 0,
-                        "total_earned": 0,
-                        "jackpot_count": 0,
-                        "last_login_ymd": "",
-                        "owned_title_role_ids": "",
-                        "award_keys": "",
-                    }
-                applied += 1
-
-            print(f"[Coins] loaded rows={len(coins_map)} applied={applied} header(uid={uid_col}, coins={coin_col})")
+                self.ws_coins.update(range_name="A1", values=[COINS_HEADERS + header[2:]])
 
     # -----------------------------
     # 設定読み込み
@@ -558,12 +500,12 @@ class SheetsStore:
         with self._lock:
             values = self.ws_config.get_all_values()
             if not values:
-                self.ws_config.update("A1", [["key", "value"]])
+                self.ws_config.update(range_name="A1", values=[["key", "value"]])
                 values = self.ws_config.get_all_values()
 
             for idx, row in enumerate(values[1:], start=2):
                 if len(row) >= 1 and row[0] == key:
-                    self.ws_config.update(f"B{idx}", [[value]])
+                    self.ws_config.update(range_name=f"B{idx}", values=[[value]])
                     self.config[key] = value
                     return
 
@@ -614,7 +556,7 @@ class SheetsStore:
         with self._lock:
             header = self.ws_users.row_values(1)
             if not header:
-                self.ws_users.update("A1", [USER_HEADERS])
+                self.ws_users.update(range_name="A1", values=[USER_HEADERS])
                 header = USER_HEADERS
 
             all_values = self.ws_users.get_all_values()
@@ -657,86 +599,65 @@ class SheetsStore:
     # -----------------------------
     # coins(読み取り用)を読み込み、usersのcoinsを上書き
     # -----------------------------
-def _to_int_maybe(v) -> int:
-    # " '4169..." や "4169  " みたいなのを救う
-    s = str(v or "").strip()
-    if not s:
-        return 0
-    m = re.search(r"\d+", s)
-    return int(m.group(0)) if m else 0
+    def _load_coins_and_apply(self):
+        with self._lock:
+            values = self.ws_coins.get_all_values()
+            if not values or len(values) < 2:
+                self._uid_to_row_coins = {}
+                print("[Coins] empty sheet or only header")
+                return
 
+            header = values[0]
+            uid_col = self._find_col_idx(header, "user_id")
+            coin_col = self._find_col_idx(header, "coins")
 
-def _find_col_idx(header: list[str], key: str) -> int | None:
-    key = key.strip().lower()
-    for i, h in enumerate(header):
-        if (h or "").strip().lower() == key:
-            return i
-    return None
+            if uid_col is None:
+                uid_col = 0
+            if coin_col is None:
+                coin_col = 1
 
+            uid_to_row = {}
+            coins_map: dict[int, int] = {}
 
-def _load_coins_and_apply(self):
-    with self._lock:
-        values = self.ws_coins.get_all_values()
-        if not values or len(values) < 2:
-            self._uid_to_row_coins = {}
-            print("[Coins] empty sheet or only header")
-            return
+            for row_idx, row in enumerate(values[1:], start=2):
+                if not row:
+                    continue
+                uid = self._to_int_maybe(row[uid_col] if uid_col < len(row) else "")
+                if uid <= 0:
+                    continue
+                coins = self._to_int_maybe(row[coin_col] if coin_col < len(row) else "")
+                uid_to_row[uid] = row_idx
+                coins_map[uid] = coins
 
-        header = values[0]
-        uid_col = _find_col_idx(header, "user_id")
-        coin_col = _find_col_idx(header, "coins")
+            self._uid_to_row_coins = uid_to_row
 
-        # ヘッダが期待通りでない場合は先頭2列で読む
-        if uid_col is None:
-            uid_col = 0
-        if coin_col is None:
-            coin_col = 1
+            applied = 0
+            for uid, c in coins_map.items():
+                if uid in self.users:
+                    self.users[uid]["coins"] = c
+                else:
+                    self.users[uid] = {
+                        "user_id": uid,
+                        "coins": c,
+                        "title_role_id": 0,
+                        "login_streak": 0,
+                        "login_total": 0,
+                        "daikichi_count": 0,
+                        "daikyo_count": 0,
+                        "bj_play_count": 0,
+                        "bj_win_streak": 0,
+                        "total_earned": 0,
+                        "jackpot_count": 0,
+                        "last_login_ymd": "",
+                        "owned_title_role_ids": "",
+                        "award_keys": "",
+                    }
+                applied += 1
 
-        uid_to_row = {}
-        coins_map: dict[int, int] = {}
-
-        for row_idx, row in enumerate(values[1:], start=2):
-            if not row:
-                continue
-
-            uid = _to_int_maybe(row[uid_col] if uid_col < len(row) else "")
-            if uid <= 0:
-                continue
-
-            coins = _to_int_maybe(row[coin_col] if coin_col < len(row) else "")
-            uid_to_row[uid] = row_idx
-            coins_map[uid] = coins
-
-        self._uid_to_row_coins = uid_to_row
-
-        applied = 0
-        for uid, c in coins_map.items():
-            if uid in self.users:
-                self.users[uid]["coins"] = c
-            else:
-                # 管理にいない場合は最小生成（称号は管理側で持つ運用）
-                self.users[uid] = {
-                    "user_id": uid,
-                    "coins": c,
-                    "title_role_id": 0,
-                    "login_streak": 0,
-                    "login_total": 0,
-                    "daikichi_count": 0,
-                    "daikyo_count": 0,
-                    "bj_play_count": 0,
-                    "bj_win_streak": 0,
-                    "total_earned": 0,
-                    "jackpot_count": 0,
-                    "last_login_ymd": "",
-                    "owned_title_role_ids": "",
-                    "award_keys": "",
-                }
-            applied += 1
-
-        print(f"[Coins] loaded rows={len(coins_map)} applied={applied} header(uid={uid_col}, coins={coin_col})")
+            print(f"[Coins] loaded rows={len(coins_map)} applied={applied} header(uid={uid_col}, coins={coin_col})")
 
     # -----------------------------
-    # ユーザー取得
+    # ユーザー取得（✅ 今回のエラーの本体：必ずクラス内に存在）
     # -----------------------------
     def get_user(self, uid: int):
         u = self.users.get(uid)
@@ -771,7 +692,7 @@ def _load_coins_and_apply(self):
                 used_rows = len(self.ws_coins.get_all_values())
                 self._uid_to_row_coins[uid] = used_rows
             else:
-                self.ws_coins.update(f"B{idx}", [[coins]])
+                self.ws_coins.update(range_name=f"B{idx}", values=[[coins]])
 
     # -----------------------------
     # 管理(users)に書き込み ＋ coinsにも必ず反映
@@ -780,7 +701,7 @@ def _load_coins_and_apply(self):
         with self._lock:
             header = self.ws_users.row_values(1)
             if not header:
-                self.ws_users.update("A1", [USER_HEADERS])
+                self.ws_users.update(range_name="A1", values=[USER_HEADERS])
                 header = USER_HEADERS
 
             values = [u.get(h, "") for h in header]
@@ -794,12 +715,14 @@ def _load_coins_and_apply(self):
             else:
                 start_a1 = rowcol_to_a1(idx, 1)
                 end_a1 = rowcol_to_a1(idx, len(values))
-                self.ws_users.update(f"{start_a1}:{end_a1}", [values])
+                self.ws_users.update(range_name=f"{start_a1}:{end_a1}", values=[values])
 
         # ✅ coinsは読み取り用が正なので、必ず coinsシートにも同期
         self._upsert_coin(uid, int(u.get("coins", 0) or 0))
 
+
 store = SheetsStore()
+
 
 async def sheets_init_async():
     loop = asyncio.get_running_loop()
@@ -809,7 +732,8 @@ async def sheets_init_async():
 async def sheets_upsert_async(u: dict):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, lambda: store.upsert_user(u))
-    
+
+
 async def sheets_reload_users_async():
     loop = asyncio.get_running_loop()
 
@@ -818,6 +742,7 @@ async def sheets_reload_users_async():
         store._load_coins_and_apply()   # 読み取り用（coins上書き）
 
     await loop.run_in_executor(None, _reload)
+
 
 async def sheets_save_config_once_async(key: str, value: str) -> bool:
     loop = asyncio.get_running_loop()
@@ -1351,7 +1276,6 @@ async def starter100_cmd(interaction: discord.Interaction):
     async with get_user_lock(interaction.user.id):
         u = store.get_user(interaction.user.id)
 
-        # ✅ 一回だけ制限は一旦スルー（チェックしない）
         u["coins"] += 100
         u["total_earned"] += 100
 
@@ -1361,6 +1285,7 @@ async def starter100_cmd(interaction: discord.Interaction):
             f"🎁 特典なのだ！\n+100コイン\n\n現在の残高：{u['coins']} コインなのだ",
             ephemeral=True
         )
+
 
 # =========================================================
 # /ai（既存：表示形式そのまま）
@@ -1423,9 +1348,7 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
 
 
 # =========================================================
-# /dice（ちんちろ：修正）
-#  - 修正: followup送信を1通にまとめて安定化
-#  - 修正: Sheets更新も基本1回にまとめて負荷減
+# /dice（ちんちろ）
 # =========================================================
 @bot.tree.command(name="dice", description="ちんちろを振るのだ")
 async def chinchiro_cmd(interaction: discord.Interaction):
@@ -1692,10 +1615,12 @@ async def jointime_cmd(interaction: discord.Interaction, time_str: str, count: i
         "message_id": msg.id,
     }
 
+
 @bot.tree.command(name="joinf", description="全ての募集を締切なのだ")
 async def joinf_cmd(interaction: discord.Interaction):
     join_tasks.clear()
     await interaction.channel.send("@everyone〆なのだ")
+
 
 @tasks.loop(seconds=30)
 async def check_join_tasks():
@@ -1708,6 +1633,7 @@ async def check_join_tasks():
             if channel:
                 await channel.send(f"{data['place']} 〆なのだ")
             del join_tasks[msg_id]
+
 
 # =========================================================
 # /time /list /reset /resetin（既存：表示形式を変えない）
@@ -1762,6 +1688,7 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
         for n in tasks_data.keys()
         if current.lower() in n.lower()
     ][:25]
+
 
 # =========================================================
 # /craft（既存：表示形式は変えない）
@@ -2483,6 +2410,7 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
     except Exception:
         await interaction.followup.send("取り上げに失敗したのだ", ephemeral=True)
 
+
 @bot.tree.command(name="reload_coins", description="読み取り用シートからコインを再読込するのだ")
 async def reload_coins_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -2496,8 +2424,6 @@ async def reload_coins_cmd(interaction: discord.Interaction):
 
     uid = interaction.user.id
     u = store.get_user(uid)
-
-    # coinsシートに行が見つかっているか（インデックスで判定）
     row = store._uid_to_row_coins.get(uid)
 
     await interaction.followup.send(
@@ -2507,6 +2433,7 @@ async def reload_coins_cmd(interaction: discord.Interaction):
         f"- 現在の残高: {u['coins']} コインなのだ",
         ephemeral=True,
     )
+
 
 # =========================================================
 # 起動イベント
@@ -2573,7 +2500,7 @@ def keep_alive():
 
 
 # =========================================================
-# Bot 起動（✅ 1) bot.run に一本化）
+# Bot 起動（✅ bot.run に一本化）
 # =========================================================
 if __name__ == "__main__":
     init_ai_memory_db()
@@ -2585,8 +2512,6 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
-
-
 
 
 
