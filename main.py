@@ -239,6 +239,8 @@ def _env_int(name: str, default=None):
 GS_SERVICE_ACCOUNT_JSON = os.getenv("GS_SERVICE_ACCOUNT_JSON", "")
 GS_SPREADSHEET_ID = os.getenv("GS_SPREADSHEET_ID", "")
 GS_SHEET_NAME = os.getenv("GS_SHEET_NAME", "管理")
+GS_COINS_SHEET_NAME = os.getenv("GS_COINS_SHEET_NAME", "読み取り用")
+COINS_HEADERS = ["user_id", "coins"]
 
 SHOP_CHANNEL_ID = _env_int("SHOP_CHANNEL_ID")
 BJ_CHANNEL_ID = _env_int("BJ_CHANNEL_ID")
@@ -325,28 +327,82 @@ def normalize_spreadsheet_id(s: str) -> str:
     s = s.split("/edit")[0]
     s = s.split("?")[0]
     return s.strip()
+def _parse_ymd(s: str):
+    try:
+        y, m, d = map(int, (s or "").split("-"))
+        return date(y, m, d)
+    except Exception:
+        return None
 
+def merge_user_rows(base: dict, incoming: dict) -> dict:
+    """
+    同じ user_id の行が複数ある場合に、情報を「安全側」でまとめる。
+    - coins は "大きい方"（足し算すると不正増殖になるため）
+    - 各種カウント類は max
+    - last_login_ymd は新しい日付
+    - title_role_id は非0優先（incomingが非0なら上書き）
+    - owned_title_role_ids / award_keys は和集合（CSV結合）
+    """
+    out = dict(base)
+
+    # coins: 大きい方
+    out["coins"] = max(int(base.get("coins", 0) or 0), int(incoming.get("coins", 0) or 0))
+
+    # カウント類: 大きい方（分散していても安全に寄せる）
+    for k in [
+        "login_streak", "login_total", "daikichi_count", "daikyo_count",
+        "bj_play_count", "bj_win_streak", "total_earned", "jackpot_count"
+    ]:
+        out[k] = max(int(base.get(k, 0) or 0), int(incoming.get(k, 0) or 0))
+
+    # title_role_id: 0じゃない方を優先（incomingが非0ならそっち）
+    btr = int(base.get("title_role_id", 0) or 0)
+    itr = int(incoming.get("title_role_id", 0) or 0)
+    out["title_role_id"] = itr if itr != 0 else btr
+
+    # last_login_ymd: 新しい方
+    bd = _parse_ymd(str(base.get("last_login_ymd", "") or ""))
+    id_ = _parse_ymd(str(incoming.get("last_login_ymd", "") or ""))
+    if bd and id_:
+        out["last_login_ymd"] = (id_ if id_ > bd else bd).strftime("%Y-%m-%d")
+    elif id_:
+        out["last_login_ymd"] = id_.strftime("%Y-%m-%d")
+    elif bd:
+        out["last_login_ymd"] = bd.strftime("%Y-%m-%d")
+    else:
+        out["last_login_ymd"] = str(base.get("last_login_ymd", "") or "") or str(incoming.get("last_login_ymd", "") or "")
+
+    # CSV集合: union
+    def csv_set(v):
+        return set([x.strip() for x in str(v or "").split(",") if x.strip()])
+
+    owned = csv_set(base.get("owned_title_role_ids", "")) | csv_set(incoming.get("owned_title_role_ids", ""))
+    out["owned_title_role_ids"] = ",".join(sorted(owned)) if owned else ""
+
+    awards = csv_set(base.get("award_keys", "")) | csv_set(incoming.get("award_keys", ""))
+    out["award_keys"] = ",".join(sorted(awards)) if awards else ""
+
+    return out
 
 class SheetsStore:
     """
-    gspreadはスレッドセーフ前提ではないので、
-    run_in_executor で呼ばれても同時実行にならないように Lock で直列化する。
-
-    修正:
-      - user_id -> row_index のマップを保持して upsert を O(1) 寄りにする
-      - ✅ Z超えの列でも壊れないA1範囲生成（rowcol_to_a1）
-      - ✅ GS_SPREADSHEET_IDがURLでも動くように正規化
+    - users(管理)シート: coins以外含む全データの正
+    - coins(読み取り用)シート: coinsだけの正（A=user_id, B=coins）
     """
-
     def __init__(self):
         self._lock = Lock()
         self.gc = None
         self.sh = None
-        self.ws_users = None
-        self.ws_config = None
+
+        self.ws_users = None     # 管理
+        self.ws_config = None    # 設定
+        self.ws_coins = None     # 読み取り用
+
         self.users: dict[int, dict] = {}
         self.config: dict[str, str] = {}
-        self._uid_to_row: dict[int, int] = {}  # user_id -> row index(1-based)
+
+        self._uid_to_row: dict[int, int] = {}         # 管理: user_id -> row
+        self._uid_to_row_coins: dict[int, int] = {}   # 読み取り用: user_id -> row
 
     def init(self):
         if not GS_SERVICE_ACCOUNT_JSON or not GS_SPREADSHEET_ID:
@@ -354,8 +410,7 @@ class SheetsStore:
 
         info = json.loads(GS_SERVICE_ACCOUNT_JSON)
         creds = Credentials.from_service_account_info(
-            info,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+            info, scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
         self.gc = gspread.authorize(creds)
 
@@ -364,27 +419,39 @@ class SheetsStore:
             raise RuntimeError("GS_SPREADSHEET_ID が空なのだ（IDかURLを設定するのだ）")
         self.sh = self.gc.open_by_key(sid)
 
+        # --- 管理シート ---
         try:
             self.ws_users = self.sh.worksheet(GS_SHEET_NAME)
         except Exception:
             self.ws_users = self.sh.add_worksheet(title=GS_SHEET_NAME, rows=2000, cols=30)
 
+        # --- 設定シート ---
         try:
             self.ws_config = self.sh.worksheet("設定")
         except Exception:
             self.ws_config = self.sh.add_worksheet(title="設定", rows=200, cols=5)
 
-        self._ensure_headers()
-        self._load_config()
-        self._load_users_and_index()
+        # --- 読み取り用（coins）シート ---
+        try:
+            self.ws_coins = self.sh.worksheet(GS_COINS_SHEET_NAME)
+        except Exception:
+            self.ws_coins = self.sh.add_worksheet(title=GS_COINS_SHEET_NAME, rows=2000, cols=5)
 
-    def _ensure_headers(self):
+        self._ensure_headers_users()
+        self._ensure_headers_coins()
+        self._load_config()
+        self._load_users_and_index()     # 管理を読む
+        self._load_coins_and_apply()     # 読み取り用の coins を上書き適用
+
+    # -----------------------------
+    # ヘッダ保証
+    # -----------------------------
+    def _ensure_headers_users(self):
         with self._lock:
             header = self.ws_users.row_values(1)
             if not header:
                 self.ws_users.update("A1", [USER_HEADERS])
                 return
-
             if header != USER_HEADERS:
                 merged = list(header)
                 for h in USER_HEADERS:
@@ -392,6 +459,19 @@ class SheetsStore:
                         merged.append(h)
                 self.ws_users.update("A1", [merged])
 
+    def _ensure_headers_coins(self):
+        with self._lock:
+            header = self.ws_coins.row_values(1)
+            if not header:
+                self.ws_coins.update("A1", [COINS_HEADERS])
+                return
+            # 先頭2列だけ保証（A=user_id, B=coins）
+            if len(header) < 2 or header[0] != "user_id" or header[1] != "coins":
+                self.ws_coins.update("A1", [COINS_HEADERS + header[2:]])
+
+    # -----------------------------
+    # 設定読み込み
+    # -----------------------------
     def _load_config(self):
         with self._lock:
             values = self.ws_config.get_all_values()
@@ -423,6 +503,9 @@ class SheetsStore:
         self._save_config_kv(key, value)
         return True
 
+    # -----------------------------
+    # 行の正規化
+    # -----------------------------
     def _normalize_user_row(self, uid: int, r: dict):
         def i(name, default=0):
             try:
@@ -451,6 +534,9 @@ class SheetsStore:
             "award_keys": s("award_keys", ""),
         }
 
+    # -----------------------------
+    # 管理(users)の読み込み（重複マージ）
+    # -----------------------------
     def _load_users_and_index(self):
         with self._lock:
             header = self.ws_users.row_values(1)
@@ -458,17 +544,16 @@ class SheetsStore:
                 self.ws_users.update("A1", [USER_HEADERS])
                 header = USER_HEADERS
 
-            all_values = self.ws_users.get_all_values()  # 1行目=ヘッダ
-            users = {}
-            uid_to_row = {}
+            all_values = self.ws_users.get_all_values()
+            users: dict[int, dict] = {}
+            uid_to_row: dict[int, int] = {}
+            duplicates: dict[int, list[int]] = {}
 
             for row_idx, row in enumerate(all_values[1:], start=2):
                 if not row:
                     continue
 
-                r = {}
-                for i, h in enumerate(header):
-                    r[h] = row[i] if i < len(row) else ""
+                r = {h: (row[i] if i < len(row) else "") for i, h in enumerate(header)}
 
                 try:
                     uid = int(r.get("user_id") or 0)
@@ -477,12 +562,82 @@ class SheetsStore:
                 if uid <= 0:
                     continue
 
-                users[uid] = self._normalize_user_row(uid, r)
-                uid_to_row[uid] = row_idx
+                incoming = self._normalize_user_row(uid, r)
+
+                if uid not in users:
+                    users[uid] = incoming
+                    uid_to_row[uid] = row_idx
+                else:
+                    users[uid] = merge_user_rows(users[uid], incoming)
+                    duplicates.setdefault(uid, []).append(row_idx)
 
             self.users = users
             self._uid_to_row = uid_to_row
 
+            if duplicates:
+                total_dup_rows = sum(len(v) for v in duplicates.values())
+                sample = list(duplicates.items())[:10]
+                print(f"[Sheets] duplicate user_id detected: users={len(duplicates)} dup_rows={total_dup_rows}")
+                for uid, rows in sample:
+                    print(f"[Sheets]  uid={uid} duplicate_rows={rows} (kept_row={uid_to_row.get(uid)})")
+
+    # -----------------------------
+    # coins(読み取り用)を読み込み、usersのcoinsを上書き
+    # -----------------------------
+    def _load_coins_and_apply(self):
+        with self._lock:
+            all_values = self.ws_coins.get_all_values()
+            if not all_values or len(all_values) < 2:
+                self._uid_to_row_coins = {}
+                return
+
+            uid_to_row = {}
+            coins_map: dict[int, int] = {}
+
+            for row_idx, row in enumerate(all_values[1:], start=2):
+                if not row:
+                    continue
+                try:
+                    uid = int((row[0] if len(row) > 0 else "") or 0)
+                except Exception:
+                    continue
+                if uid <= 0:
+                    continue
+                try:
+                    c = int((row[1] if len(row) > 1 else "") or 0)
+                except Exception:
+                    c = 0
+
+                uid_to_row[uid] = row_idx
+                coins_map[uid] = c
+
+            self._uid_to_row_coins = uid_to_row
+
+            for uid, c in coins_map.items():
+                if uid in self.users:
+                    self.users[uid]["coins"] = c
+                else:
+                    # 管理にいなくても coins に居る → 最小ユーザーを作る（称号等は0/空）
+                    self.users[uid] = {
+                        "user_id": uid,
+                        "coins": c,
+                        "title_role_id": 0,
+                        "login_streak": 0,
+                        "login_total": 0,
+                        "daikichi_count": 0,
+                        "daikyo_count": 0,
+                        "bj_play_count": 0,
+                        "bj_win_streak": 0,
+                        "total_earned": 0,
+                        "jackpot_count": 0,
+                        "last_login_ymd": "",
+                        "owned_title_role_ids": "",
+                        "award_keys": "",
+                    }
+
+    # -----------------------------
+    # ユーザー取得
+    # -----------------------------
     def get_user(self, uid: int):
         u = self.users.get(uid)
         if not u:
@@ -505,6 +660,22 @@ class SheetsStore:
             self.users[uid] = u
         return u
 
+    # -----------------------------
+    # coinsシートへの書き込み（B列だけ更新）
+    # -----------------------------
+    def _upsert_coin(self, uid: int, coins: int):
+        with self._lock:
+            idx = self._uid_to_row_coins.get(uid)
+            if idx is None:
+                self.ws_coins.append_row([uid, coins])
+                used_rows = len(self.ws_coins.get_all_values())
+                self._uid_to_row_coins[uid] = used_rows
+            else:
+                self.ws_coins.update(f"B{idx}", [[coins]])
+
+    # -----------------------------
+    # 管理(users)に書き込み ＋ coinsにも必ず反映
+    # -----------------------------
     def upsert_user(self, u: dict):
         with self._lock:
             header = self.ws_users.row_values(1)
@@ -521,14 +692,14 @@ class SheetsStore:
                 used_rows = len(self.ws_users.get_all_values())
                 self._uid_to_row[uid] = used_rows
             else:
-                # ✅ Z超え対応のA1記法で範囲を作る
                 start_a1 = rowcol_to_a1(idx, 1)
                 end_a1 = rowcol_to_a1(idx, len(values))
                 self.ws_users.update(f"{start_a1}:{end_a1}", [values])
 
+        # ✅ coinsは読み取り用が正なので、必ず coinsシートにも同期
+        self._upsert_coin(uid, int(u.get("coins", 0) or 0))
 
 store = SheetsStore()
-
 
 async def sheets_init_async():
     loop = asyncio.get_running_loop()
@@ -538,7 +709,14 @@ async def sheets_init_async():
 async def sheets_upsert_async(u: dict):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, lambda: store.upsert_user(u))
+async def sheets_reload_users_async():
+    loop = asyncio.get_running_loop()
 
+    def _reload():
+        store._load_users_and_index()
+        store._load_coins_and_apply()
+
+    await loop.run_in_executor(None, _reload)
 
 async def sheets_save_config_once_async(key: str, value: str) -> bool:
     loop = asyncio.get_running_loop()
@@ -1066,25 +1244,22 @@ async def setup_shop_cmd(interaction: discord.Interaction):
     await interaction.followup.send("ショップ入口を設置したのだ", ephemeral=True)
 
 
-@bot.tree.command(name="starter100", description="初回特典で100コインを受け取るのだ（1回のみ）")
+@bot.tree.command(name="starter100", description="初回特典で100コインを受け取るのだ（※一旦制限なし）")
 async def starter100_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     async with get_user_lock(interaction.user.id):
         u = store.get_user(interaction.user.id)
-        key = "STARTER_100"
-        if key in award_keys_set(u):
-            return await interaction.followup.send("もう受け取っているのだ", ephemeral=True)
 
+        # ✅ 一回だけ制限は一旦スルー（チェックしない）
         u["coins"] += 100
         u["total_earned"] += 100
-        set_award_key(u, key)
+
         await sheets_upsert_async(u)
 
         await interaction.followup.send(
-            f"🎁 初回特典なのだ！\n+100コイン\n\n現在の残高：{u['coins']} コインなのだ",
-            ephemeral=True,
+            f"🎁 特典なのだ！\n+100コイン\n\n現在の残高：{u['coins']} コインなのだ",
+            ephemeral=True
         )
-
 
 # =========================================================
 # /ai（既存：表示形式そのまま）
@@ -1416,12 +1591,10 @@ async def jointime_cmd(interaction: discord.Interaction, time_str: str, count: i
         "message_id": msg.id,
     }
 
-
 @bot.tree.command(name="joinf", description="全ての募集を締切なのだ")
 async def joinf_cmd(interaction: discord.Interaction):
     join_tasks.clear()
     await interaction.channel.send("@everyone〆なのだ")
-
 
 @tasks.loop(seconds=30)
 async def check_join_tasks():
@@ -1434,7 +1607,6 @@ async def check_join_tasks():
             if channel:
                 await channel.send(f"{data['place']} 〆なのだ")
             del join_tasks[msg_id]
-
 
 # =========================================================
 # /time /list /reset /resetin（既存：表示形式を変えない）
@@ -1489,7 +1661,6 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
         for n in tasks_data.keys()
         if current.lower() in n.lower()
     ][:25]
-
 
 # =========================================================
 # /craft（既存：表示形式は変えない）
@@ -2211,6 +2382,26 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
     except Exception:
         await interaction.followup.send("取り上げに失敗したのだ", ephemeral=True)
 
+@bot.tree.command(name="reload_coins", description="コインを読み取り用シートから再読込するのだ")
+async def reload_coins_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        await sheets_reload_users_async()
+    except Exception as e:
+        print("[reload_coins] error:", e)
+        traceback.print_exc()
+        return await interaction.followup.send(
+            "読み込みに失敗したのだ…（Renderログを確認してほしいのだ）",
+            ephemeral=True,
+        )
+
+    u = store.get_user(interaction.user.id)
+    await interaction.followup.send(
+        f"✅ 読み取り用シートから再読込したのだ\n現在の残高：{u['coins']} コインなのだ",
+        ephemeral=True,
+    )
+
 
 # =========================================================
 # 起動イベント
@@ -2289,4 +2480,5 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
