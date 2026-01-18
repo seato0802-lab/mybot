@@ -1,31 +1,30 @@
 import os
-import asyncio
-import math
-import time
-import random
-import json
 import io
+import re
 import csv
+import json
+import time
+import math
+import random
+import asyncio
 import sqlite3
 import traceback
-import re
 from datetime import datetime, timedelta, timezone, date
 from threading import Thread, Lock
 from collections import OrderedDict
 
+import aiohttp
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-
 from flask import Flask
-
-import aiohttp
 from openai import OpenAI
 
 # Google Sheets
 import gspread
 from gspread.utils import rowcol_to_a1
 from google.oauth2.service_account import Credentials
+
 
 # =========================================================
 # 設定
@@ -35,17 +34,23 @@ JST = timezone(timedelta(hours=9))
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True  # /setup_shop の初期配布などで members を触るのでON推奨
-bot = commands.Bot(command_prefix="!", intents=intents)
 
+bot = commands.Bot(command_prefix="!", intents=intents)
 client = OpenAI()
 
-# 既存
 tasks_data: dict[str, dict] = {}
 join_tasks: dict[int, dict] = {}
 
 PLACE_LIST = [
-    "パシフィック", "オイルリグ", "アーティファクト", "飛行場", "客船",
-    "ユニオン", "パレト", "ボブキャット", "市長の工場"
+    "パシフィック",
+    "オイルリグ",
+    "アーティファクト",
+    "飛行場",
+    "客船",
+    "ユニオン",
+    "パレト",
+    "ボブキャット",
+    "市長の工場",
 ]
 
 # =========================================================
@@ -60,6 +65,7 @@ VIEWS_READY = False
 # =========================================================
 _user_locks: "OrderedDict[int, asyncio.Lock]" = OrderedDict()
 _USER_LOCKS_MAX = 3000  # サーバ規模に応じて調整
+
 
 def get_user_lock(uid: int) -> asyncio.Lock:
     lock = _user_locks.get(uid)
@@ -83,11 +89,21 @@ def get_user_lock(uid: int) -> asyncio.Lock:
                 removed += 1
     return lock
 
+
 # ---------------------------------------------------------
 # /craft 用（既存のまま）
 # ---------------------------------------------------------
-TOOL_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=0&single=true&output=csv"
-WEAPON_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=793378898&single=true&output=csv"
+TOOL_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/"
+    "pub?gid=0&single=true&output=csv"
+)
+WEAPON_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/"
+    "pub?gid=793378898&single=true&output=csv"
+)
+
 
 async def fetch_csv(url: str):
     # ✅ Unclosed client session 対策（例外でも確実にcloseされる）
@@ -99,7 +115,9 @@ async def fetch_csv(url: str):
     reader = csv.DictReader(f)
     return [row for row in reader]
 
+
 CSV_CACHE = {"道具": [], "武器": [], "timestamp": 0}
+
 
 async def get_csv(category: str):
     now = time.time()
@@ -112,6 +130,7 @@ async def get_csv(category: str):
         CSV_CACHE["timestamp"] = now
     return sheet
 
+
 # =========================================================
 # ずんだもんシステムプロンプト
 # =========================================================
@@ -121,43 +140,57 @@ ZUNDAMON_SYSTEM = """
 JSON形式では返さず、必ず普通の文章だけで返答してください。
 """.strip()
 
+
 # =========================================================
 # 既存：AIメモリ(SQLite)
 # =========================================================
 def init_ai_memory_db():
     conn = sqlite3.connect("ai_memory.db")
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_summary (
             user_id INTEGER PRIMARY KEY,
             summary TEXT
         )
-    """)
-    cur.execute("""
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS chat_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             message TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+        """
+    )
     conn.commit()
     conn.close()
+
 
 def save_chat(user_id: int, message: str):
     conn = sqlite3.connect("ai_memory.db")
     cur = conn.cursor()
-    cur.execute("INSERT INTO chat_log (user_id, message) VALUES (?, ?)", (user_id, message))
+    cur.execute(
+        "INSERT INTO chat_log (user_id, message) VALUES (?, ?)",
+        (user_id, message),
+    )
     conn.commit()
     conn.close()
+
 
 def get_recent_chats(user_id: int, limit=3):
     conn = sqlite3.connect("ai_memory.db")
     cur = conn.cursor()
-    cur.execute("SELECT message FROM chat_log WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit))
+    cur.execute(
+        "SELECT message FROM chat_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, limit),
+    )
     rows = cur.fetchall()
     conn.close()
     return [r[0] for r in reversed(rows)]
+
 
 def clear_chats(user_id: int):
     conn = sqlite3.connect("ai_memory.db")
@@ -165,6 +198,7 @@ def clear_chats(user_id: int):
     cur.execute("DELETE FROM chat_log WHERE user_id=?", (user_id,))
     conn.commit()
     conn.close()
+
 
 def get_summary(user_id: int):
     conn = sqlite3.connect("ai_memory.db")
@@ -174,15 +208,20 @@ def get_summary(user_id: int):
     conn.close()
     return row[0] if row else ""
 
+
 def save_summary(user_id: int, summary: str):
     conn = sqlite3.connect("ai_memory.db")
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO user_summary (user_id, summary) VALUES (?, ?)
         ON CONFLICT(user_id) DO UPDATE SET summary=excluded.summary
-    """, (user_id, summary))
+        """,
+        (user_id, summary),
+    )
     conn.commit()
     conn.close()
+
 
 # =========================================================
 # Google Sheets 永続ストア
@@ -196,6 +235,7 @@ def _env_int(name: str, default=None):
     except Exception:
         return default
 
+
 GS_SERVICE_ACCOUNT_JSON = os.getenv("GS_SERVICE_ACCOUNT_JSON", "")
 GS_SPREADSHEET_ID = os.getenv("GS_SPREADSHEET_ID", "")
 GS_SHEET_NAME = os.getenv("GS_SHEET_NAME", "管理")
@@ -203,10 +243,11 @@ GS_SHEET_NAME = os.getenv("GS_SHEET_NAME", "管理")
 SHOP_CHANNEL_ID = _env_int("SHOP_CHANNEL_ID")
 BJ_CHANNEL_ID = _env_int("BJ_CHANNEL_ID")
 ADMIN_CHANNEL_ID = _env_int("ADMIN_CHANNEL_ID")
-SEATO_USER_ID = _env_int("SEATO_USER_ID")
+
 
 def _role_env(name: str):
     return _env_int(name)
+
 
 TITLE_ROLE_1000 = _role_env("TITLE_ROLE_1000")
 TITLE_ROLE_5000 = _role_env("TITLE_ROLE_5000")
@@ -230,17 +271,25 @@ SHOP_ITEMS = [
     {"key": "title_5000", "name": "🌿 ずんだ常連", "price": 5000, "role_id": TITLE_ROLE_5000},
     {"key": "title_10000", "name": "🧠 ずんだの策士", "price": 10000, "role_id": TITLE_ROLE_10000},
     {"key": "title_100000", "name": "👑 ずんだの伝説", "price": 100000, "role_id": TITLE_ROLE_100000},
-# ✅ item（保存はしない。コインだけ消費。通知だけ飛ばす）
-    {"key": "ticket_1", "type": "item", "name": "🎫ヘビーアーマー50枚", "price": 50, "amount": 1},
-    {"key": "ticket_2", "type": "item", "name": "🎫武器1本（アタッチメントは交換時好きなの１個づつ）", "price": 100, "amount": 1},
-    {"key": "ticket_3", "type": "item", "name": "🎫5.56弾2000発", "price": 50 , "amount": 1},
 ]
 
 MANAGED_TITLE_ROLES = set(
-    rid for rid in [
-        TITLE_ROLE_1000, TITLE_ROLE_5000, TITLE_ROLE_10000, TITLE_ROLE_100000,
-        ROLE_DAIKICHI_10, ROLE_DAIKYO_10, ROLE_JP_FIRST, ROLE_JP_MULTI, ROLE_BAR_MISS,
-        ROLE_BJ_FIRSTWIN, ROLE_BJ_3STREAK, ROLE_BJ_BIGWIN, ROLE_BJ_BIGLOSE, ROLE_BJ_100PLAY
+    rid
+    for rid in [
+        TITLE_ROLE_1000,
+        TITLE_ROLE_5000,
+        TITLE_ROLE_10000,
+        TITLE_ROLE_100000,
+        ROLE_DAIKICHI_10,
+        ROLE_DAIKYO_10,
+        ROLE_JP_FIRST,
+        ROLE_JP_MULTI,
+        ROLE_BAR_MISS,
+        ROLE_BJ_FIRSTWIN,
+        ROLE_BJ_3STREAK,
+        ROLE_BJ_BIGWIN,
+        ROLE_BJ_BIGLOSE,
+        ROLE_BJ_100PLAY,
     ]
     if isinstance(rid, int) and rid > 0
 )
@@ -262,6 +311,7 @@ USER_HEADERS = [
     "award_keys",
 ]
 
+
 def normalize_spreadsheet_id(s: str) -> str:
     # ✅ URLでもIDでも受ける（/edit?usp=sharing 等が混ざっても吸収）
     if not s:
@@ -276,6 +326,7 @@ def normalize_spreadsheet_id(s: str) -> str:
     s = s.split("?")[0]
     return s.strip()
 
+
 class SheetsStore:
     """
     gspreadはスレッドセーフ前提ではないので、
@@ -286,6 +337,7 @@ class SheetsStore:
       - ✅ Z超えの列でも壊れないA1範囲生成（rowcol_to_a1）
       - ✅ GS_SPREADSHEET_IDがURLでも動くように正規化
     """
+
     def __init__(self):
         self._lock = Lock()
         self.gc = None
@@ -303,7 +355,7 @@ class SheetsStore:
         info = json.loads(GS_SERVICE_ACCOUNT_JSON)
         creds = Credentials.from_service_account_info(
             info,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
         )
         self.gc = gspread.authorize(creds)
 
@@ -312,23 +364,15 @@ class SheetsStore:
             raise RuntimeError("GS_SPREADSHEET_ID が空なのだ（IDかURLを設定するのだ）")
         self.sh = self.gc.open_by_key(sid)
 
-        # ✅ タブが見つからないときに「空タブを勝手に作らない」
-        # （これをやると別タブ参照→0保存事故が起きる）
         try:
             self.ws_users = self.sh.worksheet(GS_SHEET_NAME)
-        except gspread.WorksheetNotFound:
-            titles = [w.title for w in self.sh.worksheets()]
-            raise RuntimeError(
-                f"Users worksheet not found: '{GS_SHEET_NAME}'. Available tabs={titles}"
-            )
+        except Exception:
+            self.ws_users = self.sh.add_worksheet(title=GS_SHEET_NAME, rows=2000, cols=30)
 
         try:
             self.ws_config = self.sh.worksheet("設定")
-        except gspread.WorksheetNotFound:
-            titles = [w.title for w in self.sh.worksheets()]
-            raise RuntimeError(
-                f"Config worksheet not found: '設定'. Available tabs={titles}"
-            )
+        except Exception:
+            self.ws_config = self.sh.add_worksheet(title="設定", rows=200, cols=5)
 
         self._ensure_headers()
         self._load_config()
@@ -440,29 +484,25 @@ class SheetsStore:
             self._uid_to_row = uid_to_row
 
     def get_user(self, uid: int):
-        # 既存ユーザーがいれば返す
         u = self.users.get(uid)
-        if u:
-            return u
-
-        # ✅ 読み込んだシートに行が無い＝新規ユーザーとして作成（0上書き事故は別で防ぐ）
-        u = {
-            "user_id": uid,
-            "coins": 0,
-            "title_role_id": 0,
-            "login_streak": 0,
-            "login_total": 0,
-            "daikichi_count": 0,
-            "daikyo_count": 0,
-            "bj_play_count": 0,
-            "bj_win_streak": 0,
-            "total_earned": 0,
-            "jackpot_count": 0,
-            "last_login_ymd": "",
-            "owned_title_role_ids": "",
-            "award_keys": "",
-        }
-        self.users[uid] = u
+        if not u:
+            u = {
+                "user_id": uid,
+                "coins": 0,
+                "title_role_id": 0,
+                "login_streak": 0,
+                "login_total": 0,
+                "daikichi_count": 0,
+                "daikyo_count": 0,
+                "bj_play_count": 0,
+                "bj_win_streak": 0,
+                "total_earned": 0,
+                "jackpot_count": 0,
+                "last_login_ymd": "",
+                "owned_title_role_ids": "",
+                "award_keys": "",
+            }
+            self.users[uid] = u
         return u
 
     def upsert_user(self, u: dict):
@@ -486,77 +526,24 @@ class SheetsStore:
                 end_a1 = rowcol_to_a1(idx, len(values))
                 self.ws_users.update(f"{start_a1}:{end_a1}", [values])
 
+
 store = SheetsStore()
+
 
 async def sheets_init_async():
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, store.init)
 
+
 async def sheets_upsert_async(u: dict):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, lambda: store.upsert_user(u))
+
 
 async def sheets_save_config_once_async(key: str, value: str) -> bool:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, lambda: store.save_config_once(key, value))
 
-_store_init_lock = asyncio.Lock()
-
-async def ensure_store_ready():
-    global STORE_READY
-    if STORE_READY:
-        return
-    async with _store_init_lock:
-        if STORE_READY:
-            return
-        await sheets_init_async()
-        STORE_READY = True
-        print("[Sheets] ready in setup_hook. users=", len(store.users))
-
-async def setup_hook_impl():
-    # ✅ Botがreadyになる前に必ずSheetsを読む
-    try:
-        await ensure_store_ready()
-    except Exception as e:
-        print("SheetsStore init failed in setup_hook:", e)
-        traceback.print_exc()
-        try:
-            await bot.close()
-        finally:
-            os._exit(1)
-
-bot.setup_hook = setup_hook_impl
-
-async def notify_seato_item_purchase(
-    guild: discord.Guild | None,
-    buyer: discord.abc.User,
-    item_name: str,
-    price: int,
-    amount: int = 1,
-):
-    if not SEATO_USER_ID:
-        return
-    try:
-        member = None
-        if guild is not None:
-            member = guild.get_member(SEATO_USER_ID)
-            if member is None:
-                member = await guild.fetch_member(SEATO_USER_ID)
-
-        if member is None:
-            member = await bot.fetch_user(SEATO_USER_ID)
-
-        await member.send(
-            "🛒 **ショップ購入通知（item）**\n"
-            f"購入者：{getattr(buyer, 'display_name', str(buyer))}（{buyer.id}）\n"
-            f"商品：{item_name} ×{amount}\n"
-            f"消費：{price} コイン"
-        )
-    except discord.Forbidden:
-        print("[notify_seato_item_purchase] Forbidden: cannot DM seato")
-    except Exception as e:
-        print("[notify_seato_item_purchase] error:", e)
-        traceback.print_exc()
 
 # =========================================================
 # 権限＆チャンネルチェック
@@ -567,6 +554,7 @@ def is_admin_user(interaction: discord.Interaction) -> bool:
     except Exception:
         return False
 
+
 def is_in_channel(interaction: discord.Interaction, channel_id):
     if channel_id is None:
         return True
@@ -574,6 +562,7 @@ def is_in_channel(interaction: discord.Interaction, channel_id):
         return interaction.channel_id == channel_id
     except Exception:
         return True
+
 
 # =========================================================
 # コイン・称号ユーティリティ
@@ -592,24 +581,30 @@ def parse_ids_csv(s: str) -> set[int]:
             pass
     return out
 
+
 def ids_to_csv(ids: set[int]) -> str:
     return ",".join(str(i) for i in sorted(ids))
 
+
 def award_keys_set(u: dict) -> set[str]:
     return set([x.strip() for x in (u.get("award_keys") or "").split(",") if x.strip()])
+
 
 def set_award_key(u: dict, key: str):
     ks = award_keys_set(u)
     ks.add(key)
     u["award_keys"] = ",".join(sorted(ks))
 
+
 def title_inventory(u: dict) -> set[int]:
     return parse_ids_csv(u.get("owned_title_role_ids", ""))
+
 
 def add_title_to_inventory(u: dict, role_id: int):
     inv = title_inventory(u)
     inv.add(role_id)
     u["owned_title_role_ids"] = ids_to_csv(inv)
+
 
 async def remove_managed_titles(member: discord.Member):
     to_remove = [r for r in member.roles if r.id in MANAGED_TITLE_ROLES]
@@ -619,11 +614,13 @@ async def remove_managed_titles(member: discord.Member):
         except Exception:
             pass
 
+
 async def apply_title_role(member: discord.Member, role_id: int):
     await remove_managed_titles(member)
     role = member.guild.get_role(role_id)
     if role:
         await member.add_roles(role, reason="Bot称号付与")
+
 
 def calc_login_extra(streak: int) -> int:
     s = max(1, streak)
@@ -652,22 +649,27 @@ def calc_login_extra(streak: int) -> int:
             b2 = 10
     return min(b1 + b2, 20)
 
+
 # =========================================================
 # 占い（AI）
 # =========================================================
 FORTUNE_CHOICES = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"]
 FORTUNE_COIN = {"大吉": 10, "中吉": 6, "小吉": 4, "吉": 3, "末吉": 2, "凶": 1, "大凶": 0}
 
+
 async def ai_fortune_message() -> tuple[str, str]:
     fortune = random.choices(
         population=FORTUNE_CHOICES,
         weights=[5, 12, 16, 25, 18, 16, 8],
-        k=1
+        k=1,
     )[0]
     try:
         prompt = [
             {"role": "system", "content": ZUNDAMON_SYSTEM},
-            {"role": "user", "content": f"今日の占い結果は「{fortune}」なのだ。短めに一言コメントしてほしいのだ。"}
+            {
+                "role": "user",
+                "content": f"今日の占い結果は「{fortune}」なのだ。短めに一言コメントしてほしいのだ。",
+            },
         ]
         loop = asyncio.get_running_loop()
         resp = await loop.run_in_executor(
@@ -676,8 +678,8 @@ async def ai_fortune_message() -> tuple[str, str]:
                 model="gpt-4o-mini",
                 messages=prompt,
                 max_tokens=80,
-                temperature=0.8
-            )
+                temperature=0.8,
+            ),
         )
         msg = (resp.choices[0].message.content or "").strip()
         if not msg:
@@ -697,7 +699,10 @@ async def ai_fortune_message() -> tuple[str, str]:
     }
     return fortune, fallback.get(fortune, "無理せずいくのだ。")
 
-async def maybe_award_hidden_titles(interaction: discord.Interaction, u: dict, just_events: set[str]):
+
+async def maybe_award_hidden_titles(
+    interaction: discord.Interaction, u: dict, just_events: set[str]
+):
     member = interaction.user
     if not isinstance(member, discord.Member):
         try:
@@ -724,159 +729,130 @@ async def maybe_award_hidden_titles(interaction: discord.Interaction, u: dict, j
         await award_once(
             "AWARD_DAIKICHI_10",
             ROLE_DAIKICHI_10,
-            "🎉🎉🎉\n✨【偉業達成】✨\n\nあなたは「大吉」を10回引いたのだ！\n特別ロール\n🌱「ずんだの加護を受けし者」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【偉業達成】✨\n\nあなたは「大吉」を10回引いたのだ！\n特別ロール\n🌱「ずんだの加護を受けし者」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
     if u["daikyo_count"] >= 10:
         await award_once(
             "AWARD_DAIKYO_10",
             ROLE_DAIKYO_10,
-            "🎉🎉🎉\n✨【逆境の証】✨\n\nあなたは「大凶」を10回も引いたのだ…\nここまで来ると才能なのだよ！\n💀「ずんだに試されし者」\nを獲得したのだ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【逆境の証】✨\n\nあなたは「大凶」を10回も引いたのだ…\nここまで来ると才能なのだよ！\n💀「ずんだに試されし者」\nを獲得したのだ！\n🎉🎉🎉",
         )
 
     if u["jackpot_count"] >= 1:
         await award_once(
             "AWARD_JP_FIRST",
             ROLE_JP_FIRST,
-            "🎉🎉🎉\n✨【奇跡の瞬間】✨\n\n/diceでジャックポットを\n初めて引き当てたのだ！\n🎰「ずんだの寵愛を受けし者」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【奇跡の瞬間】✨\n\n/diceでジャックポットを\n初めて引き当てたのだ！\n🎰「ずんだの寵愛を受けし者」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
     if u["jackpot_count"] >= 3:
         await award_once(
             "AWARD_JP_MULTI_3",
             ROLE_JP_MULTI,
-            "🎉🎉🎉\n✨【常識外れ】✨\n\nあなたはジャックポットを\n何度も引き当てたのだ…！\nこれはもう偶然じゃないのだ！\n🎰🎰「ずんだに選ばれし者」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【常識外れ】✨\n\nあなたはジャックポットを\n何度も引き当てたのだ…！\nこれはもう偶然じゃないのだ！\n🎰🎰「ずんだに選ばれし者」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
     if "BAR_MISS_EVENT" in just_events:
         await award_once(
             "AWARD_BAR_MISS",
             ROLE_BAR_MISS,
-            "🎉🎉🎉\n✨【惜敗の極み】✨\n\n7・7・BARの後、\n期待を背負って外したのだ…！\n🍀「ずんだに弄ばれし者」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【惜敗の極み】✨\n\n7・7・BARの後、\n期待を背負って外したのだ…！\n🍀「ずんだに弄ばれし者」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
     if u["bj_win_streak"] >= 1 and "BJ_WIN_EVENT" in just_events:
         await award_once(
             "AWARD_BJ_FIRSTWIN",
             ROLE_BJ_FIRSTWIN,
-            "🎉🎉🎉\n✨【初勝利】✨\n\nブラックジャックで\n初めて勝利したのだ！\n🎴「ずんだの勝負師見習い」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【初勝利】✨\n\nブラックジャックで\n初めて勝利したのだ！\n🎴「ずんだの勝負師見習い」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
     if u["bj_win_streak"] >= 3:
         await award_once(
             "AWARD_BJ_3STREAK",
             ROLE_BJ_3STREAK,
-            "🎉🎉🎉\n✨【波に乗れ】✨\n\nブラックジャックで\n3連勝を達成したのだ！\n🔥「ずんだの勝負師」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【波に乗れ】✨\n\nブラックジャックで\n3連勝を達成したのだ！\n🔥「ずんだの勝負師」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
     if u["bj_play_count"] >= 100:
         await award_once(
             "AWARD_BJ_100PLAY",
             ROLE_BJ_100PLAY,
-            "🎉🎉🎉\n✨【熟練の域】✨\n\nブラックジャックを\n100回以上プレイしたのだ！\n🃏「ずんだのブラックジャック職人」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【熟練の域】✨\n\nブラックジャックを\n100回以上プレイしたのだ！\n🃏「ずんだのブラックジャック職人」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
     if "BJ_BIGWIN_EVENT" in just_events:
         await award_once(
             "AWARD_BJ_BIGWIN",
             ROLE_BJ_BIGWIN,
-            "🎉🎉🎉\n✨【一攫千金】✨\n\nブラックジャックで\n1回の勝負で\n1,000コイン以上を\n獲得したのだ！\n💎「ずんだの大勝負師」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【一攫千金】✨\n\nブラックジャックで\n1回の勝負で\n1,000コイン以上を\n獲得したのだ！\n💎「ずんだの大勝負師」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
     if "BJ_BIGLOSE_EVENT" in just_events:
         await award_once(
             "AWARD_BJ_BIGLOSE",
             ROLE_BJ_BIGLOSE,
-            "🎉🎉🎉\n✨【破滅への道】✨\n\nブラックジャックで\n一度に1,000コイン以上\n失ったのだ……\n💀「ずんだの破滅王」\nを獲得したのだよ！\n🎉🎉🎉"
+            "🎉🎉🎉\n✨【破滅への道】✨\n\nブラックジャックで\n一度に1,000コイン以上\n失ったのだ……\n💀「ずんだの破滅王」\nを獲得したのだよ！\n🎉🎉🎉",
         )
+
 
 # =========================================================
 # 入口メッセージ（ショップ・BJ）
 # =========================================================
 class ShopBuySelect(discord.ui.Select):
     def __init__(self, options: list[discord.SelectOption]):
-        super().__init__(placeholder="購入する商品を選ぶのだ", min_values=1, max_values=1, options=options)
+        super().__init__(
+            placeholder="購入する称号を選ぶのだ",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-
         async with get_user_lock(interaction.user.id):
             u = store.get_user(interaction.user.id)
 
             key = self.values[0]
-            it = next((x for x in SHOP_ITEMS if x.get("key") == key), None)
-            if not it:
+            item = next((x for x in SHOP_ITEMS if x["key"] == key), None)
+            if not item or not item.get("role_id"):
                 return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
 
-            typ = it.get("type", "role")
-            price = int(it.get("price", 0) or 0)
+            rid = item["role_id"]
+            price = item["price"]
+            owned = title_inventory(u)
 
-            # --- role の購入済みチェック ---
-            if typ == "role":
-                rid = it.get("role_id")
-                if not rid:
-                    return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
-                if rid in title_inventory(u):
-                    return await interaction.followup.send("それはもう購入済みなのだ", ephemeral=True)
-
-            elif typ == "item":
-                # item は保存しない。購入済みチェックなし（何度でも買える）
-                pass
-            else:
-                return await interaction.followup.send("未対応の商品タイプなのだ", ephemeral=True)
+            if rid in owned:
+                return await interaction.followup.send("それはもう購入済みなのだ", ephemeral=True)
 
             if u["coins"] < price:
                 return await interaction.followup.send("コインが足りないのだ", ephemeral=True)
 
-            # --- 購入確定（共通：コイン消費） ---
             u["coins"] -= price
+            add_title_to_inventory(u, rid)
+            u["title_role_id"] = rid
 
-            # role：従来通り（通知なし）
-            if typ == "role":
-                rid = it["role_id"]
-                add_title_to_inventory(u, rid)
-                u["title_role_id"] = rid
+            member = interaction.user
+            if not isinstance(member, discord.Member):
+                member = await interaction.guild.fetch_member(interaction.user.id)
 
-                member = interaction.user
-                if not isinstance(member, discord.Member):
-                    member = await interaction.guild.fetch_member(interaction.user.id)
+            await apply_title_role(member, rid)
+            await sheets_upsert_async(u)
 
-                await apply_title_role(member, rid)
-                await sheets_upsert_async(u)
+            await interaction.followup.send(
+                f"🎉 {item['name']} を購入したのだ！\n残高：{u['coins']} コインなのだ",
+                ephemeral=True,
+            )
 
-                return await interaction.followup.send(
-                    f"🎉 {it.get('name','称号')} を購入したのだ！\n残高：{u['coins']} コインなのだ",
-                    ephemeral=True
-                )
-
-            # item：保存なし。コインだけ保存 → _seato 通知
-            if typ == "item":
-                amount = int(it.get("amount", 1) or 1)
-
-                await sheets_upsert_async(u)
-
-                # ✅ item購入時だけ _seato にDM通知
-                try:
-                    await notify_seato_item_purchase(
-                        interaction.guild,
-                        interaction.user,
-                        item_name=str(it.get("name", "（不明）")),
-                        price=price,
-                        amount=amount,
-                    )
-                except Exception:
-                    pass
-
-                return await interaction.followup.send(
-                    f"🛒 {it.get('name','アイテム')} を購入したのだ！\n"
-                    f"（外部で付与されるのだ）\n"
-                    f"残高：{u['coins']} コインなのだ",
-                    ephemeral=True
-                )
 
 class TitleAssignSelect(discord.ui.Select):
     def __init__(self, options: list[discord.SelectOption]):
-        super().__init__(placeholder="付与する称号を選ぶのだ", min_values=1, max_values=1, options=options)
+        super().__init__(
+            placeholder="付与する称号を選ぶのだ",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -897,73 +873,166 @@ class TitleAssignSelect(discord.ui.Select):
         await sheets_upsert_async(u)
 
         role = interaction.guild.get_role(rid)
-        await interaction.followup.send(f"🎖️ {role.name if role else '称号'} を付与したのだ", ephemeral=True)
+        await interaction.followup.send(
+            f"🎖️ {role.name if role else '称号'} を付与したのだ",
+            ephemeral=True,
+        )
+
 
 class ShopEntryView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🛒 ショップを開く", style=discord.ButtonStyle.primary, custom_id="shop_open_btn")
+    @discord.ui.button(
+        label="🛒 ショップを開く",
+        style=discord.ButtonStyle.primary,
+        custom_id="shop_open_btn",
+    )
     async def shop_open(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_in_channel(interaction, SHOP_CHANNEL_ID):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
+        u = store.get_user(interaction.user.id)
+        owned = title_inventory(u)
 
-        # 🔒 ユーザー取得はここだけ
-        async with get_user_lock(interaction.user.id):
-            u = store.get_user(interaction.user.id)
-            if interaction.user.id not in store._uid_to_row:
-                await sheets_upsert_async(u)
-
-        owned_roles = title_inventory(u)
-        balance = int(u.get("coins", 0))
-
-        lines = []
+        options = []
         for it in SHOP_ITEMS:
-            name = it.get("name", "（名称なし）")
-            price = int(it.get("price", 0) or 0)
-            typ = it.get("type", "role")
+            rid = it.get("role_id")
+            if not rid:
+                continue
+            if rid in owned:
+                continue
+            options.append(
+                discord.SelectOption(
+                    label=f"{it['name']}（{it['price']}）",
+                    value=it["key"],
+                    description="購入するのだ",
+                )
+            )
 
-            if typ == "role":
-                rid = it.get("role_id")
-                if not rid:
-                    status = "⚠️ 未設定"
-                elif rid in owned_roles:
-                    status = "✅ 所持"
-                elif balance >= price:
-                    status = "🛒 購入可能"
-                else:
-                    status = f"🔒 不足（あと{price - balance}）"
-            else:
-                status = "🛒 購入可能" if balance >= price else f"🔒 不足（あと{price - balance}）"
+        msg = f"🏷️ 称号ショップ\n\n現在の残高：{u['coins']} コイン\n"
+        if not options:
+            msg += "\n購入できる称号はないのだ"
+            return await interaction.followup.send(msg, ephemeral=True)
 
-            lines.append(f"{status}  {name} — {price}コイン")
+        view = discord.ui.View(timeout=60)
+        view.add_item(ShopBuySelect(options))
+        await interaction.followup.send(msg + "\n購入する称号を選ぶのだ", view=view, ephemeral=True)
 
-        msg = (
-            f"🏷️ **ショップ**\n\n"
-            f"現在の残高：**{balance}** コイン\n\n"
-            f"**商品一覧**\n" + "\n".join(lines)
-        )
-
-        await interaction.followup.send(msg, ephemeral=True)
-
-    @discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
-    async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="🎖️ 称号を付与する",
+        style=discord.ButtonStyle.secondary,
+        custom_id="shop_title_assign_btn",
+    )
+    async def title_assign(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_in_channel(interaction, SHOP_CHANNEL_ID):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
+        u = store.get_user(interaction.user.id)
+        owned = title_inventory(u)
 
-        async with get_user_lock(interaction.user.id):
-            u = store.get_user(interaction.user.id)
-            if interaction.user.id not in store._uid_to_row:
+        options = []
+        for rid in sorted(owned):
+            role = interaction.guild.get_role(rid)
+            if not role:
+                continue
+            options.append(discord.SelectOption(label=role.name, value=str(rid)))
+
+        if not options:
+            return await interaction.followup.send("付与できる称号がないのだ", ephemeral=True)
+
+        view = discord.ui.View(timeout=60)
+        view.add_item(TitleAssignSelect(options))
+        await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
+
+    @discord.ui.button(
+        label="🎁 ログインボーナス",
+        style=discord.ButtonStyle.success,
+        custom_id="shop_daily_btn",
+    )
+    async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            async with get_user_lock(interaction.user.id):
+                u = store.get_user(interaction.user.id)
+
+                today = datetime.now(JST).date()
+                last = None
+                if u.get("last_login_ymd"):
+                    try:
+                        y, m, d = map(int, u["last_login_ymd"].split("-"))
+                        last = date(y, m, d)
+                    except Exception:
+                        last = None
+
+                if last == today:
+                    return await interaction.followup.send("今日はもう受け取っているのだ", ephemeral=True)
+
+                if last == (today - timedelta(days=1)):
+                    u["login_streak"] += 1
+                else:
+                    u["login_streak"] = 1
+
+                u["login_total"] += 1
+                u["last_login_ymd"] = today.strftime("%Y-%m-%d")
+
+                base = 10
+                extra = calc_login_extra(u["login_streak"])
+                streak_gain = base + extra
+
+                fortune, fortune_msg = await ai_fortune_message()
+                fortune_gain = FORTUNE_COIN.get(fortune, 0)
+
+                total_gain = streak_gain + fortune_gain
+                u["coins"] += total_gain
+                u["total_earned"] += total_gain
+
+                if fortune == "大吉":
+                    u["daikichi_count"] += 1
+                if fortune == "大凶":
+                    u["daikyo_count"] += 1
+
                 await sheets_upsert_async(u)
 
-        await interaction.followup.send(
-            f"現在の残高：{int(u.get('coins', 0))} コインなのだ",
-            ephemeral=True
+                msg = (
+                    "🎁 ログインボーナスなのだ\n\n"
+                    f"連続ログイン：{u['login_streak']}日\n"
+                    f"+{streak_gain} コイン（通常+10 / 連続+{extra}）\n\n"
+                    f"🔮 今日の占い：{fortune}\n"
+                    f"{fortune_msg}\n"
+                    f"+{fortune_gain} コイン\n\n"
+                    f"現在の残高：{u['coins']} コインなのだ"
+                )
+                await interaction.followup.send(msg, ephemeral=True)
+
+            await maybe_award_hidden_titles(interaction, u, just_events=set())
+        except Exception as e:
+            print("shop daily error:", e)
+            traceback.print_exc()
+            await interaction.followup.send(
+                "ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）",
+                ephemeral=True,
+            )
+
+    @discord.ui.button(
+        label="💰 残高",
+        style=discord.ButtonStyle.secondary,
+        custom_id="shop_balance_btn",
+    )
+    async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+        u = store.get_user(interaction.user.id)
+        await interaction.response.send_message(
+            f"現在の残高：{u['coins']} コインなのだ",
+            ephemeral=True,
         )
+
 
 # =========================================================
 # /setup_shop と /setup_bj （最初の1回のみ）
@@ -973,7 +1042,10 @@ async def setup_shop_cmd(interaction: discord.Interaction):
     if not is_admin_user(interaction):
         return await interaction.response.send_message("権限がないのだ", ephemeral=True)
     if SHOP_CHANNEL_ID and interaction.channel_id != SHOP_CHANNEL_ID:
-        return await interaction.response.send_message("指定のショップチャンネルで実行するのだ", ephemeral=True)
+        return await interaction.response.send_message(
+            "指定のショップチャンネルで実行するのだ",
+            ephemeral=True,
+        )
 
     await interaction.response.defer(ephemeral=True)
 
@@ -993,6 +1065,7 @@ async def setup_shop_cmd(interaction: discord.Interaction):
 
     await interaction.followup.send("ショップ入口を設置したのだ", ephemeral=True)
 
+
 @bot.tree.command(name="starter100", description="初回特典で100コインを受け取るのだ（1回のみ）")
 async def starter100_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1009,8 +1082,9 @@ async def starter100_cmd(interaction: discord.Interaction):
 
         await interaction.followup.send(
             f"🎁 初回特典なのだ！\n+100コイン\n\n現在の残高：{u['coins']} コインなのだ",
-            ephemeral=True
+            ephemeral=True,
         )
+
 
 # =========================================================
 # /ai（既存：表示形式そのまま）
@@ -1039,8 +1113,8 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
                 model="gpt-4o-mini",
                 messages=messages,
                 max_tokens=200,
-                temperature=0.8
-            )
+                temperature=0.8,
+            ),
         )
         reply = (response.choices[0].message.content or "").strip()
         await interaction.followup.send(f"🗣 **あなた**：{message}\n\n🟢 **ずんだもん**：{reply}")
@@ -1059,8 +1133,8 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
                     model="gpt-4o-mini",
                     messages=summary_prompt,
                     max_tokens=150,
-                    temperature=0.5
-                )
+                    temperature=0.5,
+                ),
             )
             new_summary = (s.choices[0].message.content or "").strip()
             save_summary(user_id, new_summary)
@@ -1070,6 +1144,7 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         await interaction.followup.send("ごめんなのだ…今はうまく答えられないのだ 💦")
         print("AI error:", e)
         traceback.print_exc()
+
 
 # =========================================================
 # /dice（ちんちろ：修正）
@@ -1083,9 +1158,9 @@ async def chinchiro_cmd(interaction: discord.Interaction):
     DICE_COST = 5
 
     def roll_dice(turn: int, jackpot_boost: bool):
-        BASE_JACKPOT_RATE = 1 / 1000
-        BOOSTED_JACKPOT_RATE = 1 / 10
-        SEVEN_BAR_RATE = 1 / 500
+        BASE_JACKPOT_RATE = 1 / 5000
+        BOOSTED_JACKPOT_RATE = 1 / 500
+        SEVEN_BAR_RATE = 1 / 3000
 
         r = random.random()
         jackpot_rate = BOOSTED_JACKPOT_RATE if jackpot_boost else BASE_JACKPOT_RATE
@@ -1159,7 +1234,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
         delta = 0
         if role == "🎉 ピンゾロ":
-            delta = 50
+            delta = 30
         elif role == "🔥 シゴロ":
             delta = 10
         elif role and "のアラシ" in role:
@@ -1218,13 +1293,19 @@ async def chinchiro_cmd(interaction: discord.Interaction):
         print("dice award error:", e)
         traceback.print_exc()
 
+
 # =========================================================
 # /join（既存：表示形式を変えない）
 # =========================================================
 @bot.tree.command(name="join", description="参加募集をするのだ")
 @app_commands.describe(place="場所", time_str="締切時間（HH:MM）※0で時間なし", count="募集人数")
 @app_commands.choices(place=[app_commands.Choice(name=p, value=p) for p in PLACE_LIST])
-async def join_cmd(interaction: discord.Interaction, place: app_commands.Choice[str], time_str: str, count: int):
+async def join_cmd(
+    interaction: discord.Interaction,
+    place: app_commands.Choice[str],
+    time_str: str,
+    count: int,
+):
     now = datetime.now(JST)
 
     if time_str == "0":
@@ -1234,7 +1315,10 @@ async def join_cmd(interaction: discord.Interaction, place: app_commands.Choice[
         try:
             hour, minute = map(int, time_str.split(":"))
         except ValueError:
-            return await interaction.response.send_message("時間は HH:MM 形式、または 0 を入力するのだ", ephemeral=True)
+            return await interaction.response.send_message(
+                "時間は HH:MM 形式、または 0 を入力するのだ",
+                ephemeral=True,
+            )
 
         target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if target_time <= now:
@@ -1255,7 +1339,7 @@ async def join_cmd(interaction: discord.Interaction, place: app_commands.Choice[
         "count": count,
         "members": set(),
         "channel": interaction.channel.id,
-        "message_id": msg.id
+        "message_id": msg.id,
     }
 
     remove_targets = []
@@ -1265,6 +1349,7 @@ async def join_cmd(interaction: discord.Interaction, place: app_commands.Choice[
             remove_targets.append(name)
     for name in remove_targets:
         del tasks_data[name]
+
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
@@ -1286,13 +1371,17 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         await channel.send(f"{data['place']} 〆なのだ")
         del join_tasks[payload.message_id]
 
+
 @bot.tree.command(name="jointime", description="締切なし募集に時間と人数を設定して再募集するのだ")
 @app_commands.describe(time_str="締切時間（HH:MM）", count="募集人数")
 async def jointime_cmd(interaction: discord.Interaction, time_str: str, count: int):
     try:
         hour, minute = map(int, time_str.split(":"))
     except ValueError:
-        return await interaction.response.send_message("時間は HH:MM 形式で入力するのだ", ephemeral=True)
+        return await interaction.response.send_message(
+            "時間は HH:MM 形式で入力するのだ",
+            ephemeral=True,
+        )
 
     now = datetime.now(JST)
     target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -1324,13 +1413,15 @@ async def jointime_cmd(interaction: discord.Interaction, time_str: str, count: i
         "count": count,
         "members": set(),
         "channel": interaction.channel.id,
-        "message_id": msg.id
+        "message_id": msg.id,
     }
+
 
 @bot.tree.command(name="joinf", description="全ての募集を締切なのだ")
 async def joinf_cmd(interaction: discord.Interaction):
     join_tasks.clear()
     await interaction.channel.send("@everyone〆なのだ")
+
 
 @tasks.loop(seconds=30)
 async def check_join_tasks():
@@ -1343,6 +1434,7 @@ async def check_join_tasks():
             if channel:
                 await channel.send(f"{data['place']} 〆なのだ")
             del join_tasks[msg_id]
+
 
 # =========================================================
 # /time /list /reset /resetin（既存：表示形式を変えない）
@@ -1359,8 +1451,9 @@ async def time_cmd(interaction: discord.Interaction, name: app_commands.Choice[s
     tasks_data[name.value] = {"time": target_time, "channel": interaction.channel.id}
     await interaction.response.send_message(
         f"{name.value} は {target_time.strftime('%H時%M分')} に受注開始なのだ。",
-        ephemeral=False
+        ephemeral=False,
     )
+
 
 @bot.tree.command(name="list", description="現在登録されているタスクを一覧表示するのだ")
 async def list_cmd(interaction: discord.Interaction):
@@ -1373,10 +1466,12 @@ async def list_cmd(interaction: discord.Interaction):
         msg += f"・**{name}**：{time_str}\n"
     await interaction.response.send_message(msg, ephemeral=False)
 
+
 @bot.tree.command(name="reset", description="登録されている全てのタスクを消すのだ")
 async def reset_cmd(interaction: discord.Interaction):
     tasks_data.clear()
     await interaction.response.send_message("すべてのタスクを消したのだ", ephemeral=False)
+
 
 @bot.tree.command(name="resetin", description="特定のタスクを選択して消すのだ")
 @app_commands.describe(name="削除するタスク名を入力するのだ")
@@ -1386,6 +1481,7 @@ async def resetin_cmd(interaction: discord.Interaction, name: str):
     del tasks_data[name]
     await interaction.response.send_message(f"**{name}** を消したのだ", ephemeral=False)
 
+
 @resetin_cmd.autocomplete("name")
 async def autocomplete_name(interaction: discord.Interaction, current: str):
     return [
@@ -1394,13 +1490,20 @@ async def autocomplete_name(interaction: discord.Interaction, current: str):
         if current.lower() in n.lower()
     ][:25]
 
+
 # =========================================================
 # /craft（既存：表示形式は変えない）
 # =========================================================
 @bot.tree.command(name="craft", description="必要素材を計算して表示するのだ")
 @app_commands.describe(category="道具 or 武器", type="種別を選択", item="作りたいアイテム", count="作る個数")
 @app_commands.choices(category=[app_commands.Choice(name="道具", value="道具"), app_commands.Choice(name="武器", value="武器")])
-async def craft_cmd(interaction: discord.Interaction, category: app_commands.Choice[str], type: str, item: str, count: int):
+async def craft_cmd(
+    interaction: discord.Interaction,
+    category: app_commands.Choice[str],
+    type: str,
+    item: str,
+    count: int,
+):
     await interaction.response.defer(ephemeral=True)
     sheet = await get_csv(category.value)
     if not sheet:
@@ -1420,7 +1523,14 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
     if not name_col:
         return await interaction.followup.send("シートに '名前' 列が見つかりません")
 
-    target_row = next((row for row in sheet if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()), None)
+    target_row = next(
+        (
+            row
+            for row in sheet
+            if (row.get(name_col) or "").replace("\u3000", "").strip() == (item or "").strip()
+        ),
+        None,
+    )
     if not target_row:
         return await interaction.followup.send("そのアイテムはシートにありません")
 
@@ -1446,6 +1556,7 @@ async def craft_cmd(interaction: discord.Interaction, category: app_commands.Cho
 
     await interaction.followup.send(msg)
 
+
 @craft_cmd.autocomplete("type")
 async def autocomplete_type(interaction: discord.Interaction, current: str):
     def find_option(data, name):
@@ -1470,6 +1581,7 @@ async def autocomplete_type(interaction: discord.Interaction, current: str):
 
     filtered = [t for t in types if current.lower() in t.lower()][:25]
     return [app_commands.Choice(name=t, value=t) for t in filtered]
+
 
 @craft_cmd.autocomplete("item")
 async def autocomplete_item(interaction: discord.Interaction, current: str):
@@ -1535,6 +1647,7 @@ async def autocomplete_item(interaction: discord.Interaction, current: str):
     candidates = candidates[:25]
     return [app_commands.Choice(name=n, value=n) for n in candidates]
 
+
 # =========================================================
 # 通知タスク（既存）
 # =========================================================
@@ -1552,21 +1665,25 @@ async def check_tasks():
     for name in remove_list:
         del tasks_data[name]
 
+
 # =========================================================
 # ブラックジャック
 # =========================================================
 SUITS = ["♠", "♥", "♦", "♣"]
 RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 
+
 def new_deck() -> list[tuple[str, str]]:
     deck = [(r, s) for s in SUITS for r in RANKS]
     random.shuffle(deck)
     return deck
 
+
 def draw_card(deck: list[tuple[str, str]]) -> tuple[str, str]:
     if not deck:
         deck.extend(new_deck())
     return deck.pop()
+
 
 def hand_value(cards: list[tuple[str, str]]) -> int:
     vals = []
@@ -1585,16 +1702,20 @@ def hand_value(cards: list[tuple[str, str]]) -> int:
             total += 10
     return total
 
+
 def fmt_cards(cards: list[tuple[str, str]]) -> str:
     return " ".join([f"{s}{r}" for r, s in cards])
 
+
 bj_sessions: dict[int, dict] = {}
 BJ_SESSION_TIMEOUT_SEC = 20 * 60
+
 
 def touch_bj_session(uid: int):
     s = bj_sessions.get(uid)
     if s:
         s["last_action_ts"] = time.time()
+
 
 @tasks.loop(minutes=2)
 async def cleanup_bj_sessions():
@@ -1620,6 +1741,7 @@ async def cleanup_bj_sessions():
             print("cleanup_bj_sessions error:", e)
             traceback.print_exc()
 
+
 class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
     bet = discord.ui.TextInput(label="掛け金（数字）", placeholder="例：100", required=True)
 
@@ -1639,19 +1761,19 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
                 except Exception:
                     return await interaction.response.send_message(
                         f"現在の残高：{u['coins']} コイン\n数字を入力するのだ",
-                        ephemeral=True
+                        ephemeral=True,
                     )
 
                 if bet_val <= 0:
                     return await interaction.response.send_message(
                         f"現在の残高：{u['coins']} コイン\n1以上で入力するのだ",
-                        ephemeral=True
+                        ephemeral=True,
                     )
 
                 if bet_val > u["coins"]:
                     return await interaction.response.send_message(
                         f"現在の残高：{u['coins']} コイン\nコインが足りないのだ",
-                        ephemeral=True
+                        ephemeral=True,
                     )
 
                 u["coins"] -= bet_val
@@ -1693,9 +1815,13 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
             print("BetModal on_submit error:", e)
             traceback.print_exc()
             try:
-                await interaction.response.send_message("掛け金処理でエラーが出たのだ…（ログを確認してほしいのだ）", ephemeral=True)
+                await interaction.response.send_message(
+                    "掛け金処理でエラーが出たのだ…（ログを確認してほしいのだ）",
+                    ephemeral=True,
+                )
             except Exception:
                 pass
+
 
 class BjEntryView(discord.ui.View):
     def __init__(self):
@@ -1707,6 +1833,7 @@ class BjEntryView(discord.ui.View):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
         u = store.get_user(interaction.user.id)
         await interaction.response.send_modal(BetModal(balance=u["coins"]))
+
 
 class BJActionView(discord.ui.View):
     def __init__(self):
@@ -1739,6 +1866,7 @@ class BJActionView(discord.ui.View):
         u = store.get_user(interaction.user.id)
         await bj_split(interaction, u)
 
+
 class BJEndView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -1752,6 +1880,7 @@ class BJEndView(discord.ui.View):
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("終了したのだ", ephemeral=True)
 
+
 def bj_state_text(session: dict) -> str:
     dealer = session["dealer"]
     dealer_open = f"{dealer[0][1]}{dealer[0][0]} ??"
@@ -1759,9 +1888,14 @@ def bj_state_text(session: dict) -> str:
     for idx, hand in enumerate(session["hands"]):
         v = hand_value(hand)
         mark = "👉" if idx == session["active"] else " "
-        nat = "（BJ）" if (idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]) else ""
-        lines.append(f"{mark}手札{idx+1}：{fmt_cards(hand)}（{v}）{nat} 賭け：{session['bets'][idx]}")
+        nat = ""
+        if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
+            nat = "（BJ）"
+        lines.append(
+            f"{mark}手札{idx+1}：{fmt_cards(hand)}（{v}）{nat} 賭け：{session['bets'][idx]}"
+        )
     return f"🎴 ブラックジャックなのだ\n\nディーラー：{dealer_open}\n\n" + "\n".join(lines)
+
 
 async def bj_send_state(interaction: discord.Interaction, u: dict):
     session = bj_sessions.get(interaction.user.id)
@@ -1785,6 +1919,7 @@ async def bj_send_state(interaction: discord.Interaction, u: dict):
 
     await interaction.followup.send(bj_state_text(session), view=view, ephemeral=True)
 
+
 async def bj_hit(interaction: discord.Interaction, u: dict):
     session = bj_sessions.get(interaction.user.id)
     if not session:
@@ -1803,6 +1938,7 @@ async def bj_hit(interaction: discord.Interaction, u: dict):
         await interaction.followup.send("バーストしたのだ", ephemeral=True)
         await bj_next_or_dealer(interaction, u)
 
+
 async def bj_stand(interaction: discord.Interaction, u: dict):
     session = bj_sessions.get(interaction.user.id)
     if not session:
@@ -1814,6 +1950,7 @@ async def bj_stand(interaction: discord.Interaction, u: dict):
     session["finished_hands"][i] = True
     await interaction.followup.send(f"スタンドしたのだ\n{bj_state_text(session)}", ephemeral=True)
     await bj_next_or_dealer(interaction, u)
+
 
 async def bj_double(interaction: discord.Interaction, u: dict):
     session = bj_sessions.get(interaction.user.id)
@@ -1845,6 +1982,7 @@ async def bj_double(interaction: discord.Interaction, u: dict):
 
     await interaction.followup.send(f"ダブルダウンしたのだ\n{bj_state_text(session)}", ephemeral=True)
     await bj_next_or_dealer(interaction, u)
+
 
 async def bj_split(interaction: discord.Interaction, u: dict):
     session = bj_sessions.get(interaction.user.id)
@@ -1883,6 +2021,7 @@ async def bj_split(interaction: discord.Interaction, u: dict):
     await interaction.followup.send(f"スプリットしたのだ\n{bj_state_text(session)}", ephemeral=True)
     await bj_send_state(interaction, u)
 
+
 async def bj_next_or_dealer(interaction: discord.Interaction, u: dict):
     session = bj_sessions.get(interaction.user.id)
     if not session:
@@ -1892,6 +2031,7 @@ async def bj_next_or_dealer(interaction: discord.Interaction, u: dict):
             session["active"] = idx
             return await bj_send_state(interaction, u)
     await bj_dealer_turn(interaction, u)
+
 
 async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
     session = bj_sessions.get(interaction.user.id)
@@ -1903,7 +2043,7 @@ async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
     dealer = session["dealer"]
     await interaction.followup.send(
         f"ディーラーのターンなのだ\nディーラー：{fmt_cards(dealer)}（{hand_value(dealer)}）",
-        ephemeral=True
+        ephemeral=True,
     )
 
     while hand_value(dealer) < 17:
@@ -1911,10 +2051,11 @@ async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
         dealer.append(draw_card(session["deck"]))
         await interaction.followup.send(
             f"ディーラーがヒットしたのだ\nディーラー：{fmt_cards(dealer)}（{hand_value(dealer)}）",
-            ephemeral=True
+            ephemeral=True,
         )
 
     await bj_finish(interaction, u, immediate_dealer_bj=False)
+
 
 async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_bj: bool):
     session = bj_sessions.get(interaction.user.id)
@@ -2006,12 +2147,16 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
 
     bj_sessions.pop(interaction.user.id, None)
 
+
 @bot.tree.command(name="setup_bj", description="ブラックジャック入口メッセージを設置するのだ（最初の1回のみ）")
 async def setup_bj_cmd(interaction: discord.Interaction):
     if not is_admin_user(interaction):
         return await interaction.response.send_message("権限がないのだ", ephemeral=True)
     if BJ_CHANNEL_ID and interaction.channel_id != BJ_CHANNEL_ID:
-        return await interaction.response.send_message("指定のブラックジャックチャンネルで実行するのだ", ephemeral=True)
+        return await interaction.response.send_message(
+            "指定のブラックジャックチャンネルで実行するのだ",
+            ephemeral=True,
+        )
 
     await interaction.response.defer(ephemeral=True)
     if store.config.get("bj_entry_message_id"):
@@ -2031,6 +2176,7 @@ async def setup_bj_cmd(interaction: discord.Interaction):
 
     await interaction.followup.send("ブラックジャック入口を設置したのだ", ephemeral=True)
 
+
 # =========================================================
 # 運営コマンド（付与・取り上げ）
 # =========================================================
@@ -2049,6 +2195,7 @@ async def admin_grant_cmd(interaction: discord.Interaction, user: discord.Member
     except Exception:
         await interaction.followup.send("付与に失敗したのだ", ephemeral=True)
 
+
 @bot.tree.command(name="admin_revoke", description="ロールを取り上げるのだ（運営用）")
 @app_commands.describe(user="対象ユーザー", role="取り上げるロール")
 async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Member, role: discord.Role):
@@ -2064,6 +2211,7 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
     except Exception:
         await interaction.followup.send("取り上げに失敗したのだ", ephemeral=True)
 
+
 # =========================================================
 # 起動イベント
 # =========================================================
@@ -2071,34 +2219,32 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
 async def on_ready():
     global STORE_READY, VIEWS_READY
 
-    # ✅ setup_hookで読んでいるが、再接続時など念のため保証
-    try:
-        await ensure_store_ready()
-    except Exception as e:
-        print("ensure_store_ready failed:", e)
-        traceback.print_exc()
+    if not STORE_READY:
         try:
-            await bot.close()
-        finally:
-            os._exit(1)
-
-    # 以下はそのまま
-    if not getattr(bot, "_tree_synced_once", False):
-        try:
-            await bot.tree.sync()
-            bot._tree_synced_once = True
-            print("[Tree] synced")
+            await sheets_init_async()
+            STORE_READY = True
+            print("SheetsStore initialized")
         except Exception as e:
-            print("tree sync failed:", e)
+            print("SheetsStore init failed:", e)
             traceback.print_exc()
+            try:
+                await bot.close()
+            finally:
+                os._exit(1)
 
+    try:
+        await bot.tree.sync()
+    except Exception as e:
+        print("tree sync failed:", e)
+        traceback.print_exc()
+
+    # ✅ 永続View登録（再接続でも重複登録しない）
     if not VIEWS_READY:
         bot.add_view(ShopEntryView())
         bot.add_view(BjEntryView())
         bot.add_view(BJActionView())
         bot.add_view(BJEndView())
         VIEWS_READY = True
-        print("[Views] registered")
 
     if not check_tasks.is_running():
         check_tasks.start()
@@ -2107,23 +2253,28 @@ async def on_ready():
     if not cleanup_bj_sessions.is_running():
         cleanup_bj_sessions.start()
 
-    print(f"Bot logged in as {bot.user} (ready)")
+    print(f"Bot logged in as {bot.user}")
+
 
 # =========================================================
 # Flask Keep Alive
 # =========================================================
 app = Flask("")
 
+
 @app.route("/")
 def home():
     return "Bot is running!", 200
 
+
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 
 def keep_alive():
     t = Thread(target=run_flask, daemon=True)
     t.start()
+
 
 # =========================================================
 # Bot 起動（✅ 1) bot.run に一本化）
@@ -2138,13 +2289,3 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
-
-
-
-
-
-
-
-
-
-
