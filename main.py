@@ -684,15 +684,15 @@ class SheetsStore:
     # -----------------------------
     # coinsシートへの書き込み（B列だけ更新）
     # -----------------------------
-    def _upsert_coin(self, uid: int, coins: int):
-        with self._lock:
-            idx = self._uid_to_row_coins.get(uid)
-            if idx is None:
-                self.ws_coins.append_row([uid, coins])
-                used_rows = len(self.ws_coins.get_all_values())
-                self._uid_to_row_coins[uid] = used_rows
-            else:
-                self.ws_coins.update(range_name=f"B{idx}", values=[[coins]])
+def _upsert_coin(self, uid: int, coins: int):
+    uid_str = "'" + str(uid)  # 文字列強制
+    with self._lock:
+        idx = self._uid_to_row_coins.get(uid)
+        if idx is None:
+            self.ws_coins.append_row([uid_str, int(coins)])
+            self._uid_to_row_coins[uid] = len(self.ws_coins.get_all_values())
+        else:
+            self.ws_coins.update(f"B{idx}", [[int(coins)]])
 
     # -----------------------------
     # 管理(users)に書き込み ＋ coinsにも必ず反映
@@ -704,9 +704,9 @@ class SheetsStore:
                 self.ws_users.update(range_name="A1", values=[USER_HEADERS])
                 header = USER_HEADERS
 
-            values = [u.get(h, "") for h in header]
-            uid = int(u["user_id"])
-            idx = self._uid_to_row.get(uid)
+                values = [u.get(h, "") for h in header]
+                values[header.index("user_id")] = "'" + str(uid)
+                self.ws_users.append_row(values)
 
             if idx is None:
                 self.ws_users.append_row(values)
@@ -2512,6 +2512,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
