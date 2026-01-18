@@ -793,9 +793,37 @@ class ShopEntryView(discord.ui.View):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
+
         u = store.get_user(interaction.user.id)
         owned = title_inventory(u)
+        balance = int(u.get("coins", 0))
 
+        # ✅ まず「全商品一覧」を作る（買えない/所持済みも含める）
+        lines = []
+        for it in SHOP_ITEMS:
+            name = it.get("name", "（名称なし）")
+            price = int(it.get("price", 0) or 0)
+            rid = it.get("role_id")
+
+            if not rid:
+                status = "⚠️ 未設定"
+            elif rid in owned:
+                status = "✅ 所持"
+            elif balance >= price:
+                status = "🛒 購入可能"
+            else:
+                need = price - balance
+                status = f"🔒 不足（あと{need}）"
+
+            lines.append(f"{status}  {name} — {price}コイン")
+
+        msg = (
+            f"🏷️ **称号ショップ**\n\n"
+            f"現在の残高：**{balance}** コイン\n\n"
+            f"**商品一覧**\n" + ("\n".join(lines) if lines else "商品がないのだ…")
+        )
+
+        # ✅ 購入セレクトは「買えるものだけ」出す（押しても買えないを防ぐ）
         options = []
         for it in SHOP_ITEMS:
             rid = it.get("role_id")
@@ -803,22 +831,27 @@ class ShopEntryView(discord.ui.View):
                 continue
             if rid in owned:
                 continue
+
+            price = int(it.get("price", 0) or 0)
+            if balance < price:
+                continue
+
             options.append(
                 discord.SelectOption(
-                    label=f"{it['name']}（{it['price']}）",
+                    label=f"{it['name']}（{price}）",
                     value=it["key"],
                     description="購入するのだ"
                 )
             )
 
-        msg = f"🏷️ 称号ショップ\n\n現在の残高：{u['coins']} コイン\n"
+        # ✅ 買えるものがなくても「一覧」は必ず出す
         if not options:
-            msg += "\n購入できる称号はないのだ"
+            msg += "\n\n購入可能な称号は今はないのだ（コインを貯めるのだ）"
             return await interaction.followup.send(msg, ephemeral=True)
 
         view = discord.ui.View(timeout=60)
         view.add_item(ShopBuySelect(options))
-        await interaction.followup.send(msg + "\n購入する称号を選ぶのだ", view=view, ephemeral=True)
+        await interaction.followup.send(msg + "\n\n購入する称号を選ぶのだ", view=view, ephemeral=True)
 
     @discord.ui.button(label="🎖️ 称号を付与する", style=discord.ButtonStyle.secondary, custom_id="shop_title_assign_btn")
     async def title_assign(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1033,9 +1066,9 @@ async def chinchiro_cmd(interaction: discord.Interaction):
     DICE_COST = 5
 
     def roll_dice(turn: int, jackpot_boost: bool):
-        BASE_JACKPOT_RATE = 1 / 5000
-        BOOSTED_JACKPOT_RATE = 1 / 500
-        SEVEN_BAR_RATE = 1 / 3000
+        BASE_JACKPOT_RATE = 1 / 1000
+        BOOSTED_JACKPOT_RATE = 1 / 10
+        SEVEN_BAR_RATE = 1 / 500
 
         r = random.random()
         jackpot_rate = BOOSTED_JACKPOT_RATE if jackpot_boost else BASE_JACKPOT_RATE
@@ -1109,7 +1142,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
         delta = 0
         if role == "🎉 ピンゾロ":
-            delta = 30
+            delta = 50
         elif role == "🔥 シゴロ":
             delta = 10
         elif role and "のアラシ" in role:
@@ -2086,3 +2119,4 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
