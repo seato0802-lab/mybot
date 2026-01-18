@@ -312,15 +312,23 @@ class SheetsStore:
             raise RuntimeError("GS_SPREADSHEET_ID が空なのだ（IDかURLを設定するのだ）")
         self.sh = self.gc.open_by_key(sid)
 
+        # ✅ タブが見つからないときに「空タブを勝手に作らない」
+        # （これをやると別タブ参照→0保存事故が起きる）
         try:
             self.ws_users = self.sh.worksheet(GS_SHEET_NAME)
-        except Exception:
-            self.ws_users = self.sh.add_worksheet(title=GS_SHEET_NAME, rows=2000, cols=30)
+        except gspread.WorksheetNotFound:
+            titles = [w.title for w in self.sh.worksheets()]
+            raise RuntimeError(
+                f"Users worksheet not found: '{GS_SHEET_NAME}'. Available tabs={titles}"
+            )
 
         try:
             self.ws_config = self.sh.worksheet("設定")
-        except Exception:
-            self.ws_config = self.sh.add_worksheet(title="設定", rows=200, cols=5)
+        except gspread.WorksheetNotFound:
+            titles = [w.title for w in self.sh.worksheets()]
+            raise RuntimeError(
+                f"Config worksheet not found: '設定'. Available tabs={titles}"
+            )
 
         self._ensure_headers()
         self._load_config()
@@ -2250,6 +2258,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
