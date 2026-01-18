@@ -432,26 +432,34 @@ class SheetsStore:
             self._uid_to_row = uid_to_row
 
     def get_user(self, uid: int):
-        u = self.users.get(uid)
-        if not u:
-            u = {
-                "user_id": uid,
-                "coins": 0,
-                "title_role_id": 0,
-                "login_streak": 0,
-                "login_total": 0,
-                "daikichi_count": 0,
-                "daikyo_count": 0,
-                "bj_play_count": 0,
-                "bj_win_streak": 0,
-                "total_earned": 0,
-                "jackpot_count": 0,
-                "last_login_ymd": "",
-                "owned_title_role_ids": "",
-                "award_keys": "",
-            }
-            self.users[uid] = u
+    u = self.users.get(uid)
+    if u:
         return u
+
+    # ✅ すでにシートからユーザーをロードしているのに見つからない場合、
+    #    参照先違い/ヘッダズレ/読み取り失敗の可能性が高いので新規0を作らない
+    if len(self.users) > 0:
+        raise RuntimeError(f"user_id {uid} not found in loaded sheet (prevent overwrite)")
+
+    # 初回運用開始でシートが空のときだけ新規作成
+    u = {
+        "user_id": uid,
+        "coins": 0,
+        "title_role_id": 0,
+        "login_streak": 0,
+        "login_total": 0,
+        "daikichi_count": 0,
+        "daikyo_count": 0,
+        "bj_play_count": 0,
+        "bj_win_streak": 0,
+        "total_earned": 0,
+        "jackpot_count": 0,
+        "last_login_ymd": "",
+        "owned_title_role_ids": "",
+        "award_keys": "",
+    }
+    self.users[uid] = u
+    return u
 
     def upsert_user(self, u: dict):
         with self._lock:
@@ -487,6 +495,33 @@ async def sheets_upsert_async(u: dict):
 async def sheets_save_config_once_async(key: str, value: str) -> bool:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, lambda: store.save_config_once(key, value))
+
+_store_init_lock = asyncio.Lock()
+
+async def ensure_store_ready():
+    global STORE_READY
+    if STORE_READY:
+        return
+    async with _store_init_lock:
+        if STORE_READY:
+            return
+        await sheets_init_async()
+        STORE_READY = True
+        print("[Sheets] ready in setup_hook. users=", len(store.users))
+
+async def setup_hook_impl():
+    # ✅ Botがreadyになる前に必ずSheetsを読む
+    try:
+        await ensure_store_ready()
+    except Exception as e:
+        print("SheetsStore init failed in setup_hook:", e)
+        traceback.print_exc()
+        try:
+            await bot.close()
+        finally:
+            os._exit(1)
+
+bot.setup_hook = setup_hook_impl
 
 async def notify_seato_item_purchase(
     guild: discord.Guild | None,
@@ -2146,25 +2181,18 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
 async def on_ready():
     global STORE_READY, VIEWS_READY
 
-    # ✅ Sheets は「起動直後に必ず1回だけ」初期化
-    if not STORE_READY:
+    # ✅ setup_hookで読んでいるが、再接続時など念のため保証
+    try:
+        await ensure_store_ready()
+    except Exception as e:
+        print("ensure_store_ready failed:", e)
+        traceback.print_exc()
         try:
-            await sheets_init_async()
-            STORE_READY = True
-            print("[Sheets] loaded users:", len(store.users))
-            print("[Sheets] sheet name:", GS_SHEET_NAME)
-            print("[Sheets] spreadsheet id:", normalize_spreadsheet_id(GS_SPREADSHEET_ID))
-            print("SheetsStore initialized")
-        except Exception as e:
-            print("SheetsStore init failed:", e)
-            traceback.print_exc()
-            try:
-                await bot.close()
-            finally:
-                os._exit(1)
+            await bot.close()
+        finally:
+            os._exit(1)
 
-    # ✅ tree.sync は必要なら「初回だけ」
-    # （再接続で毎回syncすると遅い＆失敗の種になりやすい）
+    # 以下はそのまま
     if not getattr(bot, "_tree_synced_once", False):
         try:
             await bot.tree.sync()
@@ -2174,7 +2202,6 @@ async def on_ready():
             print("tree sync failed:", e)
             traceback.print_exc()
 
-    # ✅ 永続View登録（再接続でも重複登録しない）
     if not VIEWS_READY:
         bot.add_view(ShopEntryView())
         bot.add_view(BjEntryView())
@@ -2183,7 +2210,6 @@ async def on_ready():
         VIEWS_READY = True
         print("[Views] registered")
 
-    # ✅ ループタスクは起動済みなら start しない
     if not check_tasks.is_running():
         check_tasks.start()
     if not check_join_tasks.is_running():
@@ -2222,6 +2248,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
