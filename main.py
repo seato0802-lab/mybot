@@ -1158,9 +1158,9 @@ async def chinchiro_cmd(interaction: discord.Interaction):
     DICE_COST = 5
 
     def roll_dice(turn: int, jackpot_boost: bool):
-        BASE_JACKPOT_RATE = 1 / 5000
-        BOOSTED_JACKPOT_RATE = 1 / 500
-        SEVEN_BAR_RATE = 1 / 3000
+        BASE_JACKPOT_RATE = 1 / 1000
+        BOOSTED_JACKPOT_RATE = 1 / 100
+        SEVEN_BAR_RATE = 1 / 500
 
         r = random.random()
         jackpot_rate = BOOSTED_JACKPOT_RATE if jackpot_boost else BASE_JACKPOT_RATE
@@ -2289,3 +2289,4 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
