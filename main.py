@@ -685,7 +685,11 @@ class SheetsStore:
                 self.ws_coins.append_row([uid_str, int(coins)])
                 self._uid_to_row_coins[uid] = len(self.ws_coins.get_all_values())
             else:
-                self.ws_coins.update(f"B{idx}", [[int(coins)]])
+                self.ws_coins.update(
+                    range_name=f"B{idx}",
+                    values=[[int(coins)]],
+                )
+
 
     def upsert_user(self, u: dict):
         with self._lock:
@@ -708,7 +712,11 @@ class SheetsStore:
             else:
                 start_a1 = rowcol_to_a1(idx, 1)
                 end_a1 = rowcol_to_a1(idx, len(values))
-                self.ws_users.update(f"{start_a1}:{end_a1}", [values])
+                self.ws_users.update(
+                    range_name=f"{start_a1}:{end_a1}",
+                    values=[values],
+                )
+
 
         # coinsは必ず同期
         self._upsert_coin(uid, int(u.get("coins", 0) or 0))
@@ -2524,6 +2532,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
