@@ -2146,10 +2146,14 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
 async def on_ready():
     global STORE_READY, VIEWS_READY
 
+    # ✅ Sheets は「起動直後に必ず1回だけ」初期化
     if not STORE_READY:
         try:
             await sheets_init_async()
             STORE_READY = True
+            print("[Sheets] loaded users:", len(store.users))
+            print("[Sheets] sheet name:", GS_SHEET_NAME)
+            print("[Sheets] spreadsheet id:", normalize_spreadsheet_id(GS_SPREADSHEET_ID))
             print("SheetsStore initialized")
         except Exception as e:
             print("SheetsStore init failed:", e)
@@ -2159,11 +2163,16 @@ async def on_ready():
             finally:
                 os._exit(1)
 
-    try:
-        await bot.tree.sync()
-    except Exception as e:
-        print("tree sync failed:", e)
-        traceback.print_exc()
+    # ✅ tree.sync は必要なら「初回だけ」
+    # （再接続で毎回syncすると遅い＆失敗の種になりやすい）
+    if not getattr(bot, "_tree_synced_once", False):
+        try:
+            await bot.tree.sync()
+            bot._tree_synced_once = True
+            print("[Tree] synced")
+        except Exception as e:
+            print("tree sync failed:", e)
+            traceback.print_exc()
 
     # ✅ 永続View登録（再接続でも重複登録しない）
     if not VIEWS_READY:
@@ -2172,7 +2181,9 @@ async def on_ready():
         bot.add_view(BJActionView())
         bot.add_view(BJEndView())
         VIEWS_READY = True
+        print("[Views] registered")
 
+    # ✅ ループタスクは起動済みなら start しない
     if not check_tasks.is_running():
         check_tasks.start()
     if not check_join_tasks.is_running():
@@ -2180,7 +2191,7 @@ async def on_ready():
     if not cleanup_bj_sessions.is_running():
         cleanup_bj_sessions.start()
 
-    print(f"Bot logged in as {bot.user}")
+    print(f"Bot logged in as {bot.user} (ready)")
 
 # =========================================================
 # Flask Keep Alive
@@ -2211,5 +2222,6 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
