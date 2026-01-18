@@ -439,37 +439,32 @@ class SheetsStore:
             self.users = users
             self._uid_to_row = uid_to_row
 
-    def get_user(self, uid: int):
-        u = self.users.get(uid)
-        if u:
-            return u
-
-        # ✅ すでにシートからユーザーをロードしているのに見つからない場合は
-        #    0で新規作成せず、事故防止のため止める
-        if len(self.users) > 0:
-            raise RuntimeError(
-                f"user_id {uid} not found in loaded sheet (prevent overwrite)"
-            )
-
-        # シートが本当に空の初回運用時だけ新規作成
-        u = {
-            "user_id": uid,
-            "coins": 0,
-            "title_role_id": 0,
-            "login_streak": 0,
-            "login_total": 0,
-            "daikichi_count": 0,
-            "daikyo_count": 0,
-            "bj_play_count": 0,
-            "bj_win_streak": 0,
-            "total_earned": 0,
-            "jackpot_count": 0,
-            "last_login_ymd": "",
-            "owned_title_role_ids": "",
-            "award_keys": "",
-        }
-        self.users[uid] = u
+   def get_user(self, uid: int):
+    u = self.users.get(uid)
+    if u:
         return u
+
+    # ✅ ここに来た = 読み込んだシートにこの user_id の行が無い
+    # 新規ユーザーとして作成し、usersに追加する
+    u = {
+        "user_id": uid,
+        "coins": 0,
+        "title_role_id": 0,
+        "login_streak": 0,
+        "login_total": 0,
+        "daikichi_count": 0,
+        "daikyo_count": 0,
+        "bj_play_count": 0,
+        "bj_win_streak": 0,
+        "total_earned": 0,
+        "jackpot_count": 0,
+        "last_login_ymd": "",
+        "owned_title_role_ids": "",
+        "award_keys": "",
+    }
+    self.users[uid] = u
+    return u
+
 
     def upsert_user(self, u: dict):
         with self._lock:
@@ -1078,12 +1073,28 @@ class ShopEntryView(discord.ui.View):
             traceback.print_exc()
             await interaction.followup.send("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）", ephemeral=True)
 
-    @discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
-    async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+@discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
+async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+        return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+
+    if not STORE_READY:
+        return await interaction.response.send_message("起動直後なのだ。少し待ってもう一回なのだ", ephemeral=True)
+
+    try:
         u = store.get_user(interaction.user.id)
-        await interaction.response.send_message(f"現在の残高：{u['coins']} コインなのだ", ephemeral=True)
+    except Exception as e:
+        print("[balance] get_user error:", e)
+        traceback.print_exc()
+        return await interaction.response.send_message(
+            "データが見つからないのだ。\n"
+            "運営へ：このユーザーIDが保存シートに存在しないのだ。\n"
+            f"user_id={interaction.user.id}\n"
+            "（GS_SHEET_NAME/GS_SPREADSHEET_IDか、user_id列を確認してほしいのだ）",
+            ephemeral=True
+        )
+
+    await interaction.response.send_message(f"現在の残高：{u.get('coins', 0)} コインなのだ", ephemeral=True)
 
 # =========================================================
 # /setup_shop と /setup_bj （最初の1回のみ）
@@ -2258,6 +2269,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
