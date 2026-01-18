@@ -106,15 +106,14 @@ WEAPON_URL = (
 
 
 async def fetch_csv(url: str):
-    # ✅ Unclosed client session 対策（例外でも確実にcloseされる）
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=6)  # 6秒で諦める
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url) as r:
             r.raise_for_status()
             text = await r.text()
     f = io.StringIO(text)
     reader = csv.DictReader(f)
     return [row for row in reader]
-
 
 CSV_CACHE = {"道具": [], "武器": [], "timestamp": 0}
 
@@ -2525,6 +2524,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
