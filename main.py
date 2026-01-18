@@ -910,15 +910,16 @@ class ShopEntryView(discord.ui.View):
 
         await interaction.response.defer(ephemeral=True)
 
-    async with get_user_lock(interaction.user.id):
-        u = store.get_user(interaction.user.id)
-        # 初回ユーザーならシートに行を作る（表示時に作ってOK）
-        if interaction.user.id not in store._uid_to_row:
-            await sheets_upsert_async(u)
+        # 🔒 ロック下でユーザー取得
+        async with get_user_lock(interaction.user.id):
+            u = store.get_user(interaction.user.id)
+            if interaction.user.id not in store._uid_to_row:
+                await sheets_upsert_async(u)
 
-    owned_roles = title_inventory(u)
-    balance = int(u.get("coins", 0))
+        owned_roles = title_inventory(u)
+        balance = int(u.get("coins", 0))
 
+        # 👇 ここはロックの外（インデントを戻す！）
         lines = []
         for it in SHOP_ITEMS:
             name = it.get("name", "（名称なし）")
@@ -935,59 +936,19 @@ class ShopEntryView(discord.ui.View):
                     status = "🛒 購入可能"
                 else:
                     status = f"🔒 不足（あと{price - balance}）"
-
-            elif typ == "item":
-                # itemは保存しないので「購入可/不足」だけ表示
-                if balance >= price:
-                    status = "🛒 購入可能"
-                else:
-                    status = f"🔒 不足（あと{price - balance}）"
-            else:
-                status = "⚠️ 未対応"
+            else:  # item
+                status = "🛒 購入可能" if balance >= price else f"🔒 不足（あと{price - balance}）"
 
             lines.append(f"{status}  {name} — {price}コイン")
 
         msg = (
             f"🏷️ **ショップ**\n\n"
             f"現在の残高：**{balance}** コイン\n\n"
-            f"**商品一覧**\n" + ("\n".join(lines) if lines else "商品がないのだ…")
+            f"**商品一覧**\n" + "\n".join(lines)
         )
 
-        options = []
-        for it in SHOP_ITEMS:
-            typ = it.get("type", "role")
-            price = int(it.get("price", 0) or 0)
-            if price > balance:
-                continue
+        await interaction.followup.send(msg, ephemeral=True)
 
-            if typ == "role":
-                rid = it.get("role_id")
-                if not rid:
-                    continue
-                if rid in owned_roles:
-                    continue
-
-            elif typ == "item":
-                # itemは何度でもOK
-                pass
-            else:
-                continue
-
-            options.append(
-                discord.SelectOption(
-                    label=f"{it.get('name','商品')}（{price}）",
-                    value=it["key"],
-                    description="購入するのだ"
-                )
-            )
-
-        if not options:
-            msg += "\n\n購入可能な商品は今はないのだ（コインを貯めるのだ）"
-            return await interaction.followup.send(msg, ephemeral=True)
-
-        view = discord.ui.View(timeout=60)
-        view.add_item(ShopBuySelect(options))
-        await interaction.followup.send(msg + "\n\n購入する商品を選ぶのだ", view=view, ephemeral=True)
 
     @discord.ui.button(label="🎖️ 称号を付与する", style=discord.ButtonStyle.secondary, custom_id="shop_title_assign_btn")
     async def title_assign(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2282,6 +2243,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
