@@ -584,56 +584,83 @@ class SheetsStore:
     # -----------------------------
     # coins(読み取り用)を読み込み、usersのcoinsを上書き
     # -----------------------------
-    def _load_coins_and_apply(self):
-        with self._lock:
-            all_values = self.ws_coins.get_all_values()
-            if not all_values or len(all_values) < 2:
-                self._uid_to_row_coins = {}
-                return
+def _to_int_maybe(v) -> int:
+    # " '4169..." や "4169  " みたいなのを救う
+    s = str(v or "").strip()
+    if not s:
+        return 0
+    m = re.search(r"\d+", s)
+    return int(m.group(0)) if m else 0
 
-            uid_to_row = {}
-            coins_map: dict[int, int] = {}
 
-            for row_idx, row in enumerate(all_values[1:], start=2):
-                if not row:
-                    continue
-                try:
-                    uid = int((row[0] if len(row) > 0 else "") or 0)
-                except Exception:
-                    continue
-                if uid <= 0:
-                    continue
-                try:
-                    c = int((row[1] if len(row) > 1 else "") or 0)
-                except Exception:
-                    c = 0
+def _find_col_idx(header: list[str], key: str) -> int | None:
+    key = key.strip().lower()
+    for i, h in enumerate(header):
+        if (h or "").strip().lower() == key:
+            return i
+    return None
 
-                uid_to_row[uid] = row_idx
-                coins_map[uid] = c
 
-            self._uid_to_row_coins = uid_to_row
+def _load_coins_and_apply(self):
+    with self._lock:
+        values = self.ws_coins.get_all_values()
+        if not values or len(values) < 2:
+            self._uid_to_row_coins = {}
+            print("[Coins] empty sheet or only header")
+            return
 
-            for uid, c in coins_map.items():
-                if uid in self.users:
-                    self.users[uid]["coins"] = c
-                else:
-                    # 管理にいなくても coins に居る → 最小ユーザーを作る（称号等は0/空）
-                    self.users[uid] = {
-                        "user_id": uid,
-                        "coins": c,
-                        "title_role_id": 0,
-                        "login_streak": 0,
-                        "login_total": 0,
-                        "daikichi_count": 0,
-                        "daikyo_count": 0,
-                        "bj_play_count": 0,
-                        "bj_win_streak": 0,
-                        "total_earned": 0,
-                        "jackpot_count": 0,
-                        "last_login_ymd": "",
-                        "owned_title_role_ids": "",
-                        "award_keys": "",
-                    }
+        header = values[0]
+        uid_col = _find_col_idx(header, "user_id")
+        coin_col = _find_col_idx(header, "coins")
+
+        # ヘッダが期待通りでない場合は先頭2列で読む
+        if uid_col is None:
+            uid_col = 0
+        if coin_col is None:
+            coin_col = 1
+
+        uid_to_row = {}
+        coins_map: dict[int, int] = {}
+
+        for row_idx, row in enumerate(values[1:], start=2):
+            if not row:
+                continue
+
+            uid = _to_int_maybe(row[uid_col] if uid_col < len(row) else "")
+            if uid <= 0:
+                continue
+
+            coins = _to_int_maybe(row[coin_col] if coin_col < len(row) else "")
+            uid_to_row[uid] = row_idx
+            coins_map[uid] = coins
+
+        self._uid_to_row_coins = uid_to_row
+
+        applied = 0
+        for uid, c in coins_map.items():
+            if uid in self.users:
+                self.users[uid]["coins"] = c
+            else:
+                # 管理にいない場合は最小生成（称号は管理側で持つ運用）
+                self.users[uid] = {
+                    "user_id": uid,
+                    "coins": c,
+                    "title_role_id": 0,
+                    "login_streak": 0,
+                    "login_total": 0,
+                    "daikichi_count": 0,
+                    "daikyo_count": 0,
+                    "bj_play_count": 0,
+                    "bj_win_streak": 0,
+                    "total_earned": 0,
+                    "jackpot_count": 0,
+                    "last_login_ymd": "",
+                    "owned_title_role_ids": "",
+                    "award_keys": "",
+                }
+            applied += 1
+
+        print(f"[Coins] loaded rows={len(coins_map)} applied={applied} header(uid={uid_col}, coins={coin_col})")
 
     # -----------------------------
     # ユーザー取得
@@ -709,12 +736,13 @@ async def sheets_init_async():
 async def sheets_upsert_async(u: dict):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, lambda: store.upsert_user(u))
+    
 async def sheets_reload_users_async():
     loop = asyncio.get_running_loop()
 
     def _reload():
-        store._load_users_and_index()
-        store._load_coins_and_apply()
+        store._load_users_and_index()   # 管理
+        store._load_coins_and_apply()   # 読み取り用（coins上書き）
 
     await loop.run_in_executor(None, _reload)
 
@@ -2382,7 +2410,7 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
     except Exception:
         await interaction.followup.send("取り上げに失敗したのだ", ephemeral=True)
 
-@bot.tree.command(name="reload_coins", description="コインを読み取り用シートから再読込するのだ")
+@bot.tree.command(name="reload_coins", description="読み取り用シートからコインを再読込するのだ")
 async def reload_coins_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
@@ -2391,17 +2419,21 @@ async def reload_coins_cmd(interaction: discord.Interaction):
     except Exception as e:
         print("[reload_coins] error:", e)
         traceback.print_exc()
-        return await interaction.followup.send(
-            "読み込みに失敗したのだ…（Renderログを確認してほしいのだ）",
-            ephemeral=True,
-        )
+        return await interaction.followup.send("再読込に失敗したのだ…（Renderログ確認なのだ）", ephemeral=True)
 
-    u = store.get_user(interaction.user.id)
+    uid = interaction.user.id
+    u = store.get_user(uid)
+
+    # coinsシートに行が見つかっているか（インデックスで判定）
+    row = store._uid_to_row_coins.get(uid)
+
     await interaction.followup.send(
-        f"✅ 読み取り用シートから再読込したのだ\n現在の残高：{u['coins']} コインなのだ",
+        f"✅ 再読込したのだ\n"
+        f"- あなたのID: {uid}\n"
+        f"- coinsシート行: {row if row else '見つからない'}\n"
+        f"- 現在の残高: {u['coins']} コインなのだ",
         ephemeral=True,
     )
-
 
 # =========================================================
 # 起動イベント
@@ -2480,5 +2512,6 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
