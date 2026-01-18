@@ -458,16 +458,86 @@ class SheetsStore:
                     if h not in merged:
                         merged.append(h)
                 self.ws_users.update("A1", [merged])
-
     def _ensure_headers_coins(self):
         with self._lock:
             header = self.ws_coins.row_values(1)
             if not header:
                 self.ws_coins.update("A1", [COINS_HEADERS])
                 return
-            # 先頭2列だけ保証（A=user_id, B=coins）
             if len(header) < 2 or header[0] != "user_id" or header[1] != "coins":
                 self.ws_coins.update("A1", [COINS_HEADERS + header[2:]])
+
+    def _load_coins_and_apply(self):
+        # user_id/coins の列をヘッダ優先で探し、なければA,B固定で読む
+        def _to_int_maybe(v) -> int:
+            s = str(v or "").strip()
+            if not s:
+                return 0
+            m = re.search(r"\d+", s)
+            return int(m.group(0)) if m else 0
+
+        def _find_col_idx(header: list[str], key: str):
+            key = key.strip().lower()
+            for i, h in enumerate(header):
+                if (h or "").strip().lower() == key:
+                    return i
+            return None
+
+        with self._lock:
+            values = self.ws_coins.get_all_values()
+            if not values or len(values) < 2:
+                self._uid_to_row_coins = {}
+                print("[Coins] empty sheet or only header")
+                return
+
+            header = values[0]
+            uid_col = _find_col_idx(header, "user_id")
+            coin_col = _find_col_idx(header, "coins")
+
+            if uid_col is None:
+                uid_col = 0
+            if coin_col is None:
+                coin_col = 1
+
+            uid_to_row = {}
+            coins_map: dict[int, int] = {}
+
+            for row_idx, row in enumerate(values[1:], start=2):
+                if not row:
+                    continue
+                uid = _to_int_maybe(row[uid_col] if uid_col < len(row) else "")
+                if uid <= 0:
+                    continue
+                coins = _to_int_maybe(row[coin_col] if coin_col < len(row) else "")
+                uid_to_row[uid] = row_idx
+                coins_map[uid] = coins
+
+            self._uid_to_row_coins = uid_to_row
+
+            applied = 0
+            for uid, c in coins_map.items():
+                if uid in self.users:
+                    self.users[uid]["coins"] = c
+                else:
+                    self.users[uid] = {
+                        "user_id": uid,
+                        "coins": c,
+                        "title_role_id": 0,
+                        "login_streak": 0,
+                        "login_total": 0,
+                        "daikichi_count": 0,
+                        "daikyo_count": 0,
+                        "bj_play_count": 0,
+                        "bj_win_streak": 0,
+                        "total_earned": 0,
+                        "jackpot_count": 0,
+                        "last_login_ymd": "",
+                        "owned_title_role_ids": "",
+                        "award_keys": "",
+                    }
+                applied += 1
+
+            print(f"[Coins] loaded rows={len(coins_map)} applied={applied} header(uid={uid_col}, coins={coin_col})")
 
     # -----------------------------
     # 設定読み込み
@@ -2512,6 +2582,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
