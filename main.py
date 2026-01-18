@@ -432,34 +432,36 @@ class SheetsStore:
             self._uid_to_row = uid_to_row
 
     def get_user(self, uid: int):
-    u = self.users.get(uid)
-    if u:
+        u = self.users.get(uid)
+        if u:
+            return u
+
+        # ✅ すでにシートからユーザーをロードしているのに見つからない場合は
+        #    0で新規作成せず、事故防止のため止める
+        if len(self.users) > 0:
+            raise RuntimeError(
+                f"user_id {uid} not found in loaded sheet (prevent overwrite)"
+            )
+
+        # シートが本当に空の初回運用時だけ新規作成
+        u = {
+            "user_id": uid,
+            "coins": 0,
+            "title_role_id": 0,
+            "login_streak": 0,
+            "login_total": 0,
+            "daikichi_count": 0,
+            "daikyo_count": 0,
+            "bj_play_count": 0,
+            "bj_win_streak": 0,
+            "total_earned": 0,
+            "jackpot_count": 0,
+            "last_login_ymd": "",
+            "owned_title_role_ids": "",
+            "award_keys": "",
+        }
+        self.users[uid] = u
         return u
-
-    # ✅ すでにシートからユーザーをロードしているのに見つからない場合、
-    #    参照先違い/ヘッダズレ/読み取り失敗の可能性が高いので新規0を作らない
-    if len(self.users) > 0:
-        raise RuntimeError(f"user_id {uid} not found in loaded sheet (prevent overwrite)")
-
-    # 初回運用開始でシートが空のときだけ新規作成
-    u = {
-        "user_id": uid,
-        "coins": 0,
-        "title_role_id": 0,
-        "login_streak": 0,
-        "login_total": 0,
-        "daikichi_count": 0,
-        "daikyo_count": 0,
-        "bj_play_count": 0,
-        "bj_win_streak": 0,
-        "total_earned": 0,
-        "jackpot_count": 0,
-        "last_login_ymd": "",
-        "owned_title_role_ids": "",
-        "award_keys": "",
-    }
-    self.users[uid] = u
-    return u
 
     def upsert_user(self, u: dict):
         with self._lock:
@@ -2248,6 +2250,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
