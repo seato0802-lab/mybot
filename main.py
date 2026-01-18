@@ -203,6 +203,7 @@ GS_SHEET_NAME = os.getenv("GS_SHEET_NAME", "管理")
 SHOP_CHANNEL_ID = _env_int("SHOP_CHANNEL_ID")
 BJ_CHANNEL_ID = _env_int("BJ_CHANNEL_ID")
 ADMIN_CHANNEL_ID = _env_int("ADMIN_CHANNEL_ID")
+SEATO_USER_ID = _env_int("SEATO_USER_ID")
 
 def _role_env(name: str):
     return _env_int(name)
@@ -229,6 +230,10 @@ SHOP_ITEMS = [
     {"key": "title_5000", "name": "🌿 ずんだ常連", "price": 5000, "role_id": TITLE_ROLE_5000},
     {"key": "title_10000", "name": "🧠 ずんだの策士", "price": 10000, "role_id": TITLE_ROLE_10000},
     {"key": "title_100000", "name": "👑 ずんだの伝説", "price": 100000, "role_id": TITLE_ROLE_100000},
+# ✅ item（保存はしない。コインだけ消費。通知だけ飛ばす）
+    {"key": "ticket_1", "type": "item", "name": "🎫ヘビーアーマー50枚", "price": 50, "amount": 1},
+    {"key": "ticket_2", "type": "item", "name": "🎫武器1本（アタッチメントは交換時好きなの１個づつ）", "price": 100, "amount": 1},
+    {"key": "ticket_3", "type": "item", "name": "🎫5.56弾2000発", "price": 50 , "amount": 1},
 ]
 
 MANAGED_TITLE_ROLES = set(
@@ -483,6 +488,37 @@ async def sheets_save_config_once_async(key: str, value: str) -> bool:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, lambda: store.save_config_once(key, value))
 
+async def notify_seato_item_purchase(
+    guild: discord.Guild | None,
+    buyer: discord.abc.User,
+    item_name: str,
+    price: int,
+    amount: int = 1,
+):
+    if not SEATO_USER_ID:
+        return
+    try:
+        member = None
+        if guild is not None:
+            member = guild.get_member(SEATO_USER_ID)
+            if member is None:
+                member = await guild.fetch_member(SEATO_USER_ID)
+
+        if member is None:
+            member = await bot.fetch_user(SEATO_USER_ID)
+
+        await member.send(
+            "🛒 **ショップ購入通知（item）**\n"
+            f"購入者：{getattr(buyer, 'display_name', str(buyer))}（{buyer.id}）\n"
+            f"商品：{item_name} ×{amount}\n"
+            f"消費：{price} コイン"
+        )
+    except discord.Forbidden:
+        print("[notify_seato_item_purchase] Forbidden: cannot DM seato")
+    except Exception as e:
+        print("[notify_seato_item_purchase] error:", e)
+        traceback.print_exc()
+
 # =========================================================
 # 権限＆チャンネルチェック
 # =========================================================
@@ -720,43 +756,84 @@ async def maybe_award_hidden_titles(interaction: discord.Interaction, u: dict, j
 # =========================================================
 class ShopBuySelect(discord.ui.Select):
     def __init__(self, options: list[discord.SelectOption]):
-        super().__init__(placeholder="購入する称号を選ぶのだ", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder="購入する商品を選ぶのだ", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+
         async with get_user_lock(interaction.user.id):
             u = store.get_user(interaction.user.id)
 
             key = self.values[0]
-            item = next((x for x in SHOP_ITEMS if x["key"] == key), None)
-            if not item or not item.get("role_id"):
+            it = next((x for x in SHOP_ITEMS if x.get("key") == key), None)
+            if not it:
                 return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
 
-            rid = item["role_id"]
-            price = item["price"]
-            owned = title_inventory(u)
+            typ = it.get("type", "role")
+            price = int(it.get("price", 0) or 0)
 
-            if rid in owned:
-                return await interaction.followup.send("それはもう購入済みなのだ", ephemeral=True)
+            # --- role の購入済みチェック ---
+            if typ == "role":
+                rid = it.get("role_id")
+                if not rid:
+                    return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
+                if rid in title_inventory(u):
+                    return await interaction.followup.send("それはもう購入済みなのだ", ephemeral=True)
+
+            elif typ == "item":
+                # item は保存しない。購入済みチェックなし（何度でも買える）
+                pass
+            else:
+                return await interaction.followup.send("未対応の商品タイプなのだ", ephemeral=True)
 
             if u["coins"] < price:
                 return await interaction.followup.send("コインが足りないのだ", ephemeral=True)
 
+            # --- 購入確定（共通：コイン消費） ---
             u["coins"] -= price
-            add_title_to_inventory(u, rid)
-            u["title_role_id"] = rid
 
-            member = interaction.user
-            if not isinstance(member, discord.Member):
-                member = await interaction.guild.fetch_member(interaction.user.id)
+            # role：従来通り（通知なし）
+            if typ == "role":
+                rid = it["role_id"]
+                add_title_to_inventory(u, rid)
+                u["title_role_id"] = rid
 
-            await apply_title_role(member, rid)
-            await sheets_upsert_async(u)
+                member = interaction.user
+                if not isinstance(member, discord.Member):
+                    member = await interaction.guild.fetch_member(interaction.user.id)
 
-            await interaction.followup.send(
-                f"🎉 {item['name']} を購入したのだ！\n残高：{u['coins']} コインなのだ",
-                ephemeral=True
-            )
+                await apply_title_role(member, rid)
+                await sheets_upsert_async(u)
+
+                return await interaction.followup.send(
+                    f"🎉 {it.get('name','称号')} を購入したのだ！\n残高：{u['coins']} コインなのだ",
+                    ephemeral=True
+                )
+
+            # item：保存なし。コインだけ保存 → _seato 通知
+            if typ == "item":
+                amount = int(it.get("amount", 1) or 1)
+
+                await sheets_upsert_async(u)
+
+                # ✅ item購入時だけ _seato にDM通知
+                try:
+                    await notify_seato_item_purchase(
+                        interaction.guild,
+                        interaction.user,
+                        item_name=str(it.get("name", "（不明）")),
+                        price=price,
+                        amount=amount,
+                    )
+                except Exception:
+                    pass
+
+                return await interaction.followup.send(
+                    f"🛒 {it.get('name','アイテム')} を購入したのだ！\n"
+                    f"（外部で付与されるのだ）\n"
+                    f"残高：{u['coins']} コインなのだ",
+                    ephemeral=True
+                )
 
 class TitleAssignSelect(discord.ui.Select):
     def __init__(self, options: list[discord.SelectOption]):
@@ -795,63 +872,78 @@ class ShopEntryView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
 
         u = store.get_user(interaction.user.id)
-        owned = title_inventory(u)
+        owned_roles = title_inventory(u)
         balance = int(u.get("coins", 0))
 
-        # ✅ まず「全商品一覧」を作る（買えない/所持済みも含める）
         lines = []
         for it in SHOP_ITEMS:
             name = it.get("name", "（名称なし）")
             price = int(it.get("price", 0) or 0)
-            rid = it.get("role_id")
+            typ = it.get("type", "role")
 
-            if not rid:
-                status = "⚠️ 未設定"
-            elif rid in owned:
-                status = "✅ 所持"
-            elif balance >= price:
-                status = "🛒 購入可能"
+            if typ == "role":
+                rid = it.get("role_id")
+                if not rid:
+                    status = "⚠️ 未設定"
+                elif rid in owned_roles:
+                    status = "✅ 所持"
+                elif balance >= price:
+                    status = "🛒 購入可能"
+                else:
+                    status = f"🔒 不足（あと{price - balance}）"
+
+            elif typ == "item":
+                # itemは保存しないので「購入可/不足」だけ表示
+                if balance >= price:
+                    status = "🛒 購入可能"
+                else:
+                    status = f"🔒 不足（あと{price - balance}）"
             else:
-                need = price - balance
-                status = f"🔒 不足（あと{need}）"
+                status = "⚠️ 未対応"
 
             lines.append(f"{status}  {name} — {price}コイン")
 
         msg = (
-            f"🏷️ **称号ショップ**\n\n"
+            f"🏷️ **ショップ**\n\n"
             f"現在の残高：**{balance}** コイン\n\n"
             f"**商品一覧**\n" + ("\n".join(lines) if lines else "商品がないのだ…")
         )
 
-        # ✅ 購入セレクトは「買えるものだけ」出す（押しても買えないを防ぐ）
         options = []
         for it in SHOP_ITEMS:
-            rid = it.get("role_id")
-            if not rid:
-                continue
-            if rid in owned:
+            typ = it.get("type", "role")
+            price = int(it.get("price", 0) or 0)
+            if price > balance:
                 continue
 
-            price = int(it.get("price", 0) or 0)
-            if balance < price:
+            if typ == "role":
+                rid = it.get("role_id")
+                if not rid:
+                    continue
+                if rid in owned_roles:
+                    continue
+
+            elif typ == "item":
+                # itemは何度でもOK
+                pass
+            else:
                 continue
 
             options.append(
                 discord.SelectOption(
-                    label=f"{it['name']}（{price}）",
+                    label=f"{it.get('name','商品')}（{price}）",
                     value=it["key"],
                     description="購入するのだ"
                 )
             )
 
-        # ✅ 買えるものがなくても「一覧」は必ず出す
         if not options:
-            msg += "\n\n購入可能な称号は今はないのだ（コインを貯めるのだ）"
+            msg += "\n\n購入可能な商品は今はないのだ（コインを貯めるのだ）"
             return await interaction.followup.send(msg, ephemeral=True)
 
         view = discord.ui.View(timeout=60)
         view.add_item(ShopBuySelect(options))
-        await interaction.followup.send(msg + "\n\n購入する称号を選ぶのだ", view=view, ephemeral=True)
+        await interaction.followup.send(msg + "\n\n購入する商品を選ぶのだ", view=view, ephemeral=True)
 
     @discord.ui.button(label="🎖️ 称号を付与する", style=discord.ButtonStyle.secondary, custom_id="shop_title_assign_btn")
     async def title_assign(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2119,4 +2211,5 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
