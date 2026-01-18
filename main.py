@@ -404,6 +404,9 @@ class SheetsStore:
         self._uid_to_row: dict[int, int] = {}         # 管理: user_id -> row
         self._uid_to_row_coins: dict[int, int] = {}   # 読み取り用: user_id -> row
 
+        self.ws_coins = None
+        self._uid_to_row_coins: dict[int, int] = {}
+
     def init(self):
         if not GS_SERVICE_ACCOUNT_JSON or not GS_SPREADSHEET_ID:
             raise RuntimeError("GS_SERVICE_ACCOUNT_JSON / GS_SPREADSHEET_ID が未設定です")
@@ -2582,6 +2585,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
