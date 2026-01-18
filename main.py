@@ -910,7 +910,7 @@ class ShopEntryView(discord.ui.View):
 
         await interaction.response.defer(ephemeral=True)
 
-        # 🔒 ロック下でユーザー取得
+        # 🔒 ユーザー取得はここだけ
         async with get_user_lock(interaction.user.id):
             u = store.get_user(interaction.user.id)
             if interaction.user.id not in store._uid_to_row:
@@ -919,7 +919,6 @@ class ShopEntryView(discord.ui.View):
         owned_roles = title_inventory(u)
         balance = int(u.get("coins", 0))
 
-        # 👇 ここはロックの外（インデントを戻す！）
         lines = []
         for it in SHOP_ITEMS:
             name = it.get("name", "（名称なし）")
@@ -936,7 +935,7 @@ class ShopEntryView(discord.ui.View):
                     status = "🛒 購入可能"
                 else:
                     status = f"🔒 不足（あと{price - balance}）"
-            else:  # item
+            else:
                 status = "🛒 購入可能" if balance >= price else f"🔒 不足（あと{price - balance}）"
 
             lines.append(f"{status}  {name} — {price}コイン")
@@ -949,126 +948,22 @@ class ShopEntryView(discord.ui.View):
 
         await interaction.followup.send(msg, ephemeral=True)
 
-
-    @discord.ui.button(label="🎖️ 称号を付与する", style=discord.ButtonStyle.secondary, custom_id="shop_title_assign_btn")
-    async def title_assign(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
-
-        await interaction.response.defer(ephemeral=True)
-            async with get_user_lock(interaction.user.id):
-        u = store.get_user(interaction.user.id)
-        if interaction.user.id not in store._uid_to_row:
-            await sheets_upsert_async(u)
-
-        owned = title_inventory(u)
-
-        options = []
-        for rid in sorted(owned):
-            role = interaction.guild.get_role(rid)
-            if not role:
-                continue
-            options.append(discord.SelectOption(label=role.name, value=str(rid)))
-
-        if not options:
-            return await interaction.followup.send("付与できる称号がないのだ", ephemeral=True)
-
-        view = discord.ui.View(timeout=60)
-        view.add_item(TitleAssignSelect(options))
-        await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
-
-    @discord.ui.button(label="🎁 ログインボーナス", style=discord.ButtonStyle.success, custom_id="shop_daily_btn")
-    async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
-
-        await interaction.response.defer(ephemeral=True)
-        try:
-            async with get_user_lock(interaction.user.id):
-                u = store.get_user(interaction.user.id)
-
-                today = datetime.now(JST).date()
-                last = None
-                if u.get("last_login_ymd"):
-                    try:
-                        y, m, d = map(int, u["last_login_ymd"].split("-"))
-                        last = date(y, m, d)
-                    except Exception:
-                        last = None
-
-                if last == today:
-                    return await interaction.followup.send("今日はもう受け取っているのだ", ephemeral=True)
-
-                if last == (today - timedelta(days=1)):
-                    u["login_streak"] += 1
-                else:
-                    u["login_streak"] = 1
-
-                u["login_total"] += 1
-                u["last_login_ymd"] = today.strftime("%Y-%m-%d")
-
-                base = 10
-                extra = calc_login_extra(u["login_streak"])
-                streak_gain = base + extra
-
-                fortune, fortune_msg = await ai_fortune_message()
-                fortune_gain = FORTUNE_COIN.get(fortune, 0)
-
-                total_gain = streak_gain + fortune_gain
-                u["coins"] += total_gain
-                u["total_earned"] += total_gain
-
-                if fortune == "大吉":
-                    u["daikichi_count"] += 1
-                if fortune == "大凶":
-                    u["daikyo_count"] += 1
-
-                await sheets_upsert_async(u)
-
-                msg = (
-                    f"🎁 ログインボーナスなのだ\n\n"
-                    f"連続ログイン：{u['login_streak']}日\n"
-                    f"+{streak_gain} コイン（通常+10 / 連続+{extra}）\n\n"
-                    f"🔮 今日の占い：{fortune}\n"
-                    f"{fortune_msg}\n"
-                    f"+{fortune_gain} コイン\n\n"
-                    f"現在の残高：{u['coins']} コインなのだ"
-                )
-                await interaction.followup.send(msg, ephemeral=True)
-
-            await maybe_award_hidden_titles(interaction, u, just_events=set())
-        except Exception as e:
-            print("shop daily error:", e)
-            traceback.print_exc()
-            await interaction.followup.send("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）", ephemeral=True)
-
     @discord.ui.button(label="💰 残高", style=discord.ButtonStyle.secondary, custom_id="shop_balance_btn")
     async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_in_channel(interaction, SHOP_CHANNEL_ID):
             return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
-        if not STORE_READY:
-            return await interaction.response.send_message("起動直後なのだ。少し待ってもう一回なのだ", ephemeral=True)
-
         await interaction.response.defer(ephemeral=True)
-        try:
-            async with get_user_lock(interaction.user.id):
-                u = store.get_user(interaction.user.id)
-                # 初回ユーザーなら行を作る（残高参照でもOK）
-                if interaction.user.id not in store._uid_to_row:
-                    await sheets_upsert_async(u)
 
-            await interaction.followup.send(
-                f"現在の残高：{int(u.get('coins', 0))} コインなのだ",
-                ephemeral=True
-            )
-        except Exception as e:
-            print("[balance] error:", e)
-            traceback.print_exc()
-            await interaction.followup.send(
-                "残高取得でエラーなのだ…（Renderログを見てほしいのだ）",
-                ephemeral=True
-            )
+        async with get_user_lock(interaction.user.id):
+            u = store.get_user(interaction.user.id)
+            if interaction.user.id not in store._uid_to_row:
+                await sheets_upsert_async(u)
+
+        await interaction.followup.send(
+            f"現在の残高：{int(u.get('coins', 0))} コインなのだ",
+            ephemeral=True
+        )
 
 # =========================================================
 # /setup_shop と /setup_bj （最初の1回のみ）
@@ -2243,6 +2138,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
