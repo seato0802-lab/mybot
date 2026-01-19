@@ -3067,7 +3067,7 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
             payout_total += bet
             results.append(f"手札{idx+1}：引き分け")
 
-        for idx, hand in enumerate(session["hands"]):
+    for idx, hand in enumerate(session["hands"]):
         bet = int(session["bets"][idx])
         v = hand_value(hand)
 
@@ -3079,19 +3079,18 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
             results.append(f"手札{idx+1}：負け（バースト）")
             payout = 0
 
-        # ディーラーが初手21＝没収（プレイヤーBJでも負け扱いならここで統一）
+        # ディーラーが初手21
         elif immediate_dealer_bj:
             results.append(f"手札{idx+1}：負け（ディーラー21）")
             payout = 0
 
-        # ディーラーバースト＝勝ち
+        # ディーラーバースト
         elif dealer_bust:
             if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
-                # BJ 3:2：戻り = 2.5倍（賭け + 利益1.5倍）
+                # BJ 3:2
                 payout = (bet * 5) // 2
                 results.append(f"手札{idx+1}：勝ち（BJ 3:2）")
             else:
-                # 通常勝ち：戻り = 2倍（賭け + 利益1倍）
                 payout = bet * 2
                 results.append(f"手札{idx+1}：勝ち（ディーラーバースト）")
 
@@ -3108,13 +3107,13 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
                 payout = 0
                 results.append(f"手札{idx+1}：負け")
             else:
-                # ✅ 引き分け：賭けた額そのまま返す（損益0）
+                # ✅ 引き分け：賭け金そのまま返却
                 payout = bet
                 results.append(f"手札{idx+1}：引き分け")
 
         payout_total += payout
-        # profit は純利益（戻り - 賭け）で統一
         profit += (payout - bet)
+
 
     async with get_user_lock(interaction.user.id):
         u["coins"] += payout_total
@@ -3325,6 +3324,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
