@@ -1808,28 +1808,47 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         print("AI error:", e)
         traceback.print_exc()
 
-@bot.tree.command(name="lottery", description="抽選を作成するのだ")
+@bot.tree.command(name="lottery", description="抽選を作成するのだ（管理者専用）")
 @app_commands.describe(
     minutes="締め切りまでの分数",
     winners="当選人数",
     reward="当選者1人あたりのコイン",
 )
 async def lottery_cmd(interaction: discord.Interaction, minutes: int, winners: int, reward: int):
+    # ✅ 管理者チェック
     if not is_admin_user(interaction):
-        return await interaction.response.send_message("権限がないのだ", ephemeral=True)
+        return await interaction.response.send_message(
+            "このコマンドは管理者のみ使用できるのだ",
+            ephemeral=True,
+        )
 
     if minutes < 1:
-        return await interaction.response.send_message("minutes は 1 以上なのだ", ephemeral=True)
+        return await interaction.response.send_message(
+            "minutes は 1 以上で入力するのだ",
+            ephemeral=True,
+        )
+
+    if winners < 1:
+        return await interaction.response.send_message(
+            "winners は 1 以上で入力するのだ",
+            ephemeral=True,
+        )
+
+    if reward < 1:
+        return await interaction.response.send_message(
+            "reward は 1 以上で入力するのだ",
+            ephemeral=True,
+        )
 
     ends_at = datetime.now(JST) + timedelta(minutes=minutes)
 
     await interaction.response.defer(ephemeral=True)
 
     msg = await interaction.channel.send(
-        "🎟️ **抽選開始なのだ！**\n"
-        f"締切：{ends_at.strftime('%Y-%m-%d %H:%M')}\n"
+        "🎟️ **抽選開始なのだ！**\n\n"
+        f"締切：{ends_at.strftime('%Y-%m-%d %H:%M')}（JST）\n"
         f"当選人数：{winners}\n"
-        f"報酬：{reward} コイン\n\n"
+        f"報酬：{reward} コイン（1人あたり）\n\n"
         "下のボタンで参加するのだ！",
         view=LotteryJoinView(message_id=0),
     )
@@ -3171,6 +3190,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
