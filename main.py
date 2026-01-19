@@ -827,13 +827,37 @@ async def apply_title_role(member: discord.Member, role_id: int):
     if role:
         await member.add_roles(role, reason="Bot称号付与")
 
+def _norm_role_name(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s)
+
+    # 前後空白除去 + 全角スペースを半角へ
+    s = s.replace("\u3000", " ").strip()
+
+    # 連続スペース圧縮
+    s = re.sub(r"\s+", " ", s)
+
+    # ゼロ幅文字を除去（よく事故る）
+    s = s.replace("\u200b", "").replace("\u200c", "").replace("\u200d", "").replace("\ufeff", "")
+
+    # 大文字小文字差を吸収（英字が混ざってもOK）
+    return s.casefold()
+
+
 def find_role_by_name(guild: discord.Guild, role_name: str) -> discord.Role | None:
-    if not guild or not role_name:
-        return None
-    target = role_name.strip()
+    target = _norm_role_name(role_name)
+
+    # 1) まず完全一致（正規化後）
     for r in guild.roles:
-        if r.name == target:
+        if _norm_role_name(r.name) == target:
             return r
+
+    # 2) 次に「含む」（正規化後）※少し緩める
+    for r in guild.roles:
+        if target and target in _norm_role_name(r.name):
+            return r
+
     return None
 
 def calc_login_extra(streak: int) -> int:
@@ -1152,6 +1176,16 @@ class ShopBuyConfirmView(discord.ui.View):
                         role_obj = find_role_by_name(interaction.guild, role_name)
                         role_id = role_obj.id if role_obj else 0
 
+                        if role_obj is None:
+                            print("[ShopRole] NOT FOUND:", role_name)
+                            norm = _norm_role_name(role_name)
+                            cands = [
+                                r.name
+                                for r in interaction.guild.roles
+                                if norm in _norm_role_name(r.name)
+                            ]
+                            print("[ShopRole] candidates:", cands[:20])
+
                 if role_id <= 0:
                     return await interaction.followup.send(
                         "この称号ロールがサーバーに見つからないのだ（ロール名が一致してるか確認なのだ）",
@@ -1178,13 +1212,31 @@ class ShopBuyConfirmView(discord.ui.View):
 
                 return await interaction.followup.send(
                     (
-                        "🎁 **購入完了**なのだ！👍\n"
+                        "🎁 **購入完了**なのだ！\n"
                         f"{name}\n"
                         f"消費：-{price} コイン\n"
                         f"残高：{u['coins']} コインなのだ\n"
+                        "👍 完了なのだ"
                     ),
                     ephemeral=True,
                 )
+
+            # --- 交換アイテム ---
+            u["coins"] -= price
+            await sheets_upsert_async(u)
+
+            if item.get("notify"):
+                await notify_exchange(interaction, interaction.user, name, price)
+
+            return await interaction.followup.send(
+                (
+                    "🎁 **交換完了**なのだ！\n"
+                    f"{name}\n"
+                    f"消費：-{price} コイン\n"
+                    f"残高：{u['coins']} コインなのだ\n"
+                ),
+                ephemeral=True,
+            )
 
             # --- 交換アイテム ---
             u["coins"] -= price
@@ -2815,6 +2867,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
