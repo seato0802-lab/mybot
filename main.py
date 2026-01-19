@@ -385,6 +385,14 @@ def dealer_hit_threshold_by_balance(balance: int) -> int:
         return 18
     return 17
 
+# 沼・補填と同じ運営ロール
+NUMA_SETUP_ROLE_ID = 1462688366431567872
+
+def has_numa_setup_role(member: discord.abc.User) -> bool:
+    if not isinstance(member, discord.Member):
+        return False
+    return any(r.id == NUMA_SETUP_ROLE_ID for r in member.roles)
+
 # =========================================================
 # Google Sheets 永続ストア
 # =========================================================
@@ -411,23 +419,29 @@ SEATO_USER_ID = _env_int("SEATO_USER_ID")
 def _role_env(name: str):
     return _env_int(name)
 
+TITLE_ROLE_1000    = 1462689131695050817  # 見習い
+TITLE_ROLE_5000    = 1462688704220106849  # 常連
+TITLE_ROLE_10000   = 1462689358925533300  # 策士
+TITLE_ROLE_100000  = 1462689551435698280  # 伝説
 
-TITLE_ROLE_1000 = _role_env("TITLE_ROLE_1000")
-TITLE_ROLE_5000 = _role_env("TITLE_ROLE_5000")
-TITLE_ROLE_10000 = _role_env("TITLE_ROLE_10000")
-TITLE_ROLE_100000 = _role_env("TITLE_ROLE_100000")
+ROLE_JP_FIRST   = 1462689604824989941  # 寵愛を受けし者
+ROLE_JP_MULTI   = 1462689718364930171  # 選ばれし者
+ROLE_BAR_MISS   = 1462689753760534618  # 弄ばれし者
 
-ROLE_DAIKICHI_10 = _role_env("ROLE_DAIKICHI_10")
-ROLE_DAIKYO_10 = _role_env("ROLE_DAIKYO_10")
-ROLE_JP_FIRST = _role_env("ROLE_JP_FIRST")
-ROLE_JP_MULTI = _role_env("ROLE_JP_MULTI")
-ROLE_BAR_MISS = _role_env("ROLE_BAR_MISS")
+ROLE_DAIKICHI_10 = 1462689802100146300  # 加護を受けし者
+ROLE_DAIKYO_10   = 1462690066714460274  # 試されし者
 
-ROLE_BJ_FIRSTWIN = _role_env("ROLE_BJ_FIRSTWIN")
-ROLE_BJ_3STREAK = _role_env("ROLE_BJ_3STREAK")
-ROLE_BJ_BIGWIN = _role_env("ROLE_BJ_BIGWIN")
-ROLE_BJ_BIGLOSE = _role_env("ROLE_BJ_BIGLOSE")
-ROLE_BJ_100PLAY = _role_env("ROLE_BJ_100PLAY")
+ROLE_BJ_FIRSTWIN = 1462690190572261407  # 勝負師見習い
+ROLE_BJ_3STREAK  = 1462690294779871405  # 勝負師
+ROLE_BJ_100PLAY  = 1462690412559863932  # ブラックジャック職人
+ROLE_BJ_BIGWIN   = 1462690562044854425  # 大勝負師
+ROLE_BJ_BIGLOSE  = 1462690685944856677  # 破滅王
+
+ROLE_NUMA_CLEAR  = 1462810553553780796  # 沼踏破者
+ROLE_NUMA_LEGEND = 1462810693156737087  # 沼を支配せし者
+
+AWARD_NUMA_CLEAR = "AWARD_NUMA_CLEAR"
+AWARD_NUMA_LEGEND = "AWARD_NUMA_LEGEND"
 
 SHOP_ITEMS = [
     {"key": "title_1000", "name": "🌱 ずんだ見習い", "price": 1000, "type": "role", "role_name": "ずんだ見習い"},
@@ -440,26 +454,28 @@ SHOP_ITEMS = [
     {"key": "item_3", "name": "武器１本（アタッチメント自由）", "price": 500, "type": "item", "notify": True, "repeatable": True},
 ]
 
-MANAGED_TITLE_ROLES = set(
-    rid
-    for rid in [
-        TITLE_ROLE_1000,
-        TITLE_ROLE_5000,
-        TITLE_ROLE_10000,
-        TITLE_ROLE_100000,
-        ROLE_DAIKICHI_10,
-        ROLE_DAIKYO_10,
-        ROLE_JP_FIRST,
-        ROLE_JP_MULTI,
-        ROLE_BAR_MISS,
-        ROLE_BJ_FIRSTWIN,
-        ROLE_BJ_3STREAK,
-        ROLE_BJ_BIGWIN,
-        ROLE_BJ_BIGLOSE,
-        ROLE_BJ_100PLAY,
-    ]
-    if isinstance(rid, int) and rid > 0
-)
+MANAGED_TITLE_ROLES = {
+    TITLE_ROLE_1000,
+    TITLE_ROLE_5000,
+    TITLE_ROLE_10000,
+    TITLE_ROLE_100000,
+
+    ROLE_JP_FIRST,
+    ROLE_JP_MULTI,
+    ROLE_BAR_MISS,
+
+    ROLE_DAIKICHI_10,
+    ROLE_DAIKYO_10,
+
+    ROLE_BJ_FIRSTWIN,
+    ROLE_BJ_3STREAK,
+    ROLE_BJ_100PLAY,
+    ROLE_BJ_BIGWIN,
+    ROLE_BJ_BIGLOSE,
+
+    ROLE_NUMA_CLEAR,
+    ROLE_NUMA_LEGEND,
+}
 
 USER_HEADERS = [
     "user_id",
@@ -1965,6 +1981,172 @@ async def lottery_cmd(interaction: discord.Interaction, minutes: int, winners: i
     await interaction.followup.send("抽選を作成したのだ", ephemeral=True)
 
 # =========================================================
+# 沼（NUMA）
+# =========================================================
+NUMA_DENOMS = [2, 4, 8, 16, 32, 64]
+NUMA_CONFIG_POT_KEY = "numa_pot"
+
+NUMA_LOCK = asyncio.Lock()
+
+# 称号（直書きID）
+ROLE_NUMA_CLEAR  = 1462810553553780796  # 沼踏破者
+ROLE_NUMA_LEGEND = 1462810693156737087  # 沼を支配せし者
+
+AWARD_NUMA_CLEAR  = "AWARD_NUMA_CLEAR"
+AWARD_NUMA_LEGEND = "AWARD_NUMA_LEGEND"
+
+class NumaEntryView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="🕳️ 沼スタート",
+        style=discord.ButtonStyle.danger,
+        custom_id="numa_start_btn",
+    )
+    async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if NUMA_LOCK.locked():
+            return await interaction.response.send_message(
+                "今は誰かが沼に挑戦中なのだ…！",
+                ephemeral=True,
+            )
+
+        await interaction.response.send_modal(NumaBallModal())
+        
+class NumaBallModal(discord.ui.Modal, title="投入する玉数を入力するのだ"):
+    balls = discord.ui.TextInput(
+        label="玉数（1発 = 100コイン）",
+        placeholder="例：10",
+        required=True,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            balls = int(self.balls.value)
+            if balls <= 0:
+                raise ValueError
+        except Exception:
+            return await interaction.response.send_message(
+                "正しい数字を入力するのだ",
+                ephemeral=True,
+            )
+
+        async with NUMA_LOCK:
+            await run_numa_game(interaction, balls)
+
+async def run_numa_game(interaction: discord.Interaction, balls: int):
+    channel = interaction.channel
+    user = interaction.user
+
+    # コイン消費
+    async with get_user_lock(user.id):
+        u = store.get_user(user.id)
+        cost = balls * 100
+        if u["coins"] < cost:
+            return await channel.send(
+                f"{user.mention} コインが足りないのだ…"
+            )
+
+        u["coins"] -= cost
+        await sheets_upsert_async(u)
+
+    # pot 読み書き（Sheets 設定）
+    pot = int(store.config.get(NUMA_CONFIG_POT_KEY, "0") or 0)
+    pot += balls
+    store._save_config_kv(NUMA_CONFIG_POT_KEY, str(pot))
+
+    alive = balls
+    one_ball_announced = False
+    legend_clear = False
+
+    await channel.send(
+        "🕳️ **沼スタートなのだ**\n"
+        f"挑戦者：{user.mention}\n"
+        f"投入：{balls} 発\n"
+        f"現在の pot：{pot} 発"
+    )
+
+    for r, denom in enumerate(NUMA_DENOMS, start=1):
+        before = alive
+        passed = sum(1 for _ in range(alive) if random.random() < (1 / denom))
+        alive = passed
+
+        await channel.send(
+            f"🎯 **ラウンド {r}/{len(NUMA_DENOMS)}**\n"
+            f"{before} 発 → {alive} 発"
+        )
+
+        if alive == 1 and not one_ball_announced:
+            one_ball_announced = True
+            await channel.send(
+                "⚠️⚠️⚠️ **ざわ…ざわ…** ⚠️⚠️⚠️\n"
+                "💠 通過玉が……**1発だけ** になったのだ！"
+            )
+
+        if r == len(NUMA_DENOMS) and alive >= 1:
+            if alive == 1:
+                legend_clear = True
+            break
+
+        if alive <= 0:
+            await channel.send("🕳️ 沼に飲み込まれたのだ……")
+            return
+
+        await asyncio.sleep(0.6)
+
+    # 成功
+    reward = pot * 100
+    store._save_config_kv(NUMA_CONFIG_POT_KEY, "0")
+
+    async with get_user_lock(user.id):
+        u = store.get_user(user.id)
+        u["coins"] += reward
+        await sheets_upsert_async(u)
+
+    await channel.send(
+        "🎉🎉🎉 **沼制覇なのだ！！** 🎉🎉🎉\n"
+        f"{user.mention}\n"
+        f"報酬：{reward} コイン\n"
+        "potは 0 に戻したのだ"
+    )
+
+    # 隠し称号判定
+    just_events = {"NUMA_CLEAR"}
+    if legend_clear:
+        just_events.add("NUMA_LEGEND")
+
+    await maybe_award_hidden_titles(interaction, u, just_events)
+
+@bot.tree.command(
+    name="setup_numa",
+    description="沼の入口を設置するのだ（指定ロール保持者のみ）"
+)
+async def setup_numa_cmd(interaction: discord.Interaction):
+    if not isinstance(interaction.user, discord.Member):
+        return await interaction.response.send_message(
+            "サーバー内でのみ使えるのだ",
+            ephemeral=True,
+        )
+
+    if not has_numa_setup_role(interaction.user):
+        return await interaction.response.send_message(
+            "このコマンドを使う権限がないのだ",
+            ephemeral=True,
+        )
+
+    await interaction.channel.send(
+        "🕳️ **沼**\n"
+        "・玉を投入して運命に挑むのだ\n"
+        "・最後まで残れば超高額報酬なのだ\n",
+        view=NumaEntryView(),
+    )
+
+    await interaction.response.send_message(
+        "沼を設置したのだ",
+        ephemeral=True,
+    )
+
+# =========================================================
 # /dice クールタイム（ユーザーごと）
 # =========================================================
 DICE_COOLDOWN_SEC = 10
@@ -3374,6 +3556,7 @@ async def on_ready():
         bot.add_view(ShopEntryView())
         bot.add_view(BjEntryView())
         bot.add_view(BJActionView())
+        bot.add_view(NumaEntryView())
         VIEWS_READY = True
 
     if not check_tasks.is_running():
@@ -3422,6 +3605,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
