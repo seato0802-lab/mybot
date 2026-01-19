@@ -1636,13 +1636,25 @@ class ShopEntryView(discord.ui.View):
     custom_id="shop_daily_btn",
 )
 async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
-    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-        return await interaction.response.send_message(
-            "このチャンネルでは使えないのだ",
-            ephemeral=True,
-        )
+    # まず3秒対策：最速でdefer（失敗しても握りつぶす）
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except Exception:
+        pass
 
-    await interaction.response.defer(ephemeral=True)
+    # 送信ヘルパ：応答済みかで followup / response を切替
+    async def send_ephemeral(text: str):
+        try:
+            if interaction.response.is_done():
+                return await interaction.followup.send(text, ephemeral=True)
+            return await interaction.response.send_message(text, ephemeral=True)
+        except Exception:
+            # ここで落ちる場合はもうDiscord側に返せないことが多い
+            return None
+
+    # チャンネル制限
+    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+        return await send_ephemeral("このチャンネルでは使えないのだ")
 
     try:
         async with get_user_lock(interaction.user.id):
@@ -1651,18 +1663,16 @@ async def daily(self, interaction: discord.Interaction, button: discord.ui.Butto
             today = datetime.now(JST).date()
             last = None
 
-            if u.get("last_login_ymd"):
+            ymd = u.get("last_login_ymd")
+            if ymd:
                 try:
-                    y, m, d = map(int, u["last_login_ymd"].split("-"))
+                    y, m, d = map(int, ymd.split("-"))
                     last = date(y, m, d)
                 except Exception:
                     last = None
 
             if last == today:
-                return await interaction.followup.send(
-                    "今日はもう受け取っているのだ",
-                    ephemeral=True,
-                )
+                return await send_ephemeral("今日はもう受け取っているのだ")
 
             if last == (today - timedelta(days=1)):
                 u["login_streak"] += 1
@@ -1700,21 +1710,14 @@ async def daily(self, interaction: discord.Interaction, button: discord.ui.Butto
                 f"現在の残高：{u['coins']} コインなのだ"
             )
 
-            await interaction.followup.send(msg, ephemeral=True)
+            await send_ephemeral(msg)
 
-            await maybe_award_hidden_titles(
-                interaction,
-                u,
-                just_events=set(),
-            )
+            await maybe_award_hidden_titles(interaction, u, just_events=set())
 
     except Exception as e:
         print("shop daily error:", e)
         traceback.print_exc()
-        await interaction.followup.send(
-            "ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）",
-            ephemeral=True,
-        )
+        await send_ephemeral("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）")
 
     @discord.ui.button(
         label="💰 残高",
@@ -3267,6 +3270,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
