@@ -164,9 +164,47 @@ def init_ai_memory_db():
         )
         """
     )
+
+    # ✅ 抽選イベント（Sheetsには保存しない）
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lottery_events (
+            message_id INTEGER PRIMARY KEY,
+            channel_id INTEGER NOT NULL,
+            guild_id INTEGER NOT NULL,
+            created_by INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            ends_at INTEGER NOT NULL,
+            winners_count INTEGER NOT NULL,
+            reward_coins INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open' -- open / closed
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lottery_entries (
+            message_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            joined_at INTEGER NOT NULL,
+            PRIMARY KEY (message_id, user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lottery_winners (
+            message_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            reward_coins INTEGER NOT NULL,
+            decided_at INTEGER NOT NULL,
+            PRIMARY KEY (message_id, user_id)
+        )
+        """
+    )
+
     conn.commit()
     conn.close()
-
 
 def save_chat(user_id: int, message: str):
     conn = sqlite3.connect("ai_memory.db")
@@ -221,6 +259,118 @@ def save_summary(user_id: int, summary: str):
     conn.commit()
     conn.close()
 
+# =========================================================
+# 抽選（Lottery）SQLite ユーティリティ
+# =========================================================
+
+_LOTTERY_DB_LOCK = Lock()
+
+def _db_connect():
+    return sqlite3.connect("ai_memory.db")
+
+def lottery_create_event(message_id: int, channel_id: int, guild_id: int, created_by: int,
+                         ends_at_unix: int, winners_count: int, reward_coins: int):
+    now = int(time.time())
+    with _LOTTERY_DB_LOCK:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO lottery_events
+            (message_id, channel_id, guild_id, created_by, created_at, ends_at, winners_count, reward_coins, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open')
+            """,
+            (message_id, channel_id, guild_id, created_by, now, ends_at_unix, winners_count, reward_coins),
+        )
+        conn.commit()
+        conn.close()
+
+def lottery_add_entry(message_id: int, user_id: int) -> bool:
+    now = int(time.time())
+    with _LOTTERY_DB_LOCK:
+        conn = _db_connect()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO lottery_entries (message_id, user_id, joined_at) VALUES (?, ?, ?)",
+                (message_id, user_id, now),
+            )
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+        finally:
+            conn.close()
+
+def lottery_get_event(message_id: int):
+    with _LOTTERY_DB_LOCK:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT message_id, channel_id, guild_id, created_by, ends_at, winners_count, reward_coins, status "
+            "FROM lottery_events WHERE message_id=?",
+            (message_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+    if not row:
+        return None
+    return {
+        "message_id": int(row[0]),
+        "channel_id": int(row[1]),
+        "guild_id": int(row[2]),
+        "created_by": int(row[3]),
+        "ends_at": int(row[4]),
+        "winners_count": int(row[5]),
+        "reward_coins": int(row[6]),
+        "status": str(row[7]),
+    }
+
+def lottery_list_entries(message_id: int) -> list[int]:
+    with _LOTTERY_DB_LOCK:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM lottery_entries WHERE message_id=?", (message_id,))
+        rows = cur.fetchall()
+        conn.close()
+    return [int(r[0]) for r in rows]
+
+def lottery_close_event(message_id: int):
+    with _LOTTERY_DB_LOCK:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute("UPDATE lottery_events SET status='closed' WHERE message_id=?", (message_id,))
+        conn.commit()
+        conn.close()
+
+def lottery_save_winners(message_id: int, winners: list[int], reward: int):
+    now = int(time.time())
+    with _LOTTERY_DB_LOCK:
+        conn = _db_connect()
+        cur = conn.cursor()
+        for uid in winners:
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO lottery_winners
+                (message_id, user_id, reward_coins, decided_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (message_id, int(uid), int(reward), now),
+            )
+        conn.commit()
+        conn.close()
+
+def lottery_get_open_events_due(now_unix: int) -> list[int]:
+    with _LOTTERY_DB_LOCK:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT message_id FROM lottery_events WHERE status='open' AND ends_at <= ?",
+            (int(now_unix),),
+        )
+        rows = cur.fetchall()
+        conn.close()
+    return [int(r[0]) for r in rows]
 
 # =========================================================
 # Google Sheets 永続ストア
@@ -1509,6 +1659,40 @@ class ShopEntryView(discord.ui.View):
             )
 
 # =========================================================
+# 抽選参加 View
+# =========================================================
+class LotteryJoinView(discord.ui.View):
+    def __init__(self, message_id: int):
+        super().__init__(timeout=None)
+        self.message_id = int(message_id)
+
+    @discord.ui.button(
+        label="🎟️ 抽選に参加",
+        style=discord.ButtonStyle.success,
+        custom_id="lottery_join_btn",
+    )
+    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+        ev = lottery_get_event(self.message_id)
+        if not ev or ev["status"] != "open":
+            return await interaction.response.send_message(
+                "この抽選はもう締め切ったのだ",
+                ephemeral=True,
+            )
+
+        ok = lottery_add_entry(self.message_id, interaction.user.id)
+        if not ok:
+            return await interaction.response.send_message(
+                "もう参加済みなのだ",
+                ephemeral=True,
+            )
+
+        cnt = len(lottery_list_entries(self.message_id))
+        await interaction.response.send_message(
+            f"参加したのだ！（現在 {cnt} 人）",
+            ephemeral=True,
+        )
+
+# =========================================================
 # /setup_shop と /setup_bj （最初の1回のみ）
 # =========================================================
 @bot.tree.command(name="setup_shop", description="ショップ入口メッセージを設置するのだ（最初の1回のみ）")
@@ -1623,6 +1807,45 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         await interaction.followup.send("ごめんなのだ…今はうまく答えられないのだ 💦")
         print("AI error:", e)
         traceback.print_exc()
+
+@bot.tree.command(name="lottery", description="抽選を作成するのだ")
+@app_commands.describe(
+    minutes="締め切りまでの分数",
+    winners="当選人数",
+    reward="当選者1人あたりのコイン",
+)
+async def lottery_cmd(interaction: discord.Interaction, minutes: int, winners: int, reward: int):
+    if not is_admin_user(interaction):
+        return await interaction.response.send_message("権限がないのだ", ephemeral=True)
+
+    if minutes < 1:
+        return await interaction.response.send_message("minutes は 1 以上なのだ", ephemeral=True)
+
+    ends_at = datetime.now(JST) + timedelta(minutes=minutes)
+
+    await interaction.response.defer(ephemeral=True)
+
+    msg = await interaction.channel.send(
+        "🎟️ **抽選開始なのだ！**\n"
+        f"締切：{ends_at.strftime('%Y-%m-%d %H:%M')}\n"
+        f"当選人数：{winners}\n"
+        f"報酬：{reward} コイン\n\n"
+        "下のボタンで参加するのだ！",
+        view=LotteryJoinView(message_id=0),
+    )
+
+    lottery_create_event(
+        message_id=msg.id,
+        channel_id=msg.channel.id,
+        guild_id=interaction.guild_id or 0,
+        created_by=interaction.user.id,
+        ends_at_unix=int(ends_at.timestamp()),
+        winners_count=winners,
+        reward_coins=reward,
+    )
+
+    await msg.edit(view=LotteryJoinView(message_id=msg.id))
+    await interaction.followup.send("抽選を作成したのだ", ephemeral=True)
 
 # =========================================================
 # /dice クールタイム（ユーザーごと）
@@ -1783,6 +2006,48 @@ async def chinchiro_cmd(interaction: discord.Interaction):
         print("dice award error:", e)
         traceback.print_exc()
 
+# =========================================================
+# 抽選締切処理
+# =========================================================
+async def run_lottery_close(message_id: int):
+    ev = lottery_get_event(message_id)
+    if not ev or ev["status"] != "open":
+        return
+
+    channel = bot.get_channel(ev["channel_id"])
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(ev["channel_id"])
+        except Exception:
+            return
+
+    entries = lottery_list_entries(message_id)
+    if not entries:
+        lottery_close_event(message_id)
+        await channel.send("🎟️ 抽選結果なのだ\n参加者がいなかったのだ…！")
+        return
+
+    winners_n = min(ev["winners_count"], len(entries))
+    reward = ev["reward_coins"]
+
+    winners = random.sample(entries, k=winners_n)
+
+    lottery_close_event(message_id)
+    lottery_save_winners(message_id, winners, reward)
+
+    for uid in winners:
+        async with get_user_lock(uid):
+            u = store.get_user(uid)
+            u["coins"] += reward
+            u["total_earned"] += reward
+            await sheets_upsert_async(u)
+
+    mentions = " ".join(f"<@{uid}>" for uid in winners)
+    await channel.send(
+        "🎟️ **抽選結果なのだ！**\n"
+        f"当選者：{mentions}\n"
+        f"{reward} コインを付与したのだ！"
+    )
 
 # =========================================================
 # /join（既存：表示形式を変えない）
@@ -2155,6 +2420,11 @@ async def check_tasks():
     for name in remove_list:
         del tasks_data[name]
 
+@tasks.loop(seconds=30)
+async def lottery_watcher():
+    due = lottery_get_open_events_due(int(time.time()))
+    for mid in due:
+        await run_lottery_close(mid)
 
 # =========================================================
 # ブラックジャック
@@ -2863,6 +3133,9 @@ async def on_ready():
         cleanup_bj_sessions.start()
 
     print(f"Bot logged in as {bot.user}")
+    
+    if not lottery_watcher.is_running():
+        lottery_watcher.start()
 
 
 # =========================================================
@@ -2898,6 +3171,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
