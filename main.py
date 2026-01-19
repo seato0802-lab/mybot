@@ -1151,8 +1151,9 @@ class ShopBuyConfirmView(discord.ui.View):
 
                 # 購入完了通知（ユーザー向け）
                 return await interaction.followup.send(
-                    f"🎉 **購入完了**なのだ！\n{name}\n消費：-{price} コイン\n残高：{u['coins']} コインなのだ",
-                    ephemeral=True,
+                    f"🎁 **交換完了**なのだ！\n{name}\n消費：-{price} コイン\n残高：{u['coins']} コインなのだ\n"
+                    "（シイトからもらうのだ！）",
+                ephemeral=True,
                 )
 
             # --- 交換アイテム ---
@@ -2697,6 +2698,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
