@@ -1164,15 +1164,15 @@ class ShopBuyConfirmView(discord.ui.View):
             if item.get("notify"):
                 await notify_exchange(interaction, interaction.user, name, price)
 
-           return await interaction.followup.send(
-               (
+            return await interaction.followup.send(
+                (
                     f"🎁 **交換完了**なのだ！\n"
                     f"{name}\n"
                     f"消費：-{price} コイン\n"
                     f"残高：{u['coins']} コインなのだ\n"
                 ),
                 ephemeral=True,
-        )
+            )
 
     @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2703,6 +2703,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
