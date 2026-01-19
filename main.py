@@ -1391,38 +1391,24 @@ class ShopEntryView(discord.ui.View):
                 ephemeral=True,
             )
 
-   @discord.ui.button(
-    label="💰 残高",
-    style=discord.ButtonStyle.secondary,
-    custom_id="shop_balance_btn",
-)
-async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
-    u = store.get_user(interaction.user.id)
+    @discord.ui.button(
+        label="💰 残高",
+        style=discord.ButtonStyle.secondary,
+        custom_id="shop_balance_btn",
+    )
+    async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        u = store.get_user(interaction.user.id)
 
-    try:
-        # まだ応答していなければ response
-        await interaction.response.send_message(
-            f"現在の残高：{u['coins']} コインなのだ",
-            ephemeral=True,
-        )
-    except discord.NotFound:
-        # interaction が失効していたら followup
         try:
+            await interaction.response.send_message(
+                f"現在の残高：{u['coins']} コインなのだ",
+                ephemeral=True,
+            )
+        except (discord.NotFound, discord.errors.InteractionResponded):
             await interaction.followup.send(
                 f"現在の残高：{u['coins']} コインなのだ",
                 ephemeral=True,
             )
-        except Exception:
-            pass
-    except discord.errors.InteractionResponded:
-        # すでに応答済みなら followup
-        try:
-            await interaction.followup.send(
-                f"現在の残高：{u['coins']} コインなのだ",
-                ephemeral=True,
-            )
-        except Exception:
-            pass
 
 # =========================================================
 # /setup_shop と /setup_bj （最初の1回のみ）
@@ -2800,6 +2786,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
