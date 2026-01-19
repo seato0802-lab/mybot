@@ -276,6 +276,7 @@ SHOP_ITEMS = [
     {"key": "item_3", "name": "武器１本（アタッチメント自由）", "price": 100, "type": "item", "notify": True,"repeatable": True,},
 ]
 
+
 MANAGED_TITLE_ROLES = set(
     rid
     for rid in [
@@ -1047,6 +1048,38 @@ async def maybe_award_hidden_titles(
 # =========================================================
 # 入口メッセージ（ショップ・BJ）
 # =========================================================
+async def notify_exchange(interaction: discord.Interaction, buyer: discord.User, item_name: str, price: int):
+    if not SEATO_USER_ID:
+        return
+
+    try:
+        target = bot.get_user(SEATO_USER_ID)
+        if target is None:
+            target = await bot.fetch_user(SEATO_USER_ID)
+        if target is None:
+            return
+
+        dm = target.dm_channel
+        if dm is None:
+            dm = await target.create_dm()
+
+        guild_name = interaction.guild.name if interaction.guild else "DM"
+        channel_name = getattr(interaction.channel, "name", "不明")
+
+        await dm.send(
+            "🔔 交換通知なのだ\n"
+            f"- サーバー：{guild_name}\n"
+            f"- チャンネル：#{channel_name}\n"
+            f"- ユーザー：{buyer}（{buyer.id}）\n"
+            f"- アイテム：{item_name}\n"
+            f"- 消費：{price} コイン\n"
+        )
+
+    except discord.Forbidden:
+        print("[notify_exchange] DM拒否で送信できないのだ")
+    except Exception:
+        traceback.print_exc()
+
 class ShopBuySelect(discord.ui.Select):
     def __init__(self, options: list[discord.SelectOption]):
         super().__init__(
@@ -1057,14 +1090,42 @@ class ShopBuySelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # ここでは「選んだ」だけ。購入確定はボタン。
+        parent: "ShopBuyConfirmView" = self.view  # type: ignore
+        parent.selected_key = self.values[0]
+
+        item = next((x for x in SHOP_ITEMS if x["key"] == parent.selected_key), None)
+        if not item:
+            return await interaction.response.send_message("その商品は無効なのだ", ephemeral=True)
+
+        name = item["name"]
+        price = int(item["price"])
+
+        await interaction.response.send_message(
+            f"✅ 選択したのだ：**{name}**（{price}コイン）\n"
+            f"下の **確定** を押すと購入/交換になるのだ。",
+            ephemeral=True,
+        )
+
+class ShopBuyConfirmView(discord.ui.View):
+    def __init__(self, options: list[discord.SelectOption]):
+        super().__init__(timeout=120)
+        self.selected_key: str | None = None
+        self.add_item(ShopBuySelect(options))
+
+    @discord.ui.button(label="✅ 確定", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
+
+        if not self.selected_key:
+            return await interaction.followup.send("先に商品を選ぶのだ", ephemeral=True)
+
+        item = next((x for x in SHOP_ITEMS if x["key"] == self.selected_key), None)
+        if not item:
+            return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
+
         async with get_user_lock(interaction.user.id):
             u = store.get_user(interaction.user.id)
-
-            key = self.values[0]
-            item = next((x for x in SHOP_ITEMS if x["key"] == key), None)
-            if not item:
-                return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
 
             name = item["name"]
             price = int(item["price"])
@@ -1091,8 +1152,9 @@ class ShopBuySelect(discord.ui.Select):
                 await apply_title_role(member, rid)
                 await sheets_upsert_async(u)
 
+                # 購入完了通知（ユーザー向け）
                 return await interaction.followup.send(
-                    f"🎉 {name} を購入したのだ！\n残高：{u['coins']} コインなのだ",
+                    f"🎉 **購入完了**なのだ！\n{name}\n消費：-{price} コイン\n残高：{u['coins']} コインなのだ",
                     ephemeral=True,
                 )
 
@@ -1100,13 +1162,20 @@ class ShopBuySelect(discord.ui.Select):
             u["coins"] -= price
             await sheets_upsert_async(u)
 
+            # seatoへDM通知
             if item.get("notify"):
                 await notify_exchange(interaction, interaction.user, name, price)
 
             return await interaction.followup.send(
-                f"✅ {name} と交換したのだ！\n消費：-{price} コイン\n残高：{u['coins']} コインなのだ",
+                f"🎁 **交換完了**なのだ！\n{name}\n消費：-{price} コイン\n残高：{u['coins']} コインなのだ\n"
+                "（@_seato にDM通知したのだ）",
                 ephemeral=True,
             )
+
+    @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("キャンセルしたのだ", ephemeral=True)
+        self.stop()
 
 class TitleAssignSelect(discord.ui.Select):
     def __init__(self, options: list[discord.SelectOption]):
@@ -1146,60 +1215,55 @@ class ShopEntryView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(
-        label="🛒 ショップを開く",
-        style=discord.ButtonStyle.primary,
-        custom_id="shop_open_btn",
+   @discord.ui.button(
+    label="🛒 ショップを開く",
+    style=discord.ButtonStyle.primary,
+    custom_id="shop_open_btn",
+)
+async def shop_open(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+        return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+    u = store.get_user(interaction.user.id)
+    owned = title_inventory(u)
+
+    lines = []
+    options = []
+
+    for it in SHOP_ITEMS:
+        name = it["name"]
+        price = int(it["price"])
+        rid = it.get("role_id")
+        item_type = it.get("type", "role" if rid else "item")
+
+        status = []
+        if rid and rid in owned:
+            status.append("購入済み")
+        if u["coins"] < price:
+            status.append("残高不足")
+        if item_type == "item" and it.get("repeatable", True):
+            status.append("何度でも交換可")
+
+        status_text = f"（{' / '.join(status)}）" if status else ""
+        lines.append(f"- {name}：{price}コイン {status_text}")
+
+        # 選択肢に出す条件：買えるものだけ（残高不足や購入済みは確定できないため）
+        can_buy = (u["coins"] >= price) and (not rid or rid not in owned)
+        if can_buy:
+            options.append(discord.SelectOption(label=f"{name}（{price}）", value=it["key"]))
+
+    msg = (
+        "🏷️ ショップ/交換所なのだ\n\n"
+        f"現在の残高：{u['coins']} コイン\n\n"
+        "【商品一覧】\n" + "\n".join(lines)
     )
-    async def shop_open(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
-        await interaction.response.defer(ephemeral=True)
-        u = store.get_user(interaction.user.id)
-        owned = title_inventory(u)
+    if not options:
+        return await interaction.followup.send(msg + "\n\n（購入/交換できる商品が今はないのだ）", ephemeral=True)
 
-        lines = []
-        options = []
-
-        for it in SHOP_ITEMS:
-            name = it["name"]
-            price = it["price"]
-            rid = it.get("role_id")
-            item_type = it.get("type", "role" if rid else "item")
-
-            status = []
-            if rid and rid in owned:
-                status.append("購入済み")
-            if u["coins"] < price:
-                status.append("残高不足")
-            if item_type == "item":
-                status.append("何度でも交換可")
-
-            status_text = f"（{' / '.join(status)}）" if status else ""
-            lines.append(f"- {name}：{price}コイン {status_text}")
-
-            can_buy = u["coins"] >= price and (not rid or rid not in owned)
-            if can_buy:
-                options.append(
-                    discord.SelectOption(
-                        label=f"{name}（{price}）",
-                        value=it["key"],
-                    )
-                )
-
-        msg = (
-            "🏷️ ショップ/交換所なのだ\n\n"
-            f"現在の残高：{u['coins']} コイン\n\n"
-            "【商品一覧】\n" + "\n".join(lines)
-        )
-
-        if not options:
-            return await interaction.followup.send(msg, ephemeral=True)
-
-        view = discord.ui.View(timeout=60)
-        view.add_item(ShopBuySelect(options))
-        await interaction.followup.send(msg + "\n\n購入/交換する商品を選ぶのだ", view=view, ephemeral=True)
+    view = ShopBuyConfirmView(options)
+    await interaction.followup.send(msg + "\n\n商品を選んで、✅確定 を押すのだ", view=view, ephemeral=True)
 
     @discord.ui.button(
         label="🎖️ 称号を付与する",
@@ -2610,6 +2674,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
