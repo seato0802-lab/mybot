@@ -1621,7 +1621,6 @@ _dice_last_ts: dict[int, float] = {}
 # /dice（ちんちろ）
 # =========================================================
 @bot.tree.command(name="dice", description="ちんちろを振るのだ")
-@bot.tree.command(name="dice", description="ちんちろを振るのだ")
 async def chinchiro_cmd(interaction: discord.Interaction):
     # ✅ ここで落ちても無視して続行 or 終了する
     try:
@@ -2886,6 +2885,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
