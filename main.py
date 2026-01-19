@@ -705,10 +705,9 @@ def upsert_user(self, u: dict):
 
         # user_id を文字列強制（E+17対策）
         if "user_id" in header:
-            values[header.index("user_id")] = str(uid)  # ← ' を付けない
+            values[header.index("user_id")] = str(uid)
 
-        # ✅ title_role_id をテキストとして保存（E+18対策）
-        # 先頭に ' を付けて Google Sheets に「文字列」と認識させる
+        # title_role_id をテキスト保存（E+18対策）
         if "title_role_id" in header:
             try:
                 rid = int(u.get("title_role_id", 0) or 0)
@@ -728,14 +727,10 @@ def upsert_user(self, u: dict):
                 values=[values],
             )
 
-    # coinsは必ず同期
+    # ← with self._lock を抜けた後（ここはインデントを戻す）
     self._upsert_coin(uid, int(u.get("coins", 0) or 0))
 
-        # coinsは必ず同期
-        self._upsert_coin(uid, int(u.get("coins", 0) or 0))
-
 store = SheetsStore()
-
 
 async def sheets_init_async():
     loop = asyncio.get_running_loop()
@@ -2891,6 +2886,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
