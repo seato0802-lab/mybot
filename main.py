@@ -372,6 +372,19 @@ def lottery_get_open_events_due(now_unix: int) -> list[int]:
         conn.close()
     return [int(r[0]) for r in rows]
 
+def dealer_hit_threshold_by_balance(balance: int) -> int:
+    """
+    ディーラーがどこまでヒットするか。
+    残高が多いほどディーラーが強くなる＝プレイヤーが負けやすい。
+    """
+    if balance >= 100000:
+        return 20
+    if balance >= 50000:
+        return 19
+    if balance >= 20000:
+        return 18
+    return 17
+
 # =========================================================
 # Google Sheets 永続ストア
 # =========================================================
@@ -1801,24 +1814,31 @@ async def setup_shop_cmd(interaction: discord.Interaction):
 
     await interaction.followup.send("ショップ入口を設置したのだ", ephemeral=True)
 
-@bot.tree.command(name="starter100", description="初回特典で100コインを受け取るのだ（※一旦制限なし）")
+@bot.tree.command(name="starter100", description="初回特典で100コインを受け取るのだ（1回限定）")
 async def starter100_cmd(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=True)
     except discord.NotFound:
-        return  # 失効してたら何もしない
+        return
 
     try:
         async with get_user_lock(interaction.user.id):
             u = store.get_user(interaction.user.id)
+
+            if "STARTER100_USED" in award_keys_set(u):
+                return await interaction.followup.send("もう受け取っているのだ", ephemeral=True)
+
             u["coins"] += 100
             u["total_earned"] += 100
+            set_award_key(u, "STARTER100_USED")
+
             await sheets_upsert_async(u)
 
         await interaction.followup.send(
-            f"🎁 特典なのだ！\n+100コイン\n\n現在の残高：{u['coins']} コインなのだ",
-            ephemeral=True
+            f"🎁 初回特典なのだ！\n+100コイン\n\n現在の残高：{u['coins']} コインなのだ",
+            ephemeral=True,
         )
+
     except Exception as e:
         print("starter100 error:", e)
         traceback.print_exc()
@@ -1969,7 +1989,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
     def roll_dice(turn: int, jackpot_boost: bool):
         BASE_JACKPOT_RATE = 1 / 2000
-        BOOSTED_JACKPOT_RATE = 1 / 10
+        BOOSTED_JACKPOT_RATE = 1 / 100
         SEVEN_BAR_RATE = 1 / 1000
 
         r = random.random()
@@ -2044,7 +2064,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
         delta = 0
         if role == "🎉 ピンゾロ":
-            delta = 100
+            delta = 70
         elif role == "🔥 シゴロ":
             delta = 10
         elif role and "のアラシ" in role:
@@ -2632,6 +2652,14 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
                         f"現在の残高：{u['coins']} コイン\nコインが足りないのだ",
                         ephemeral=True,
                     )
+                    
+                MAX_BJ_BET = 1000  # ← どこかグローバルに置くのがおすすめ
+                    
+                if bet_val > MAX_BJ_BET:
+                    return await interaction.response.send_message(
+                        f"掛け金は最大 {MAX_BJ_BET} までなのだ",
+                        ephemeral=True,
+                    )    
 
                 u["coins"] -= bet_val
                 await sheets_upsert_async(u)
@@ -2997,7 +3025,8 @@ async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
         ephemeral=True,
     )
 
-    while hand_value(dealer) < 17:
+    threshold = dealer_hit_threshold_by_balance(int(u.get("coins", 0) or 0))
+    while hand_value(dealer) < threshold:
         await asyncio.sleep(0.6)
         dealer.append(draw_card(session["deck"]))
         await interaction.followup.send(
@@ -3393,6 +3422,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
