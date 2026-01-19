@@ -1173,14 +1173,25 @@ class ShopBuyConfirmView(discord.ui.View):
 
     @discord.ui.button(label="✅ 確定", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
+        # 404 Unknown interaction 対策：defer自体が失敗することがある
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except (discord.NotFound, discord.errors.InteractionResponded):
+            # すでに応答済み or 失効してたら何もしない（ここで落とさない）
+            pass
 
         if not self.selected_key:
-            return await interaction.followup.send("先に商品を選ぶのだ", ephemeral=True)
+            try:
+                return await interaction.followup.send("先に商品を選ぶのだ", ephemeral=True)
+            except Exception:
+                return
 
         item = next((x for x in SHOP_ITEMS if x["key"] == self.selected_key), None)
         if not item:
-            return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
+            try:
+                return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
+            except Exception:
+                return
 
         async with get_user_lock(interaction.user.id):
             u = store.get_user(interaction.user.id)
@@ -1190,44 +1201,56 @@ class ShopBuyConfirmView(discord.ui.View):
             rid = item.get("role_id")
             item_type = item.get("type", "role" if rid else "item")
 
-            if u["coins"] < price:
-                return await interaction.followup.send("コインが足りないのだ", ephemeral=True)
+            if int(u.get("coins", 0) or 0) < price:
+                try:
+                    return await interaction.followup.send("コインが足りないのだ", ephemeral=True)
+                except Exception:
+                    return
 
-            # --- ロール商品 ---
+            # -------------------------
+            # ロール商品
+            # -------------------------
             if item_type != "item":
+                if interaction.guild is None:
+                    try:
+                        return await interaction.followup.send(
+                            "サーバー内でのみ購入できる称号なのだ",
+                            ephemeral=True,
+                        )
+                    except Exception:
+                        return
+
                 role_obj = None
                 role_id = int(item.get("role_id") or 0)
 
                 # role_id が無ければ role_name から探す
                 if role_id <= 0:
                     role_name = (item.get("role_name") or "").strip()
-                    if interaction.guild and role_name:
+                    if role_name:
                         role_obj = find_role_by_name(interaction.guild, role_name)
                         role_id = role_obj.id if role_obj else 0
 
+                        # デバッグ出したいならここ（必要なときだけ）
                         if role_obj is None:
                             print("[ShopRole] NOT FOUND:", role_name)
-                            norm = _norm_role_name(role_name)
-                            cands = [
-                                r.name
-                                for r in interaction.guild.roles
-                                if norm in _norm_role_name(r.name)
-                            ]
-                            print("[ShopRole] candidates:", cands[:20])
 
                 if role_id <= 0:
-                    return await interaction.followup.send(
-                        "この称号ロールがサーバーに見つからないのだ（ロール名が一致してるか確認なのだ）",
-                        ephemeral=True,
-                    )
+                    try:
+                        return await interaction.followup.send(
+                            "この称号ロールがサーバーに見つからないのだ（ロール名が一致してるか確認なのだ）",
+                            ephemeral=True,
+                        )
+                    except Exception:
+                        return
 
                 owned = title_inventory(u)
                 if role_id in owned:
-                    return await interaction.followup.send(
-                        "それはもう購入済みなのだ",
-                        ephemeral=True,
-                    )
+                    try:
+                        return await interaction.followup.send("それはもう購入済みなのだ", ephemeral=True)
+                    except Exception:
+                        return
 
+                # 反映
                 u["coins"] -= price
                 add_title_to_inventory(u, role_id)
                 u["title_role_id"] = role_id
@@ -1239,55 +1262,51 @@ class ShopBuyConfirmView(discord.ui.View):
                 await apply_title_role(member, role_id)
                 await sheets_upsert_async(u)
 
+                try:
+                    return await interaction.followup.send(
+                        (
+                            "🎁 **購入完了**なのだ！\n"
+                            f"{name}\n"
+                            f"消費：-{price} コイン\n"
+                            f"残高：{u['coins']} コインなのだ\n"
+                            "👍 完了なのだ"
+                        ),
+                        ephemeral=True,
+                    )
+                except Exception:
+                    return
+
+            # -------------------------
+            # 交換アイテム（ここは1回だけ）
+            # -------------------------
+            u["coins"] -= price
+            await sheets_upsert_async(u)
+
+            if item.get("notify"):
+                await notify_exchange(interaction, interaction.user, name, price)
+
+            try:
                 return await interaction.followup.send(
                     (
-                        "🎁 **購入完了**なのだ！\n"
+                        "🎁 **交換完了**なのだ！\n"
                         f"{name}\n"
                         f"消費：-{price} コイン\n"
                         f"残高：{u['coins']} コインなのだ\n"
-                        "👍 完了なのだ"
                     ),
                     ephemeral=True,
                 )
-
-            # --- 交換アイテム ---
-            u["coins"] -= price
-            await sheets_upsert_async(u)
-
-            if item.get("notify"):
-                await notify_exchange(interaction, interaction.user, name, price)
-
-            return await interaction.followup.send(
-                (
-                    "🎁 **交換完了**なのだ！\n"
-                    f"{name}\n"
-                    f"消費：-{price} コイン\n"
-                    f"残高：{u['coins']} コインなのだ\n"
-                ),
-                ephemeral=True,
-            )
-
-            # --- 交換アイテム ---
-            u["coins"] -= price
-            await sheets_upsert_async(u)
-
-            # seatoへDM通知
-            if item.get("notify"):
-                await notify_exchange(interaction, interaction.user, name, price)
-
-            return await interaction.followup.send(
-                (
-                    f"🎁 **交換完了**なのだ！\n"
-                    f"{name}\n"
-                    f"消費：-{price} コイン\n"
-                    f"残高：{u['coins']} コインなのだ\n"
-                ),
-                ephemeral=True,
-            )
+            except Exception:
+                return
 
     @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("キャンセルしたのだ", ephemeral=True)
+        try:
+            await interaction.response.send_message("キャンセルしたのだ", ephemeral=True)
+        except (discord.NotFound, discord.errors.InteractionResponded):
+            try:
+                await interaction.followup.send("キャンセルしたのだ", ephemeral=True)
+            except Exception:
+                pass
         self.stop()
 
 class TitleAssignSelect(discord.ui.Select):
@@ -1648,6 +1667,11 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         print("AI error:", e)
         traceback.print_exc()
 
+# =========================================================
+# /dice クールタイム（ユーザーごと）
+# =========================================================
+DICE_COOLDOWN_SEC = 10
+_dice_last_ts: dict[int, float] = {}
 
 # =========================================================
 # /dice（ちんちろ）
@@ -1655,6 +1679,15 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
 @bot.tree.command(name="dice", description="ちんちろを振るのだ")
 async def chinchiro_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
+    now_ts = time.time()
+    last = _dice_last_ts.get(interaction.user.id, 0.0)
+    remain = DICE_COOLDOWN_SEC - (now_ts - last)
+    if remain > 0:
+        return await interaction.followup.send(
+            f"⏳ /dice はクールタイム中なのだ…！あと {remain:.1f} 秒待つのだ",
+            ephemeral=True,
+        )
+    _dice_last_ts[interaction.user.id] = now_ts
 
     DICE_COST = 5
 
@@ -2909,6 +2942,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
