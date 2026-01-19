@@ -388,6 +388,12 @@ def dealer_hit_threshold_by_balance(balance: int) -> int:
 # 沼・補填と同じ運営ロール
 NUMA_SETUP_ROLE_ID = 1462688366431567872
 
+def send_numa(channel, content: str):
+    return channel.send(
+        content,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
+
 def has_numa_setup_role(member: discord.abc.User) -> bool:
     if not isinstance(member, discord.Member):
         return False
@@ -1995,6 +2001,7 @@ ROLE_NUMA_LEGEND = 1462810693156737087  # 沼を支配せし者
 AWARD_NUMA_CLEAR  = "AWARD_NUMA_CLEAR"
 AWARD_NUMA_LEGEND = "AWARD_NUMA_LEGEND"
 
+
 class NumaEntryView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -2012,7 +2019,8 @@ class NumaEntryView(discord.ui.View):
             )
 
         await interaction.response.send_modal(NumaBallModal())
-        
+
+
 class NumaBallModal(discord.ui.Modal, title="投入する玉数を入力するのだ"):
     balls = discord.ui.TextInput(
         label="玉数（1発 = 100コイン）",
@@ -2034,6 +2042,7 @@ class NumaBallModal(discord.ui.Modal, title="投入する玉数を入力する�
         async with NUMA_LOCK:
             await run_numa_game(interaction, balls)
 
+
 async def run_numa_game(interaction: discord.Interaction, balls: int):
     channel = interaction.channel
     user = interaction.user
@@ -2044,7 +2053,8 @@ async def run_numa_game(interaction: discord.Interaction, balls: int):
         cost = balls * 100
         if u["coins"] < cost:
             return await channel.send(
-                f"{user.mention} コインが足りないのだ…"
+                f"{user.display_name} コインが足りないのだ…",
+                allowed_mentions=discord.AllowedMentions.none(),
             )
 
         u["coins"] -= cost
@@ -2061,9 +2071,10 @@ async def run_numa_game(interaction: discord.Interaction, balls: int):
 
     await channel.send(
         "🕳️ **沼スタートなのだ**\n"
-        f"挑戦者：{user.mention}\n"
+        f"挑戦者：{user.display_name}\n"
         f"投入：{balls} 発\n"
-        f"現在の pot：{pot} 発"
+        f"現在の pot：{pot} 発",
+        allowed_mentions=discord.AllowedMentions.none(),
     )
 
     for r, denom in enumerate(NUMA_DENOMS, start=1):
@@ -2073,14 +2084,16 @@ async def run_numa_game(interaction: discord.Interaction, balls: int):
 
         await channel.send(
             f"🎯 **ラウンド {r}/{len(NUMA_DENOMS)}**\n"
-            f"{before} 発 → {alive} 発"
+            f"{before} 発 → {alive} 発",
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
         if alive == 1 and not one_ball_announced:
             one_ball_announced = True
             await channel.send(
                 "⚠️⚠️⚠️ **ざわ…ざわ…** ⚠️⚠️⚠️\n"
-                "💠 通過玉が……**1発だけ** になったのだ！"
+                "💠 通過玉が……**1発だけ** になったのだ！",
+                allowed_mentions=discord.AllowedMentions.none(),
             )
 
         if r == len(NUMA_DENOMS) and alive >= 1:
@@ -2089,7 +2102,10 @@ async def run_numa_game(interaction: discord.Interaction, balls: int):
             break
 
         if alive <= 0:
-            await channel.send("🕳️ 沼に飲み込まれたのだ……")
+            await channel.send(
+                "🕳️ 沼に飲み込まれたのだ……",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
             return
 
         await asyncio.sleep(0.6)
@@ -2105,9 +2121,10 @@ async def run_numa_game(interaction: discord.Interaction, balls: int):
 
     await channel.send(
         "🎉🎉🎉 **沼制覇なのだ！！** 🎉🎉🎉\n"
-        f"{user.mention}\n"
+        f"{user.display_name}\n"
         f"報酬：{reward} コイン\n"
-        "potは 0 に戻したのだ"
+        "potは 0 に戻したのだ",
+        allowed_mentions=discord.AllowedMentions.none(),
     )
 
     # 隠し称号判定
@@ -2116,6 +2133,7 @@ async def run_numa_game(interaction: discord.Interaction, balls: int):
         just_events.add("NUMA_LEGEND")
 
     await maybe_award_hidden_titles(interaction, u, just_events)
+
 
 @bot.tree.command(
     name="setup_numa",
@@ -2139,6 +2157,7 @@ async def setup_numa_cmd(interaction: discord.Interaction):
         "・玉を投入して運命に挑むのだ\n"
         "・最後まで残れば超高額報酬なのだ\n",
         view=NumaEntryView(),
+        allowed_mentions=discord.AllowedMentions.none(),
     )
 
     await interaction.response.send_message(
@@ -3605,6 +3624,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
