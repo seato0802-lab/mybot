@@ -3254,8 +3254,15 @@ def has_hoten_role(member: discord.abc.User) -> bool:
         return False
     return any(r.id == HOTEN_ROLE_ID for r in member.roles)
 
-@bot.tree.command(name="hoten", description="（補填）指定ユーザーにコインを付与するのだ（権限ロール限定）")
-@app_commands.describe(user="補填する相手", coins="付与するコイン数（1以上）", note="メモ（任意）")
+@bot.tree.command(
+    name="hoten",
+    description="（補填）指定ユーザーにコインを付与するのだ（権限ロール限定）"
+)
+@app_commands.describe(
+    user="補填する相手",
+    coins="付与するコイン数（1以上）",
+    note="メモ（任意）"
+)
 async def hoten_cmd(
     interaction: discord.Interaction,
     user: discord.Member,
@@ -3299,15 +3306,21 @@ async def hoten_cmd(
         )
 
         # 必要なら、対象者にDM通知（任意）
-         try:
-             await user.send(f"運営から補填：+{coins} コイン（残高：{u['coins']}）なのだ")
-         except Exception:
-             pass
+        try:
+            await user.send(
+                f"運営から補填：+{coins} コイン（残高：{u['coins']}）なのだ"
+            )
+        except Exception:
+            pass
 
     except Exception as e:
         print("[hoten] error:", e)
         traceback.print_exc()
-        await safe_send(interaction, "補填に失敗したのだ…（ログ確認なのだ）", ephemeral=True)
+        await safe_send(
+            interaction,
+            "補填に失敗したのだ…（ログ確認なのだ）",
+            ephemeral=True,
+        )
 
 # =========================================================
 # 起動イベント
@@ -3388,6 +3401,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
