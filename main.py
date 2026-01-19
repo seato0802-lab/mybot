@@ -1968,9 +1968,9 @@ async def chinchiro_cmd(interaction: discord.Interaction):
     DICE_COST = 5
 
     def roll_dice(turn: int, jackpot_boost: bool):
-        BASE_JACKPOT_RATE = 1 / 5000
-        BOOSTED_JACKPOT_RATE = 1 / 500
-        SEVEN_BAR_RATE = 1 / 3000
+        BASE_JACKPOT_RATE = 1 / 2000
+        BOOSTED_JACKPOT_RATE = 1 / 2
+        SEVEN_BAR_RATE = 1 / 1000
 
         r = random.random()
         jackpot_rate = BOOSTED_JACKPOT_RATE if jackpot_boost else BASE_JACKPOT_RATE
@@ -2044,7 +2044,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
         delta = 0
         if role == "🎉 ピンゾロ":
-            delta = 50
+            delta = 100
         elif role == "🔥 シゴロ":
             delta = 10
         elif role and "のアラシ" in role:
@@ -3322,6 +3322,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
