@@ -769,6 +769,35 @@ def is_in_channel(interaction: discord.Interaction, channel_id):
     except Exception:
         return True
 
+async def safe_defer(interaction: discord.Interaction, *, ephemeral: bool = True) -> bool:
+    """
+    defer を安全に行う。
+    成功したら True。interaction が死んでいた等で失敗したら False。
+    """
+    try:
+        await interaction.response.defer(ephemeral=ephemeral)
+        return True
+    except (discord.NotFound, discord.errors.InteractionResponded):
+        return False
+    except Exception:
+        traceback.print_exc()
+        return False
+
+
+async def safe_send(interaction: discord.Interaction, content: str, *, ephemeral: bool = True, view=None):
+    """
+    response が使えれば response、ダメなら followup で送る。
+    """
+    try:
+        if not interaction.response.is_done():
+            return await interaction.response.send_message(content, ephemeral=ephemeral, view=view)
+        return await interaction.followup.send(content, ephemeral=ephemeral, view=view)
+    except (discord.NotFound, discord.errors.InteractionResponded):
+        # interaction が死んでたら諦める（ここでまた例外にしない）
+        try:
+            return await interaction.followup.send(content, ephemeral=ephemeral, view=view)
+        except Exception:
+            return None
 
 # =========================================================
 # コイン・称号ユーティリティ
@@ -1310,7 +1339,18 @@ class ShopEntryView(discord.ui.View):
                 ephemeral=True,
             )
 
-        await interaction.response.defer(ephemeral=True)
+     async def shop_open(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await safe_send(interaction, "このチャンネルでは使えないのだ", ephemeral=True)
+
+        # ✅ ここが重要：defer失敗しても落とさない
+        ok = await safe_defer(interaction, ephemeral=True)
+        if not ok:
+            return  # interaction が死んでるので何もしない
+
+        u = store.get_user(interaction.user.id)
+        ...
+        # 以降は今まで通り followup.send でOK
 
         u = store.get_user(interaction.user.id)
         owned = title_inventory(u)
@@ -2769,27 +2809,29 @@ async def admin_revoke_cmd(interaction: discord.Interaction, user: discord.Membe
 
 @bot.tree.command(name="reload_coins", description="読み取り用シートからコインを再読込するのだ")
 async def reload_coins_cmd(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    ok = await safe_defer(interaction, ephemeral=True)
+    if not ok:
+        return
 
     try:
         await sheets_reload_users_async()
     except Exception as e:
         print("[reload_coins] error:", e)
         traceback.print_exc()
-        return await interaction.followup.send("再読込に失敗したのだ…（Renderログ確認なのだ）", ephemeral=True)
+        return await safe_send(interaction, "再読込に失敗したのだ…（Renderログ確認なのだ）", ephemeral=True)
 
     uid = interaction.user.id
     u = store.get_user(uid)
     row = store._uid_to_row_coins.get(uid)
 
-    await interaction.followup.send(
+    await safe_send(
+        interaction,
         f"✅ 再読込したのだ\n"
         f"- あなたのID: {uid}\n"
         f"- coinsシート行: {row if row else '見つからない'}\n"
         f"- 現在の残高: {u['coins']} コインなのだ",
         ephemeral=True,
     )
-
 
 # =========================================================
 # 起動イベント
@@ -2867,6 +2909,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
