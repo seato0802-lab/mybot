@@ -1630,52 +1630,89 @@ class ShopEntryView(discord.ui.View):
         view.add_item(TitleAssignSelect(opts))
         await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
 
-       @discord.ui.button(
-        label="🎁 ログインボーナス",
-        style=discord.ButtonStyle.success,
-        custom_id="shop_daily_btn",
-    )
-    async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except (discord.NotFound, discord.errors.InteractionResponded):
-            pass
+@discord.ui.button(
+    label="🎁 ログインボーナス",
+    style=discord.ButtonStyle.success,
+    custom_id="shop_daily_btn",
+)
+async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+        return await interaction.response.send_message(
+            "このチャンネルでは使えないのだ",
+            ephemeral=True,
+        )
 
-        today = datetime.now(JST).strftime("%Y-%m-%d")
+    await interaction.response.defer(ephemeral=True)
 
+    try:
         async with get_user_lock(interaction.user.id):
             u = store.get_user(interaction.user.id)
 
-            # 既に受け取り済み
-            if u.get("last_login_ymd") == today:
+            today = datetime.now(JST).date()
+            last = None
+
+            if u.get("last_login_ymd"):
+                try:
+                    y, m, d = map(int, u["last_login_ymd"].split("-"))
+                    last = date(y, m, d)
+                except Exception:
+                    last = None
+
+            if last == today:
                 return await interaction.followup.send(
-                    "今日はもう受け取っているのだ 🌱",
+                    "今日はもう受け取っているのだ",
                     ephemeral=True,
                 )
 
-            # 連続ログイン処理
-            yesterday = (datetime.now(JST) - timedelta(days=1)).strftime("%Y-%m-%d")
-            if u.get("last_login_ymd") == yesterday:
+            if last == (today - timedelta(days=1)):
                 u["login_streak"] += 1
             else:
                 u["login_streak"] = 1
 
             u["login_total"] += 1
-            bonus = 10 + calc_login_extra(u["login_streak"])
+            u["last_login_ymd"] = today.strftime("%Y-%m-%d")
 
-            u["coins"] += bonus
-            u["total_earned"] += bonus
-            u["last_login_ymd"] = today
+            base = 10
+            extra = calc_login_extra(u["login_streak"])
+            streak_gain = base + extra
+
+            fortune, fortune_msg = await ai_fortune_message()
+            fortune_gain = FORTUNE_COIN.get(fortune, 0)
+
+            total_gain = streak_gain + fortune_gain
+            u["coins"] += total_gain
+            u["total_earned"] += total_gain
+
+            if fortune == "大吉":
+                u["daikichi_count"] += 1
+            if fortune == "大凶":
+                u["daikyo_count"] += 1
 
             await sheets_upsert_async(u)
 
-        await interaction.followup.send(
-            (
-                "🎁 **ログインボーナスなのだ！**\n\n"
-                f"+{bonus} コイン\n"
-                f"連続ログイン：{u['login_streak']} 日\n\n"
+            msg = (
+                "🎁 ログインボーナスなのだ\n\n"
+                f"連続ログイン：{u['login_streak']}日\n"
+                f"+{streak_gain} コイン（通常+10 / 連続+{extra}）\n\n"
+                f"🔮 今日の占い：{fortune}\n"
+                f"{fortune_msg}\n"
+                f"+{fortune_gain} コイン\n\n"
                 f"現在の残高：{u['coins']} コインなのだ"
-            ),
+            )
+
+            await interaction.followup.send(msg, ephemeral=True)
+
+            await maybe_award_hidden_titles(
+                interaction,
+                u,
+                just_events=set(),
+            )
+
+    except Exception as e:
+        print("shop daily error:", e)
+        traceback.print_exc()
+        await interaction.followup.send(
+            "ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）",
             ephemeral=True,
         )
 
@@ -3230,6 +3267,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
