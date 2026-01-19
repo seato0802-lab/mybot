@@ -677,19 +677,18 @@ class SheetsStore:
         return u
 
     def _upsert_coin(self, uid: int, coins: int):
-        # 18-19桁を壊さないように文字列強制
-        uid_str = "'" + str(uid)
+        uid_str = str(uid)  # ← ' を付けない
         with self._lock:
             idx = self._uid_to_row_coins.get(uid)
             if idx is None:
                 self.ws_coins.append_row([uid_str, int(coins)])
                 self._uid_to_row_coins[uid] = len(self.ws_coins.get_all_values())
             else:
+                # A列も念のため上書き（行ズレ対策）
                 self.ws_coins.update(
-                    range_name=f"B{idx}",
-                    values=[[int(coins)]],
+                    range_name=f"A{idx}:B{idx}",
+                    values= [[uid_str, int(coins)]],
                 )
-
 
     def upsert_user(self, u: dict):
         with self._lock:
@@ -703,7 +702,7 @@ class SheetsStore:
 
             # user_id を文字列強制（E+17対策）
             if "user_id" in header:
-                values[header.index("user_id")] = "'" + str(uid)
+                values[header.index("user_id")] = str(uid)  # ← ' を付けない
 
             idx = self._uid_to_row.get(uid)
             if idx is None:
@@ -2532,6 +2531,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
