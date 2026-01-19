@@ -2055,7 +2055,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
             except Exception:
                 delta = 0
         elif role == "🎰 ジャックポット！":
-            delta = 500
+            delta = 1000
         elif role == "💀 ヒフミ":
             delta = -10
         elif role and role.startswith("👉 目："):
@@ -3322,6 +3322,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
