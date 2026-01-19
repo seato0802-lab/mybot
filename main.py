@@ -1210,16 +1210,16 @@ class TitleAssignSelect(discord.ui.Select):
             ephemeral=True,
         )
 
-
 class ShopEntryView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-   @discord.ui.button(
-    label="🛒 ショップを開く",
-    style=discord.ButtonStyle.primary,
-    custom_id="shop_open_btn",
-)
+    @discord.ui.button(
+        label="🛒 ショップを開く",
+        style=discord.ButtonStyle.primary,
+        custom_id="shop_open_btn",
+    )
+
 async def shop_open(self, interaction: discord.Interaction, button: discord.ui.Button):
     if not is_in_channel(interaction, SHOP_CHANNEL_ID):
         return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
@@ -2674,6 +2674,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
