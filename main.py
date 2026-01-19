@@ -1068,11 +1068,8 @@ async def notify_exchange(interaction: discord.Interaction, buyer: discord.User,
 
         await dm.send(
             "🔔 交換通知なのだ\n"
-            f"- サーバー：{guild_name}\n"
-            f"- チャンネル：#{channel_name}\n"
             f"- ユーザー：{buyer}（{buyer.id}）\n"
             f"- アイテム：{item_name}\n"
-            f"- 消費：{price} コイン\n"
         )
 
     except discord.Forbidden:
@@ -1168,7 +1165,6 @@ class ShopBuyConfirmView(discord.ui.View):
 
             return await interaction.followup.send(
                 f"🎁 **交換完了**なのだ！\n{name}\n消費：-{price} コイン\n残高：{u['coins']} コインなのだ\n"
-                "（@_seato にDM通知したのだ）",
                 ephemeral=True,
             )
 
@@ -2701,6 +2697,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
