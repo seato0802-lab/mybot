@@ -790,20 +790,33 @@ async def safe_defer(interaction: discord.Interaction, *, ephemeral: bool = True
         return False
 
 
-async def safe_send(interaction: discord.Interaction, content: str, *, ephemeral: bool = True, view=None):
-    """
-    response が使えれば response、ダメなら followup で送る。
-    """
+async def safe_send(
+    interaction: discord.Interaction,
+    content: str,
+    *,
+    ephemeral: bool = True,
+    view: discord.ui.View | None = None,
+):
     try:
-        if not interaction.response.is_done():
-            return await interaction.response.send_message(content, ephemeral=ephemeral, view=view)
-        return await interaction.followup.send(content, ephemeral=ephemeral, view=view)
+        if interaction.response.is_done():
+            if view is None:
+                return await interaction.followup.send(content, ephemeral=ephemeral)
+            return await interaction.followup.send(content, ephemeral=ephemeral, view=view)
+
+        # response 側
+        if view is None:
+            return await interaction.response.send_message(content, ephemeral=ephemeral)
+        return await interaction.response.send_message(content, ephemeral=ephemeral, view=view)
+
     except (discord.NotFound, discord.errors.InteractionResponded):
-        # interaction が死んでたら諦める（ここでまた例外にしない）
+        # interaction が失効してても落とさない
         try:
+            if view is None:
+                return await interaction.followup.send(content, ephemeral=ephemeral)
             return await interaction.followup.send(content, ephemeral=ephemeral, view=view)
         except Exception:
             return None
+None
 
 # =========================================================
 # コイン・称号ユーティリティ
@@ -2885,6 +2898,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
