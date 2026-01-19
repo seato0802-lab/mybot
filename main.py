@@ -267,10 +267,10 @@ ROLE_BJ_BIGLOSE = _role_env("ROLE_BJ_BIGLOSE")
 ROLE_BJ_100PLAY = _role_env("ROLE_BJ_100PLAY")
 
 SHOP_ITEMS = [
-    {"key": "title_1000", "name": "🌱 ずんだ見習い", "price": 1000, "type": "role", "role_name": "ずんだ見習い"},
-    {"key": "title_5000", "name": "🌿 ずんだ常連", "price": 5000, "type": "role", "role_name": "ずんだ常連"},
-    {"key": "title_10000", "name": "🧠 ずんだの策士", "price": 10000, "type": "role", "role_name": "ずんだの策士"},
-    {"key": "title_100000", "name": "👑 ずんだの伝説", "price": 100000, "type": "role", "role_name": "ずんだの伝説"},
+    {"key": "title_1000", "name": "🌱 ずんだ見習い", "price": 1000, "type": "role", "role_name": "🌱 ずんだ見習い"},
+    {"key": "title_5000", "name": "🌿 ずんだ常連", "price": 5000, "type": "role", "role_name": "🌿 ずんだ常連"},
+    {"key": "title_10000", "name": "🧠 ずんだの策士", "price": 10000, "type": "role", "role_name": "🧠 ずんだの策士"},
+    {"key": "title_100000", "name": "👑 ずんだの伝説", "price": 100000, "type": "role", "role_name": "👑 ずんだの伝説"},
 
     {"key": "item_1", "name": "アーマー50枚", "price": 100, "type": "item", "notify": True, "repeatable": True},
     {"key": "item_2", "name": "5.56mm弾1000発（9mm弾に変更可）", "price": 100, "type": "item", "notify": True, "repeatable": True},
@@ -2867,6 +2867,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
