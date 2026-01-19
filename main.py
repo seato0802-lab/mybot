@@ -1969,7 +1969,7 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
     def roll_dice(turn: int, jackpot_boost: bool):
         BASE_JACKPOT_RATE = 1 / 2000
-        BOOSTED_JACKPOT_RATE = 1 / 2
+        BOOSTED_JACKPOT_RATE = 1 / 10
         SEVEN_BAR_RATE = 1 / 1000
 
         r = random.random()
@@ -3322,6 +3322,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
