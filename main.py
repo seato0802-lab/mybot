@@ -267,15 +267,15 @@ ROLE_BJ_BIGLOSE = _role_env("ROLE_BJ_BIGLOSE")
 ROLE_BJ_100PLAY = _role_env("ROLE_BJ_100PLAY")
 
 SHOP_ITEMS = [
-    {"key": "title_1000", "name": "🌱 ずんだ見習い", "price": 1000, "role_id": TITLE_ROLE_1000},
-    {"key": "title_5000", "name": "🌿 ずんだ常連", "price": 5000, "role_id": TITLE_ROLE_5000},
-    {"key": "title_10000", "name": "🧠 ずんだの策士", "price": 10000, "role_id": TITLE_ROLE_10000},
-    {"key": "title_100000", "name": "👑 ずんだの伝説", "price": 100000, "role_id": TITLE_ROLE_100000},
-    {"key": "item_1", "name": "アーマー50枚", "price": 100, "type": "item", "notify": True,"repeatable": True,},
-    {"key": "item_2", "name": "5.56mm弾1000発（9mm弾に変更可）", "price": 100, "type": "item", "notify": True,"repeatable": True,},
-    {"key": "item_3", "name": "武器１本（アタッチメント自由）", "price": 100, "type": "item", "notify": True,"repeatable": True,},
-]
+    {"key": "title_1000", "name": "🌱 ずんだ見習い", "price": 1000, "type": "role", "role_name": "ずんだ見習い"},
+    {"key": "title_5000", "name": "🌿 ずんだ常連", "price": 5000, "type": "role", "role_name": "ずんだ常連"},
+    {"key": "title_10000", "name": "🧠 ずんだの策士", "price": 10000, "type": "role", "role_name": "ずんだの策士"},
+    {"key": "title_100000", "name": "👑 ずんだの伝説", "price": 100000, "type": "role", "role_name": "ずんだの伝説"},
 
+    {"key": "item_1", "name": "アーマー50枚", "price": 100, "type": "item", "notify": True, "repeatable": True},
+    {"key": "item_2", "name": "5.56mm弾1000発（9mm弾に変更可）", "price": 100, "type": "item", "notify": True, "repeatable": True},
+    {"key": "item_3", "name": "武器１本（アタッチメント自由）", "price": 100, "type": "item", "notify": True, "repeatable": True},
+]
 
 MANAGED_TITLE_ROLES = set(
     rid
@@ -827,6 +827,14 @@ async def apply_title_role(member: discord.Member, role_id: int):
     if role:
         await member.add_roles(role, reason="Bot称号付与")
 
+def find_role_by_name(guild: discord.Guild, role_name: str) -> discord.Role | None:
+    if not guild or not role_name:
+        return None
+    target = role_name.strip()
+    for r in guild.roles:
+        if r.name == target:
+            return r
+    return None
 
 def calc_login_extra(streak: int) -> int:
     s = max(1, streak)
@@ -1134,26 +1142,48 @@ class ShopBuyConfirmView(discord.ui.View):
 
             # --- ロール商品 ---
             if item_type != "item":
+                role_obj = None
+                role_id = int(item.get("role_id") or 0)
+
+                # role_id が無ければ role_name から探す
+                if role_id <= 0:
+                    role_name = (item.get("role_name") or "").strip()
+                    if interaction.guild and role_name:
+                        role_obj = find_role_by_name(interaction.guild, role_name)
+                        role_id = role_obj.id if role_obj else 0
+
+                if role_id <= 0:
+                    return await interaction.followup.send(
+                        "この称号ロールがサーバーに見つからないのだ（ロール名が一致してるか確認なのだ）",
+                        ephemeral=True,
+                    )
+
                 owned = title_inventory(u)
-                if rid in owned:
-                    return await interaction.followup.send("それはもう購入済みなのだ", ephemeral=True)
+                if role_id in owned:
+                    return await interaction.followup.send(
+                        "それはもう購入済みなのだ",
+                        ephemeral=True,
+                    )
 
                 u["coins"] -= price
-                add_title_to_inventory(u, rid)
-                u["title_role_id"] = rid
+                add_title_to_inventory(u, role_id)
+                u["title_role_id"] = role_id
 
                 member = interaction.user
                 if not isinstance(member, discord.Member):
                     member = await interaction.guild.fetch_member(interaction.user.id)
 
-                await apply_title_role(member, rid)
+                await apply_title_role(member, role_id)
                 await sheets_upsert_async(u)
 
-                # 購入完了通知（ユーザー向け）
                 return await interaction.followup.send(
-                    f"🎁 **交換完了**なのだ！\n{name}\n消費：-{price} コイン\n残高：{u['coins']} コインなのだ\n"
-                    "（シイトからもらうのだ！）",
-                ephemeral=True,
+                    (
+                        "🎁 **購入完了**なのだ！👍\n"
+                        f"{name}\n"
+                        f"消費：-{price} コイン\n"
+                        f"残高：{u['coins']} コインなのだ\n"
+                    ),
+                    ephemeral=True,
                 )
 
             # --- 交換アイテム ---
@@ -2786,6 +2816,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
