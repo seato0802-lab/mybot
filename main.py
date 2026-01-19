@@ -693,42 +693,42 @@ class SheetsStore:
                     values= [[uid_str, int(coins)]],
                 )
 
-def upsert_user(self, u: dict):
-    with self._lock:
-        header = self.ws_users.row_values(1)
-        if not header:
-            self.ws_users.update("A1", [USER_HEADERS])
-            header = USER_HEADERS
+    def upsert_user(self, u: dict):
+        with self._lock:
+            header = self.ws_users.row_values(1)
+            if not header:
+                self.ws_users.update("A1", [USER_HEADERS])
+                header = USER_HEADERS
 
-        uid = int(u["user_id"])
-        values = [u.get(h, "") for h in header]
+            uid = int(u["user_id"])
+            values = [u.get(h, "") for h in header]
 
-        # user_id を文字列強制（E+17対策）
-        if "user_id" in header:
-            values[header.index("user_id")] = str(uid)
+            # user_id を文字列（E+対策）
+            if "user_id" in header:
+                values[header.index("user_id")] = str(uid)
 
-        # title_role_id をテキスト保存（E+18対策）
-        if "title_role_id" in header:
-            try:
-                rid = int(u.get("title_role_id", 0) or 0)
-            except Exception:
-                rid = 0
-            values[header.index("title_role_id")] = f"'{rid}" if rid > 0 else "0"
+            # title_role_id も文字列（E+18対策）
+            if "title_role_id" in header:
+                try:
+                    rid = int(u.get("title_role_id", 0) or 0)
+                except Exception:
+                    rid = 0
+                values[header.index("title_role_id")] = f"'{rid}" if rid > 0 else "0"
 
-        idx = self._uid_to_row.get(uid)
-        if idx is None:
-            self.ws_users.append_row(values)
-            self._uid_to_row[uid] = len(self.ws_users.get_all_values())
-        else:
-            start_a1 = rowcol_to_a1(idx, 1)
-            end_a1 = rowcol_to_a1(idx, len(values))
-            self.ws_users.update(
-                range_name=f"{start_a1}:{end_a1}",
-                values=[values],
-            )
+            idx = self._uid_to_row.get(uid)
+            if idx is None:
+                self.ws_users.append_row(values)
+                self._uid_to_row[uid] = len(self.ws_users.get_all_values())
+            else:
+                start_a1 = rowcol_to_a1(idx, 1)
+                end_a1 = rowcol_to_a1(idx, len(values))
+                self.ws_users.update(
+                    range_name=f"{start_a1}:{end_a1}",
+                    values=[values],
+                )
 
-    # ← with self._lock を抜けた後（ここはインデントを戻す）
-    self._upsert_coin(uid, int(u.get("coins", 0) or 0))
+        # coins は必ず同期（←この行は def upsert_user と同じ深さじゃなくてOK）
+        self._upsert_coin(uid, int(u.get("coins", 0) or 0))
 
 store = SheetsStore()
 
@@ -1621,17 +1621,17 @@ _dice_last_ts: dict[int, float] = {}
 # /dice（ちんちろ）
 # =========================================================
 @bot.tree.command(name="dice", description="ちんちろを振るのだ")
+@bot.tree.command(name="dice", description="ちんちろを振るのだ")
 async def chinchiro_cmd(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=False)
-    now_ts = time.time()
-    last = _dice_last_ts.get(interaction.user.id, 0.0)
-    remain = DICE_COOLDOWN_SEC - (now_ts - last)
-    if remain > 0:
-        return await interaction.followup.send(
-            f"⏳ /dice はクールタイム中なのだ…！あと {remain:.1f} 秒待つのだ",
-            ephemeral=True,
-        )
-    _dice_last_ts[interaction.user.id] = now_ts
+    # ✅ ここで落ちても無視して続行 or 終了する
+    try:
+        await interaction.response.defer(ephemeral=False)
+    except discord.NotFound:
+        return  # interactionが期限切れ
+    except discord.errors.InteractionResponded:
+        pass    # すでに応答済みならOK
+    except Exception:
+        return
 
     DICE_COST = 5
 
@@ -2886,6 +2886,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
