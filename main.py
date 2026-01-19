@@ -693,32 +693,43 @@ class SheetsStore:
                     values= [[uid_str, int(coins)]],
                 )
 
-    def upsert_user(self, u: dict):
-        with self._lock:
-            header = self.ws_users.row_values(1)
-            if not header:
-                self.ws_users.update("A1", [USER_HEADERS])
-                header = USER_HEADERS
+def upsert_user(self, u: dict):
+    with self._lock:
+        header = self.ws_users.row_values(1)
+        if not header:
+            self.ws_users.update("A1", [USER_HEADERS])
+            header = USER_HEADERS
 
-            uid = int(u["user_id"])
-            values = [u.get(h, "") for h in header]
+        uid = int(u["user_id"])
+        values = [u.get(h, "") for h in header]
 
-            # user_id を文字列強制（E+17対策）
-            if "user_id" in header:
-                values[header.index("user_id")] = str(uid)  # ← ' を付けない
+        # user_id を文字列強制（E+17対策）
+        if "user_id" in header:
+            values[header.index("user_id")] = str(uid)  # ← ' を付けない
 
-            idx = self._uid_to_row.get(uid)
-            if idx is None:
-                self.ws_users.append_row(values)
-                self._uid_to_row[uid] = len(self.ws_users.get_all_values())
-            else:
-                start_a1 = rowcol_to_a1(idx, 1)
-                end_a1 = rowcol_to_a1(idx, len(values))
-                self.ws_users.update(
-                    range_name=f"{start_a1}:{end_a1}",
-                    values=[values],
-                )
+        # ✅ title_role_id をテキストとして保存（E+18対策）
+        # 先頭に ' を付けて Google Sheets に「文字列」と認識させる
+        if "title_role_id" in header:
+            try:
+                rid = int(u.get("title_role_id", 0) or 0)
+            except Exception:
+                rid = 0
+            values[header.index("title_role_id")] = f"'{rid}" if rid > 0 else "0"
 
+        idx = self._uid_to_row.get(uid)
+        if idx is None:
+            self.ws_users.append_row(values)
+            self._uid_to_row[uid] = len(self.ws_users.get_all_values())
+        else:
+            start_a1 = rowcol_to_a1(idx, 1)
+            end_a1 = rowcol_to_a1(idx, len(values))
+            self.ws_users.update(
+                range_name=f"{start_a1}:{end_a1}",
+                values=[values],
+            )
+
+    # coinsは必ず同期
+    self._upsert_coin(uid, int(u.get("coins", 0) or 0))
 
         # coinsは必ず同期
         self._upsert_coin(uid, int(u.get("coins", 0) or 0))
@@ -2880,6 +2891,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
