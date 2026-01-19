@@ -3120,6 +3120,12 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
         u["coins"] += payout_total
         u["bj_play_count"] += 1
 
+    async with get_user_lock(interaction.user.id):
+        u["coins"] = int(u.get("coins", 0))
+        u["bj_play_count"] = int(u.get("bj_play_count", 0))
+        u["bj_win_streak"] = int(u.get("bj_win_streak", 0))
+        u["total_earned"] = int(u.get("total_earned", 0))
+
         just_events = set()
         if profit > 0:
             u["bj_win_streak"] += 1
@@ -3319,6 +3325,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
