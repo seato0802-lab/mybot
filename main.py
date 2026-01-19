@@ -422,9 +422,9 @@ SHOP_ITEMS = [
     {"key": "title_10000", "name": "🧠 ずんだの策士", "price": 10000, "type": "role", "role_name": "ずんだの策士"},
     {"key": "title_100000", "name": "👑 ずんだの伝説", "price": 100000, "type": "role", "role_name": "ずんだの伝説"},
 
-    {"key": "item_1", "name": "アーマー50枚", "price": 100, "type": "item", "notify": True, "repeatable": True},
-    {"key": "item_2", "name": "5.56mm弾1000発（9mm弾に変更可）", "price": 100, "type": "item", "notify": True, "repeatable": True},
-    {"key": "item_3", "name": "武器１本（アタッチメント自由）", "price": 100, "type": "item", "notify": True, "repeatable": True},
+    {"key": "item_1", "name": "アーマー50枚", "price": 500, "type": "item", "notify": True, "repeatable": True},
+    {"key": "item_2", "name": "5.56mm弾1000発（9mm弾に変更可）", "price": 500, "type": "item", "notify": True, "repeatable": True},
+    {"key": "item_3", "name": "武器１本（アタッチメント自由）", "price": 500, "type": "item", "notify": True, "repeatable": True},
 ]
 
 MANAGED_TITLE_ROLES = set(
@@ -3322,6 +3322,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
