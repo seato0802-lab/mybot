@@ -1219,51 +1219,65 @@ class ShopEntryView(discord.ui.View):
         style=discord.ButtonStyle.primary,
         custom_id="shop_open_btn",
     )
+    async def shop_open(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await interaction.response.send_message(
+                "このチャンネルでは使えないのだ",
+                ephemeral=True,
+            )
 
-async def shop_open(self, interaction: discord.Interaction, button: discord.ui.Button):
-    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-        return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
 
-    await interaction.response.defer(ephemeral=True)
-    u = store.get_user(interaction.user.id)
-    owned = title_inventory(u)
+        u = store.get_user(interaction.user.id)
+        owned = title_inventory(u)
 
-    lines = []
-    options = []
+        lines = []
+        options = []
 
-    for it in SHOP_ITEMS:
-        name = it["name"]
-        price = int(it["price"])
-        rid = it.get("role_id")
-        item_type = it.get("type", "role" if rid else "item")
+        for it in SHOP_ITEMS:
+            name = it["name"]
+            price = int(it["price"])
+            rid = it.get("role_id")
+            item_type = it.get("type", "role" if rid else "item")
 
-        status = []
-        if rid and rid in owned:
-            status.append("購入済み")
-        if u["coins"] < price:
-            status.append("残高不足")
-        if item_type == "item" and it.get("repeatable", True):
-            status.append("何度でも交換可")
+            status = []
+            if rid and rid in owned:
+                status.append("購入済み")
+            if u["coins"] < price:
+                status.append("残高不足")
+            if item_type == "item" and it.get("repeatable", True):
+                status.append("何度でも交換可")
 
-        status_text = f"（{' / '.join(status)}）" if status else ""
-        lines.append(f"- {name}：{price}コイン {status_text}")
+            status_text = f"（{' / '.join(status)}）" if status else ""
+            lines.append(f"- {name}：{price}コイン {status_text}")
 
-        # 選択肢に出す条件：買えるものだけ（残高不足や購入済みは確定できないため）
-        can_buy = (u["coins"] >= price) and (not rid or rid not in owned)
-        if can_buy:
-            options.append(discord.SelectOption(label=f"{name}（{price}）", value=it["key"]))
+            can_buy = (u["coins"] >= price) and (not rid or rid not in owned)
+            if can_buy:
+                options.append(
+                    discord.SelectOption(
+                        label=f"{name}（{price}）",
+                        value=it["key"],
+                    )
+                )
 
-    msg = (
-        "🏷️ ショップ/交換所なのだ\n\n"
-        f"現在の残高：{u['coins']} コイン\n\n"
-        "【商品一覧】\n" + "\n".join(lines)
-    )
+        msg = (
+            "🏷️ ショップ/交換所なのだ\n\n"
+            f"現在の残高：{u['coins']} コイン\n\n"
+            "【商品一覧】\n" + "\n".join(lines)
+        )
 
-    if not options:
-        return await interaction.followup.send(msg + "\n\n（購入/交換できる商品が今はないのだ）", ephemeral=True)
+        if not options:
+            return await interaction.followup.send(
+                msg + "\n\n（購入/交換できる商品が今はないのだ）",
+                ephemeral=True,
+            )
 
-    view = ShopBuyConfirmView(options)
-    await interaction.followup.send(msg + "\n\n商品を選んで、✅確定 を押すのだ", view=view, ephemeral=True)
+        view = ShopBuyConfirmView(options)
+        await interaction.followup.send(
+            msg + "\n\n商品を選んで、✅確定 を押すのだ",
+            view=view,
+            ephemeral=True,
+        )
 
     @discord.ui.button(
         label="🎖️ 称号を付与する",
@@ -1272,24 +1286,28 @@ async def shop_open(self, interaction: discord.Interaction, button: discord.ui.B
     )
     async def title_assign(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+            return await interaction.response.send_message(
+                "このチャンネルでは使えないのだ",
+                ephemeral=True,
+            )
 
         await interaction.response.defer(ephemeral=True)
+
         u = store.get_user(interaction.user.id)
         owned = title_inventory(u)
 
-        options = []
+        opts = []
         for rid in sorted(owned):
             role = interaction.guild.get_role(rid)
             if not role:
                 continue
-            options.append(discord.SelectOption(label=role.name, value=str(rid)))
+            opts.append(discord.SelectOption(label=role.name, value=str(rid)))
 
-        if not options:
+        if not opts:
             return await interaction.followup.send("付与できる称号がないのだ", ephemeral=True)
 
         view = discord.ui.View(timeout=60)
-        view.add_item(TitleAssignSelect(options))
+        view.add_item(TitleAssignSelect(opts))
         await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
 
     @discord.ui.button(
@@ -1299,9 +1317,13 @@ async def shop_open(self, interaction: discord.Interaction, button: discord.ui.B
     )
     async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+            return await interaction.response.send_message(
+                "このチャンネルでは使えないのだ",
+                ephemeral=True,
+            )
 
         await interaction.response.defer(ephemeral=True)
+
         try:
             async with get_user_lock(interaction.user.id):
                 u = store.get_user(interaction.user.id)
@@ -1330,6 +1352,7 @@ async def shop_open(self, interaction: discord.Interaction, button: discord.ui.B
                 extra = calc_login_extra(u["login_streak"])
                 streak_gain = base + extra
 
+                # ※ ai_fortune_message を3戻り値にしている前提
                 fortune, fortune_msg, lucky_item = await ai_fortune_message()
                 fortune_gain = FORTUNE_COIN.get(fortune, 0)
 
@@ -1357,6 +1380,7 @@ async def shop_open(self, interaction: discord.Interaction, button: discord.ui.B
                 await interaction.followup.send(msg, ephemeral=True)
 
             await maybe_award_hidden_titles(interaction, u, just_events=set())
+
         except Exception as e:
             print("shop daily error:", e)
             traceback.print_exc()
@@ -1372,13 +1396,16 @@ async def shop_open(self, interaction: discord.Interaction, button: discord.ui.B
     )
     async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+            return await interaction.response.send_message(
+                "このチャンネルでは使えないのだ",
+                ephemeral=True,
+            )
+
         u = store.get_user(interaction.user.id)
         await interaction.response.send_message(
             f"現在の残高：{u['coins']} コインなのだ",
             ephemeral=True,
         )
-
 
 # =========================================================
 # /setup_shop と /setup_bj （最初の1回のみ）
@@ -2674,6 +2701,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
