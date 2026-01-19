@@ -3244,6 +3244,72 @@ async def reload_coins_cmd(interaction: discord.Interaction):
     )
 
 # =========================================================
+# /hoten（補填コマンド：指定ロール保持者のみ）
+# =========================================================
+HOTEN_ROLE_ID = 1462688366431567872
+
+def has_hoten_role(member: discord.abc.User) -> bool:
+    # DMなどで Member じゃない場合は false
+    if not isinstance(member, discord.Member):
+        return False
+    return any(r.id == HOTEN_ROLE_ID for r in member.roles)
+
+@bot.tree.command(name="hoten", description="（補填）指定ユーザーにコインを付与するのだ（権限ロール限定）")
+@app_commands.describe(user="補填する相手", coins="付与するコイン数（1以上）", note="メモ（任意）")
+async def hoten_cmd(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    coins: int,
+    note: str = "",
+):
+    # まず権限チェック
+    caller = interaction.user
+    if not isinstance(caller, discord.Member):
+        return await safe_send(interaction, "サーバー内でのみ使えるのだ", ephemeral=True)
+
+    if not has_hoten_role(caller):
+        return await safe_send(interaction, "このコマンドを使う権限がないのだ", ephemeral=True)
+
+    if coins <= 0:
+        return await safe_send(interaction, "coins は 1以上にしてほしいのだ", ephemeral=True)
+
+    ok = await safe_defer(interaction, ephemeral=True)
+    if not ok:
+        return
+
+    # 付与処理（ユーザーロック）
+    try:
+        async with get_user_lock(user.id):
+            u = store.get_user(user.id)
+
+            before = int(u.get("coins", 0) or 0)
+            u["coins"] = before + int(coins)
+
+            await sheets_upsert_async(u)
+
+        # 実行結果
+        memo = f"\nメモ：{note}" if note.strip() else ""
+        await safe_send(
+            interaction,
+            "✅ 補填したのだ\n"
+            f"- 対象：{user.mention}（{user.id}）\n"
+            f"- 付与：+{coins} コイン\n"
+            f"- 残高：{u['coins']} コイン{memo}",
+            ephemeral=True,
+        )
+
+        # 必要なら、対象者にDM通知（任意）
+         try:
+             await user.send(f"運営から補填：+{coins} コイン（残高：{u['coins']}）なのだ")
+         except Exception:
+             pass
+
+    except Exception as e:
+        print("[hoten] error:", e)
+        traceback.print_exc()
+        await safe_send(interaction, "補填に失敗したのだ…（ログ確認なのだ）", ephemeral=True)
+
+# =========================================================
 # 起動イベント
 # =========================================================
 @bot.event
@@ -3322,6 +3388,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
