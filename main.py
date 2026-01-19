@@ -1535,7 +1535,6 @@ class ShopEntryView(discord.ui.View):
         try:
             await interaction.response.defer(ephemeral=True)
         except (discord.NotFound, discord.errors.InteractionResponded):
-            # 失効してた / 既に応答済みでも、そのまま followup を使う
             pass
 
         u = store.get_user(interaction.user.id)
@@ -1551,7 +1550,6 @@ class ShopEntryView(discord.ui.View):
 
             status = []
 
-            # role の購入済み判定は role_name から探して owned と照合
             if item_type == "role":
                 role_name = (it.get("role_name") or "").strip()
                 if interaction.guild and role_name:
@@ -1630,94 +1628,92 @@ class ShopEntryView(discord.ui.View):
         view.add_item(TitleAssignSelect(opts))
         await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
 
-@discord.ui.button(
-    label="🎁 ログインボーナス",
-    style=discord.ButtonStyle.success,
-    custom_id="shop_daily_btn",
-)
-async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
-    # まず3秒対策：最速でdefer（失敗しても握りつぶす）
-    try:
-        await interaction.response.defer(ephemeral=True)
-    except Exception:
-        pass
-
-    # 送信ヘルパ：応答済みかで followup / response を切替
-    async def send_ephemeral(text: str):
+    @discord.ui.button(
+        label="🎁 ログインボーナス",
+        style=discord.ButtonStyle.success,
+        custom_id="shop_daily_btn",
+    )
+    async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            if interaction.response.is_done():
-                return await interaction.followup.send(text, ephemeral=True)
-            return await interaction.response.send_message(text, ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
         except Exception:
-            # ここで落ちる場合はもうDiscord側に返せないことが多い
-            return None
+            pass
 
-    # チャンネル制限
-    if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-        return await send_ephemeral("このチャンネルでは使えないのだ")
+        async def send_ephemeral(text: str):
+            try:
+                if interaction.response.is_done():
+                    return await interaction.followup.send(text, ephemeral=True)
+                return await interaction.response.send_message(text, ephemeral=True)
+            except Exception:
+                return None
 
-    try:
-        async with get_user_lock(interaction.user.id):
-            u = store.get_user(interaction.user.id)
+        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
+            return await send_ephemeral("このチャンネルでは使えないのだ")
 
-            today = datetime.now(JST).date()
-            last = None
+        try:
+            async with get_user_lock(interaction.user.id):
+                u = store.get_user(interaction.user.id)
 
-            ymd = u.get("last_login_ymd")
-            if ymd:
-                try:
-                    y, m, d = map(int, ymd.split("-"))
-                    last = date(y, m, d)
-                except Exception:
-                    last = None
+                today = datetime.now(JST).date()
+                last = None
+                ymd = u.get("last_login_ymd")
 
-            if last == today:
-                return await send_ephemeral("今日はもう受け取っているのだ")
+                if ymd:
+                    try:
+                        y, m, d = map(int, ymd.split("-"))
+                        last = date(y, m, d)
+                    except Exception:
+                        last = None
 
-            if last == (today - timedelta(days=1)):
-                u["login_streak"] += 1
-            else:
-                u["login_streak"] = 1
+                if last == today:
+                    return await send_ephemeral("今日はもう受け取っているのだ")
 
-            u["login_total"] += 1
-            u["last_login_ymd"] = today.strftime("%Y-%m-%d")
+                if last == (today - timedelta(days=1)):
+                    u["login_streak"] += 1
+                else:
+                    u["login_streak"] = 1
 
-            base = 10
-            extra = calc_login_extra(u["login_streak"])
-            streak_gain = base + extra
+                u["login_total"] += 1
+                u["last_login_ymd"] = today.strftime("%Y-%m-%d")
 
-            fortune, fortune_msg = await ai_fortune_message()
-            fortune_gain = FORTUNE_COIN.get(fortune, 0)
+                base = 10
+                extra = calc_login_extra(u["login_streak"])
+                streak_gain = base + extra
 
-            total_gain = streak_gain + fortune_gain
-            u["coins"] += total_gain
-            u["total_earned"] += total_gain
+                # ✅ 3つ返るので 3つで受ける
+                fortune, fortune_msg, lucky_item = await ai_fortune_message()
+                fortune_gain = FORTUNE_COIN.get(fortune, 0)
 
-            if fortune == "大吉":
-                u["daikichi_count"] += 1
-            if fortune == "大凶":
-                u["daikyo_count"] += 1
+                total_gain = streak_gain + fortune_gain
+                u["coins"] += total_gain
+                u["total_earned"] += total_gain
 
-            await sheets_upsert_async(u)
+                if fortune == "大吉":
+                    u["daikichi_count"] += 1
+                if fortune == "大凶":
+                    u["daikyo_count"] += 1
 
-            msg = (
-                "🎁 ログインボーナスなのだ\n\n"
-                f"連続ログイン：{u['login_streak']}日\n"
-                f"+{streak_gain} コイン（通常+10 / 連続+{extra}）\n\n"
-                f"🔮 今日の占い：{fortune}\n"
-                f"{fortune_msg}\n"
-                f"+{fortune_gain} コイン\n\n"
-                f"現在の残高：{u['coins']} コインなのだ"
-            )
+                await sheets_upsert_async(u)
 
-            await send_ephemeral(msg)
+                msg = (
+                    "🎁 ログインボーナスなのだ\n\n"
+                    f"連続ログイン：{u['login_streak']}日\n"
+                    f"+{streak_gain} コイン（通常+10 / 連続+{extra}）\n\n"
+                    f"🔮 今日の占い：{fortune}\n"
+                    f"{fortune_msg}\n"
+                    f"ラッキーアイテム：{lucky_item}\n"
+                    f"+{fortune_gain} コイン\n\n"
+                    f"現在の残高：{u['coins']} コインなのだ"
+                )
 
-            await maybe_award_hidden_titles(interaction, u, just_events=set())
+                await send_ephemeral(msg)
 
-    except Exception as e:
-        print("shop daily error:", e)
-        traceback.print_exc()
-        await send_ephemeral("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）")
+                await maybe_award_hidden_titles(interaction, u, just_events=set())
+
+        except Exception as e:
+            print("shop daily error:", e)
+            traceback.print_exc()
+            await send_ephemeral("ログイン処理でエラーが出たのだ…（Renderログを見てほしいのだ）")
 
     @discord.ui.button(
         label="💰 残高",
@@ -1726,17 +1722,19 @@ async def daily(self, interaction: discord.Interaction, button: discord.ui.Butto
     )
     async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         u = store.get_user(interaction.user.id)
-
         try:
             await interaction.response.send_message(
                 f"現在の残高：{u['coins']} コインなのだ",
                 ephemeral=True,
             )
         except (discord.NotFound, discord.errors.InteractionResponded):
-            await interaction.followup.send(
-                f"現在の残高：{u['coins']} コインなのだ",
-                ephemeral=True,
-            )
+            try:
+                await interaction.followup.send(
+                    f"現在の残高：{u['coins']} コインなのだ",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
 
 # =========================================================
 # 抽選参加 View
@@ -3324,6 +3322,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
