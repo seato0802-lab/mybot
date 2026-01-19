@@ -234,7 +234,6 @@ def _env_int(name: str, default=None):
     except Exception:
         return default
 
-
 GS_SERVICE_ACCOUNT_JSON = os.getenv("GS_SERVICE_ACCOUNT_JSON", "")
 GS_SPREADSHEET_ID = os.getenv("GS_SPREADSHEET_ID", "")
 GS_SHEET_NAME = os.getenv("GS_SHEET_NAME", "管理")
@@ -244,7 +243,7 @@ COINS_HEADERS = ["user_id", "coins"]
 SHOP_CHANNEL_ID = _env_int("SHOP_CHANNEL_ID")
 BJ_CHANNEL_ID = _env_int("BJ_CHANNEL_ID")
 ADMIN_CHANNEL_ID = _env_int("ADMIN_CHANNEL_ID")
-
+SEATO_USER_ID = _env_int("SEATO_USER_ID")
 
 def _role_env(name: str):
     return _env_int(name)
@@ -272,6 +271,9 @@ SHOP_ITEMS = [
     {"key": "title_5000", "name": "🌿 ずんだ常連", "price": 5000, "role_id": TITLE_ROLE_5000},
     {"key": "title_10000", "name": "🧠 ずんだの策士", "price": 10000, "role_id": TITLE_ROLE_10000},
     {"key": "title_100000", "name": "👑 ずんだの伝説", "price": 100000, "role_id": TITLE_ROLE_100000},
+    {"key": "item_1", "name": "アーマー50枚", "price": 100, "type": "item", "notify": True,"repeatable": True,},
+    {"key": "item_2", "name": "5.56mm弾1000発（9mm弾に変更可）", "price": 100, "type": "item", "notify": True,"repeatable": True,},
+    {"key": "item_3", "name": "武器１本（アタッチメント自由）", "price": 100, "type": "item", "notify": True,"repeatable": True,},
 ]
 
 MANAGED_TITLE_ROLES = set(
@@ -859,39 +861,81 @@ def calc_login_extra(streak: int) -> int:
 FORTUNE_CHOICES = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"]
 FORTUNE_COIN = {"大吉": 10, "中吉": 6, "小吉": 4, "吉": 3, "末吉": 2, "凶": 1, "大凶": 0}
 
-
-async def ai_fortune_message() -> tuple[str, str]:
+async def ai_fortune_message() -> tuple[str, str, str]:
     fortune = random.choices(
         population=FORTUNE_CHOICES,
         weights=[5, 12, 16, 25, 18, 16, 8],
         k=1,
     )[0]
+
+    # 大凶だけ「難しい/入手困難」指定、それ以外は日常品
+    lucky_rule = (
+        "大凶のときは、現実に入手が難しい・レア・困難な物にしてほしい。"
+        if fortune == "大凶"
+        else
+        "大凶以外のときは、日常で手に入る身近な物にしてほしい。"
+    )
+
     try:
         prompt = [
             {"role": "system", "content": ZUNDAMON_SYSTEM},
             {
                 "role": "user",
-                "content": f"今日の占い結果は「{fortune}」なのだ。短めに一言コメントしてほしいのだ。",
+                "content": (
+                    f"今日の占い結果は「{fortune}」なのだ。\n"
+                    "短めの一言コメントと、ラッキーアイテムを1つ出してほしいのだ。\n"
+                    f"{lucky_rule}\n"
+                    "出力形式は次の2行だけにしてほしいのだ（余計な説明は禁止なのだ）:\n"
+                    "コメント：<一言>\n"
+                    "ラッキー：<アイテム名>\n"
+                    "アイテム名は10〜20文字程度で、記号や絵文字は使わないでほしいのだ。"
+                ),
             },
         ]
+
         loop = asyncio.get_running_loop()
         resp = await loop.run_in_executor(
             None,
             lambda: client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=prompt,
-                max_tokens=80,
-                temperature=0.8,
+                max_tokens=120,
+                temperature=0.9,
             ),
         )
-        msg = (resp.choices[0].message.content or "").strip()
-        if not msg:
-            msg = "今日は肩の力を抜くのだよ。"
-        return fortune, msg
+
+        out = (resp.choices[0].message.content or "").strip()
+
+        # 2行形式から安全に抽出
+        fortune_msg = ""
+        lucky_item = ""
+
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("コメント："):
+                fortune_msg = line.replace("コメント：", "", 1).strip()
+            elif line.startswith("ラッキー："):
+                lucky_item = line.replace("ラッキー：", "", 1).strip()
+
+        # フォールバック
+        if not fortune_msg:
+            fortune_msg = "今日は肩の力を抜くのだよ。"
+        if not lucky_item:
+            lucky_item = "ハンカチ" if fortune != "大凶" else "入手困難な限定アイテム"
+
+        # 念のためのクリーニング（長すぎ/空白だけ対策）
+        lucky_item = re.sub(r"\s+", " ", lucky_item).strip()
+        if len(lucky_item) > 30:
+            lucky_item = lucky_item[:30].strip()
+
+        return fortune, fortune_msg, lucky_item
+
     except Exception as e:
         print("ai_fortune_message error:", e)
+        traceback.print_exc()
 
-    fallback = {
+    # 完全フォールバック
+    fallback_msg = {
         "大吉": "今日は強気でいくのだ！",
         "中吉": "いい流れなのだよ。",
         "小吉": "コツコツが勝つのだ。",
@@ -900,7 +944,8 @@ async def ai_fortune_message() -> tuple[str, str]:
         "凶": "慎重に行動するのだ。",
         "大凶": "今日は守りに徹するのだ…！",
     }
-    return fortune, fallback.get(fortune, "無理せずいくのだ。")
+    lucky_item = "ハンカチ" if fortune != "大凶" else "入手困難な限定アイテム"
+    return fortune, fallback_msg.get(fortune, "無理せずいくのだ。"), lucky_item
 
 
 async def maybe_award_hidden_titles(
@@ -1005,7 +1050,7 @@ async def maybe_award_hidden_titles(
 class ShopBuySelect(discord.ui.Select):
     def __init__(self, options: list[discord.SelectOption]):
         super().__init__(
-            placeholder="購入する称号を選ぶのだ",
+            placeholder="購入/交換する商品を選ぶのだ",
             min_values=1,
             max_values=1,
             options=options,
@@ -1018,35 +1063,50 @@ class ShopBuySelect(discord.ui.Select):
 
             key = self.values[0]
             item = next((x for x in SHOP_ITEMS if x["key"] == key), None)
-            if not item or not item.get("role_id"):
+            if not item:
                 return await interaction.followup.send("その商品は無効なのだ", ephemeral=True)
 
-            rid = item["role_id"]
-            price = item["price"]
-            owned = title_inventory(u)
-
-            if rid in owned:
-                return await interaction.followup.send("それはもう購入済みなのだ", ephemeral=True)
+            name = item["name"]
+            price = int(item["price"])
+            rid = item.get("role_id")
+            item_type = item.get("type", "role" if rid else "item")
 
             if u["coins"] < price:
                 return await interaction.followup.send("コインが足りないのだ", ephemeral=True)
 
+            # --- ロール商品 ---
+            if item_type != "item":
+                owned = title_inventory(u)
+                if rid in owned:
+                    return await interaction.followup.send("それはもう購入済みなのだ", ephemeral=True)
+
+                u["coins"] -= price
+                add_title_to_inventory(u, rid)
+                u["title_role_id"] = rid
+
+                member = interaction.user
+                if not isinstance(member, discord.Member):
+                    member = await interaction.guild.fetch_member(interaction.user.id)
+
+                await apply_title_role(member, rid)
+                await sheets_upsert_async(u)
+
+                return await interaction.followup.send(
+                    f"🎉 {name} を購入したのだ！\n残高：{u['coins']} コインなのだ",
+                    ephemeral=True,
+                )
+
+            # --- 交換アイテム ---
             u["coins"] -= price
-            add_title_to_inventory(u, rid)
-            u["title_role_id"] = rid
-
-            member = interaction.user
-            if not isinstance(member, discord.Member):
-                member = await interaction.guild.fetch_member(interaction.user.id)
-
-            await apply_title_role(member, rid)
             await sheets_upsert_async(u)
 
-            await interaction.followup.send(
-                f"🎉 {item['name']} を購入したのだ！\n残高：{u['coins']} コインなのだ",
+            if item.get("notify"):
+                await notify_exchange(interaction, interaction.user, name, price)
+
+            return await interaction.followup.send(
+                f"✅ {name} と交換したのだ！\n消費：-{price} コイン\n残高：{u['coins']} コインなのだ",
                 ephemeral=True,
             )
-
 
 class TitleAssignSelect(discord.ui.Select):
     def __init__(self, options: list[discord.SelectOption]):
@@ -1099,29 +1159,47 @@ class ShopEntryView(discord.ui.View):
         u = store.get_user(interaction.user.id)
         owned = title_inventory(u)
 
+        lines = []
         options = []
-        for it in SHOP_ITEMS:
-            rid = it.get("role_id")
-            if not rid:
-                continue
-            if rid in owned:
-                continue
-            options.append(
-                discord.SelectOption(
-                    label=f"{it['name']}（{it['price']}）",
-                    value=it["key"],
-                    description="購入するのだ",
-                )
-            )
 
-        msg = f"🏷️ 称号ショップ\n\n現在の残高：{u['coins']} コイン\n"
+        for it in SHOP_ITEMS:
+            name = it["name"]
+            price = it["price"]
+            rid = it.get("role_id")
+            item_type = it.get("type", "role" if rid else "item")
+
+            status = []
+            if rid and rid in owned:
+                status.append("購入済み")
+            if u["coins"] < price:
+                status.append("残高不足")
+            if item_type == "item":
+                status.append("何度でも交換可")
+
+            status_text = f"（{' / '.join(status)}）" if status else ""
+            lines.append(f"- {name}：{price}コイン {status_text}")
+
+            can_buy = u["coins"] >= price and (not rid or rid not in owned)
+            if can_buy:
+                options.append(
+                    discord.SelectOption(
+                        label=f"{name}（{price}）",
+                        value=it["key"],
+                    )
+                )
+
+        msg = (
+            "🏷️ ショップ/交換所なのだ\n\n"
+            f"現在の残高：{u['coins']} コイン\n\n"
+            "【商品一覧】\n" + "\n".join(lines)
+        )
+
         if not options:
-            msg += "\n購入できる称号はないのだ"
             return await interaction.followup.send(msg, ephemeral=True)
 
         view = discord.ui.View(timeout=60)
         view.add_item(ShopBuySelect(options))
-        await interaction.followup.send(msg + "\n購入する称号を選ぶのだ", view=view, ephemeral=True)
+        await interaction.followup.send(msg + "\n\n購入/交換する商品を選ぶのだ", view=view, ephemeral=True)
 
     @discord.ui.button(
         label="🎖️ 称号を付与する",
@@ -1188,7 +1266,7 @@ class ShopEntryView(discord.ui.View):
                 extra = calc_login_extra(u["login_streak"])
                 streak_gain = base + extra
 
-                fortune, fortune_msg = await ai_fortune_message()
+                fortune, fortune_msg, lucky_item = await ai_fortune_message()
                 fortune_gain = FORTUNE_COIN.get(fortune, 0)
 
                 total_gain = streak_gain + fortune_gain
@@ -1208,6 +1286,7 @@ class ShopEntryView(discord.ui.View):
                     f"+{streak_gain} コイン（通常+10 / 連続+{extra}）\n\n"
                     f"🔮 今日の占い：{fortune}\n"
                     f"{fortune_msg}\n"
+                    f"🍀 ラッキーアイテム：{lucky_item}\n"
                     f"+{fortune_gain} コイン\n\n"
                     f"現在の残高：{u['coins']} コインなのだ"
                 )
@@ -2531,6 +2610,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
