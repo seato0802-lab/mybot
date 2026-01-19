@@ -3305,14 +3305,6 @@ async def hoten_cmd(
             ephemeral=True,
         )
 
-        # 必要なら、対象者にDM通知（任意）
-        try:
-            await user.send(
-                f"運営から補填：+{coins} コイン（残高：{u['coins']}）なのだ"
-            )
-        except Exception:
-            pass
-
     except Exception as e:
         print("[hoten] error:", e)
         traceback.print_exc()
@@ -3401,6 +3393,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
