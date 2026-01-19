@@ -1630,14 +1630,54 @@ class ShopEntryView(discord.ui.View):
         view.add_item(TitleAssignSelect(opts))
         await interaction.followup.send("付与する称号を選ぶのだ", view=view, ephemeral=True)
 
-    @discord.ui.button(
+       @discord.ui.button(
         label="🎁 ログインボーナス",
         style=discord.ButtonStyle.success,
         custom_id="shop_daily_btn",
     )
     async def daily(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # （あなたの既存 daily をここに置く）
-        ...
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except (discord.NotFound, discord.errors.InteractionResponded):
+            pass
+
+        today = datetime.now(JST).strftime("%Y-%m-%d")
+
+        async with get_user_lock(interaction.user.id):
+            u = store.get_user(interaction.user.id)
+
+            # 既に受け取り済み
+            if u.get("last_login_ymd") == today:
+                return await interaction.followup.send(
+                    "今日はもう受け取っているのだ 🌱",
+                    ephemeral=True,
+                )
+
+            # 連続ログイン処理
+            yesterday = (datetime.now(JST) - timedelta(days=1)).strftime("%Y-%m-%d")
+            if u.get("last_login_ymd") == yesterday:
+                u["login_streak"] += 1
+            else:
+                u["login_streak"] = 1
+
+            u["login_total"] += 1
+            bonus = 10 + calc_login_extra(u["login_streak"])
+
+            u["coins"] += bonus
+            u["total_earned"] += bonus
+            u["last_login_ymd"] = today
+
+            await sheets_upsert_async(u)
+
+        await interaction.followup.send(
+            (
+                "🎁 **ログインボーナスなのだ！**\n\n"
+                f"+{bonus} コイン\n"
+                f"連続ログイン：{u['login_streak']} 日\n\n"
+                f"現在の残高：{u['coins']} コインなのだ"
+            ),
+            ephemeral=True,
+        )
 
     @discord.ui.button(
         label="💰 残高",
@@ -3190,6 +3230,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
