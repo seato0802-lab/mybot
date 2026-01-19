@@ -1391,23 +1391,38 @@ class ShopEntryView(discord.ui.View):
                 ephemeral=True,
             )
 
-    @discord.ui.button(
-        label="💰 残高",
-        style=discord.ButtonStyle.secondary,
-        custom_id="shop_balance_btn",
-    )
-    async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, SHOP_CHANNEL_ID):
-            return await interaction.response.send_message(
-                "このチャンネルでは使えないのだ",
-                ephemeral=True,
-            )
+   @discord.ui.button(
+    label="💰 残高",
+    style=discord.ButtonStyle.secondary,
+    custom_id="shop_balance_btn",
+)
+async def balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+    u = store.get_user(interaction.user.id)
 
-        u = store.get_user(interaction.user.id)
+    try:
+        # まだ応答していなければ response
         await interaction.response.send_message(
             f"現在の残高：{u['coins']} コインなのだ",
             ephemeral=True,
         )
+    except discord.NotFound:
+        # interaction が失効していたら followup
+        try:
+            await interaction.followup.send(
+                f"現在の残高：{u['coins']} コインなのだ",
+                ephemeral=True,
+            )
+        except Exception:
+            pass
+    except discord.errors.InteractionResponded:
+        # すでに応答済みなら followup
+        try:
+            await interaction.followup.send(
+                f"現在の残高：{u['coins']} コインなのだ",
+                ephemeral=True,
+            )
+        except Exception:
+            pass
 
 # =========================================================
 # /setup_shop と /setup_bj （最初の1回のみ）
@@ -2205,25 +2220,42 @@ class BjEntryView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🎴 スタート", style=discord.ButtonStyle.primary, custom_id="bj_start_entry_btn")
+    @discord.ui.button(
+        label="🎴 スタート",
+        style=discord.ButtonStyle.primary,
+        custom_id="bj_start_entry_btn",
+    )
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             if not is_in_channel(interaction, BJ_CHANNEL_ID):
-                return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+                return await interaction.response.send_message(
+                    "このチャンネルでは使えないのだ",
+                    ephemeral=True,
+                )
 
-            # ここで重い処理をしない！
+            # ここで重い処理をしない
             u = store.get_user(interaction.user.id)
 
-            await interaction.response.send_modal(BetModal(balance=u["coins"]))
+            # ✅ 重要：send_modal の前に defer しない
+            await interaction.response.send_modal(BetModal(balance=int(u.get("coins", 0) or 0)))
+
         except discord.NotFound:
+            # interaction が失効していたら何もしない
+            return
+        except discord.errors.InteractionResponded:
+            # すでにackされていたら何もしない（40060回避）
             return
         except Exception as e:
             print("bj start error:", e)
             traceback.print_exc()
+            # 応答できるなら response、無理なら followup
             try:
                 await interaction.response.send_message("開始でエラーが出たのだ…", ephemeral=True)
             except Exception:
-                pass
+                try:
+                    await interaction.followup.send("開始でエラーが出たのだ…", ephemeral=True)
+                except Exception:
+                    pass
 
 class BJActionView(discord.ui.View):
     def __init__(self):
@@ -2259,16 +2291,81 @@ class BJActionView(discord.ui.View):
 
 class BJEndView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=900)
 
-    @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary, custom_id="bj_restart_btn")
+    @discord.ui.button(
+        label="🎴 もう一回スタート",
+        style=discord.ButtonStyle.primary,
+        custom_id="bj_restart_btn",
+    )
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
-        u = store.get_user(interaction.user.id)
-        await interaction.response.send_modal(BetModal(balance=u["coins"]))
+        try:
+            if not is_in_channel(interaction, BJ_CHANNEL_ID):
+                return await interaction.response.send_message(
+                    "このチャンネルでは使えないのだ",
+                    ephemeral=True,
+                )
 
-    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary, custom_id="bj_quit_btn")
+            u = store.get_user(interaction.user.id)
+
+            # ⚠️ send_modal 前に defer しない
+            await interaction.response.send_modal(
+                BetModal(balance=int(u.get("coins", 0) or 0))
+            )
+
+        except discord.NotFound:
+            return
+        except discord.errors.InteractionResponded:
+            return
+        except Exception as e:
+            print("bj restart error:", e)
+            traceback.print_exc()
+            try:
+                await interaction.followup.send(
+                    "開始でエラーが出たのだ…",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+
+    @discord.ui.button(
+        label="やめる",
+        style=discord.ButtonStyle.secondary,
+        custom_id="bj_quit_btn",
+    )
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("終了したのだ", ephemeral=True)
+        try:
+            await interaction.response.send_message(
+                "終了したのだ",
+                ephemeral=True,
+            )
+        except discord.NotFound:
+            try:
+                await interaction.followup.send(
+                    "終了したのだ",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+        except discord.errors.InteractionResponded:
+            try:
+                await interaction.followup.send(
+                    "終了したのだ",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            print("bj quit error:", e)
+            traceback.print_exc()
+            try:
+                await interaction.followup.send(
+                    "終了処理でエラーが出たのだ…",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+
 
 
 def bj_state_text(session: dict) -> str:
@@ -2703,6 +2800,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
