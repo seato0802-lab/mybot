@@ -2770,7 +2770,6 @@ async def on_ready():
         bot.add_view(ShopEntryView())
         bot.add_view(BjEntryView())
         bot.add_view(BJActionView())
-        bot.add_view(BJEndView())
         VIEWS_READY = True
 
     if not check_tasks.is_running():
@@ -2816,6 +2815,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
