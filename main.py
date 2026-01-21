@@ -3545,6 +3545,1027 @@ async def hoten_cmd(
         )
 
 # =========================================================
+# スカル（Skull） DMゲーム：/skull と /skullsolo
+#  - 参加時に徴収（軽さ優先）
+#  - lobby締切後：参加1人なら自動ソロ化（bet無視→50徴収）
+#  - タイムアウト時：全額返金
+#  - 勝利報酬：ソロ=100 / マルチ=総額（pot）
+#  - NPC行動は1人ずつ2秒間隔でDM送信
+# =========================================================
+
+SKULL_SOLO_ENTRY_FEE = 50
+SKULL_SOLO_WIN_REWARD = 100
+
+NPC_ACTION_DELAY_SEC = 2.0
+SKULL_VIEW_TIMEOUT_SEC = 90          # DMボタンのタイムアウト
+SKULL_TURN_TIMEOUT_SEC = 180         # 各入力待ちの最大時間（長め推奨：演出+2秒*NPC）
+SKULL_GAME_CLEANUP_SEC = 20 * 60
+
+_skull_lobbies: dict[int, dict] = {}        # lobby_message_id -> lobby dict
+_skull_games: dict[str, dict] = {}          # game_id -> game dict
+
+def _skull_now() -> float:
+    return time.time()
+
+def _skull_gid() -> str:
+    return f"skull_{int(time.time()*1000)}_{random.randint(1000,9999)}"
+
+async def dm_send_safe(user: discord.abc.User, content: str, *, view: discord.ui.View | None = None):
+    try:
+        if isinstance(user, discord.User) or isinstance(user, discord.Member):
+            ch = user.dm_channel or await user.create_dm()
+            return await ch.send(content, view=view)
+    except Exception:
+        return None
+
+async def npc_action_sequence(dm_user: discord.abc.User, lines: list[str]):
+    for line in lines:
+        await dm_send_safe(dm_user, line)
+        await asyncio.sleep(NPC_ACTION_DELAY_SEC)
+
+def _skull_public_name(p: dict) -> str:
+    # DM表示用の名前
+    return str(p.get("name") or f"Player{p.get('uid','?')}")
+
+def _skull_is_human(p: dict) -> bool:
+    return p.get("type") == "human"
+
+def _skull_humans(game: dict) -> list[dict]:
+    return [p for p in game["players"] if _skull_is_human(p)]
+
+def _skull_npcs(game: dict) -> list[dict]:
+    return [p for p in game["players"] if p.get("type") == "npc"]
+
+def _skull_player(game: dict, uid: int) -> dict | None:
+    for p in game["players"]:
+        if p.get("uid") == uid:
+            return p
+    return None
+
+async def _skull_broadcast(game: dict, text: str, *, view_for: dict[int, discord.ui.View] | None = None):
+    """
+    全プレイヤーにDMで同じ内容を送る。
+    view_for があれば {uid: view} で個別にViewを付けられる。
+    """
+    view_for = view_for or {}
+    for p in _skull_humans(game):
+        uobj = p.get("user_obj")
+        if not uobj:
+            continue
+        await dm_send_safe(uobj, text, view=view_for.get(int(p["uid"])))
+
+def _skull_deck_init() -> list[str]:
+    # 花3 + スカル1（各プレイヤー）
+    return ["flower", "flower", "flower", "skull"]
+
+def _skull_card_emoji(c: str) -> str:
+    return "🌸" if c == "flower" else "💀"
+
+def _skull_card_name(c: str) -> str:
+    return "花" if c == "flower" else "スカル"
+
+def _skull_alive_cards(p: dict) -> int:
+    return len(p["hand"])
+
+def _skull_anyone_dead(game: dict) -> bool:
+    return any(_skull_alive_cards(p) <= 0 for p in game["players"])
+
+def _skull_alive_players(game: dict) -> list[dict]:
+    return [p for p in game["players"] if _skull_alive_cards(p) > 0]
+
+def _skull_visible_table(game: dict) -> str:
+    # 他人には「何を置いたか」は見せない。置いた枚数だけ見せる。
+    # 例：A:2枚 / B:2枚
+    parts = []
+    for p in game["players"]:
+        parts.append(f"- {_skull_public_name(p)}：{len(p['pile'])}枚（残り手札{_skull_alive_cards(p)}）")
+    return "\n".join(parts)
+
+def _skull_all_placed_count(game: dict) -> int:
+    return sum(len(p["pile"]) for p in game["players"])
+
+def _skull_reset_round(game: dict):
+    for p in game["players"]:
+        p["pile"] = []
+    game["phase"] = "place"
+    game["starter_idx"] = (game.get("starter_idx", 0) + 1) % len(game["players"])
+    game["current_idx"] = game["starter_idx"]
+    game["bids"] = {}                 # uid -> bid
+    game["highest_bid_uid"] = None
+    game["highest_bid"] = 0
+    game["reveals_left"] = 0
+    game["reveal_target_uid"] = None
+    game["last_action_ts"] = _skull_now()
+
+def _skull_touch(game: dict):
+    game["last_action_ts"] = _skull_now()
+
+async def _skull_refund_all(game: dict):
+    # タイムアウト時：全額返金
+    for p in _skull_humans(game):
+        uid = int(p["uid"])
+        fee = int(p.get("paid_fee", 0) or 0)
+        if fee <= 0:
+            continue
+        async with get_user_lock(uid):
+            u = store.get_user(uid)
+            u["coins"] = int(u.get("coins", 0) or 0) + fee
+            await sheets_upsert_async(u)
+        p["paid_fee"] = 0
+
+async def _skull_payout_winner(game: dict, winner_uid: int):
+    # 勝ち：ソロ=100 / マルチ=pot（総額）
+    is_solo = bool(game.get("is_solo"))
+    if is_solo:
+        reward = SKULL_SOLO_WIN_REWARD
+    else:
+        reward = int(game.get("pot", 0) or 0)
+
+    async with get_user_lock(winner_uid):
+        u = store.get_user(winner_uid)
+        u["coins"] = int(u.get("coins", 0) or 0) + reward
+        u["total_earned"] = int(u.get("total_earned", 0) or 0) + reward
+        await sheets_upsert_async(u)
+
+async def _skull_end_game(game_id: str, reason: str):
+    game = _skull_games.get(game_id)
+    if not game:
+        return
+    _skull_games.pop(game_id, None)
+    await _skull_broadcast(game, f"🧾 スカル終了なのだ\n理由：{reason}")
+
+@tasks.loop(seconds=20)
+async def skull_timeout_watcher():
+    # lobby timeoutは view.on_timeout に任せる
+    # game timeout：一定時間無操作なら返金して終了
+    now = _skull_now()
+    for gid, game in list(_skull_games.items()):
+        last = float(game.get("last_action_ts", now))
+        if now - last > SKULL_GAME_CLEANUP_SEC:
+            # 20分放置：返金して終了
+            await _skull_refund_all(game)
+            await _skull_end_game(gid, "長時間操作がなかったため全額返金して終了したのだ")
+
+# ---------------------------------------------------------
+# NPCロジック（軽さ優先の簡易AI）
+# ---------------------------------------------------------
+def _npc_choose_place_card(p: dict) -> str:
+    # まずはランダム（花多めなので自然に花が多くなる）
+    return random.choice(p["hand"])
+
+def _npc_choose_bid(game: dict, p: dict) -> int:
+    # 0（パス）〜 全体の置かれた枚数 の範囲で控えめに
+    total = _skull_all_placed_count(game)
+    if total <= 0:
+        return 0
+    # 手札/状況で弱気
+    max_bid = min(total, 3)
+    return random.randint(0, max_bid)
+
+def _npc_choose_reveal_target(game: dict, npc: dict) -> int:
+    # 自分→他人からランダムに選ぶ（中身はわからない想定）
+    alive = _skull_alive_players(game)
+    cand = [p for p in alive if len(p["pile"]) > 0]
+    if not cand:
+        return int(npc["uid"])
+    return int(random.choice(cand)["uid"])
+
+# ---------------------------------------------------------
+# DM View：配置（花/スカル）
+# ---------------------------------------------------------
+class SkullPlaceView(discord.ui.View):
+    def __init__(self, game_id: str, actor_uid: int):
+        super().__init__(timeout=SKULL_VIEW_TIMEOUT_SEC)
+        self.game_id = game_id
+        self.actor_uid = int(actor_uid)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return int(interaction.user.id) == self.actor_uid and self.game_id in _skull_games
+
+    async def on_timeout(self):
+        # View自体のタイムアウトはゲーム全体タイムアウトで処理するので何もしない
+        return
+
+    @discord.ui.button(label="🌸 花を置く", style=discord.ButtonStyle.primary)
+    async def place_flower(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await skull_place_card(interaction, self.game_id, self.actor_uid, "flower")
+
+    @discord.ui.button(label="💀 スカルを置く", style=discord.ButtonStyle.danger)
+    async def place_skull(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await skull_place_card(interaction, self.game_id, self.actor_uid, "skull")
+
+# ---------------------------------------------------------
+# DM View：入札（数字 or パス）
+# ---------------------------------------------------------
+class SkullBidView(discord.ui.View):
+    def __init__(self, game_id: str, actor_uid: int, max_bid: int):
+        super().__init__(timeout=SKULL_VIEW_TIMEOUT_SEC)
+        self.game_id = game_id
+        self.actor_uid = int(actor_uid)
+        self.max_bid = int(max_bid)
+
+        # 0=パス, 1..max
+        opts = [discord.SelectOption(label="パス（0）", value="0")]
+        for n in range(1, max(1, self.max_bid) + 1):
+            opts.append(discord.SelectOption(label=str(n), value=str(n)))
+
+        self.add_item(SkullBidSelect(opts, game_id, actor_uid))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return int(interaction.user.id) == self.actor_uid and self.game_id in _skull_games
+
+class SkullBidSelect(discord.ui.Select):
+    def __init__(self, options: list[discord.SelectOption], game_id: str, actor_uid: int):
+        super().__init__(placeholder="入札数を選ぶのだ", min_values=1, max_values=1, options=options)
+        self.game_id = game_id
+        self.actor_uid = int(actor_uid)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        bid = int(self.values[0])
+        await skull_submit_bid(interaction, self.game_id, self.actor_uid, bid)
+
+# ---------------------------------------------------------
+# DM View：めくり対象選択（誰の山からめくるか）
+# ---------------------------------------------------------
+class SkullRevealTargetView(discord.ui.View):
+    def __init__(self, game_id: str, actor_uid: int, choices: list[tuple[int, str]]):
+        super().__init__(timeout=SKULL_VIEW_TIMEOUT_SEC)
+        self.game_id = game_id
+        self.actor_uid = int(actor_uid)
+
+        opts = []
+        for uid, name in choices:
+            opts.append(discord.SelectOption(label=name, value=str(uid)))
+
+        self.add_item(SkullRevealTargetSelect(opts, game_id, actor_uid))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return int(interaction.user.id) == self.actor_uid and self.game_id in _skull_games
+
+class SkullRevealTargetSelect(discord.ui.Select):
+    def __init__(self, options: list[discord.SelectOption], game_id: str, actor_uid: int):
+        super().__init__(placeholder="どのプレイヤーの山からめくるのだ？", min_values=1, max_values=1, options=options)
+        self.game_id = game_id
+        self.actor_uid = int(actor_uid)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        target_uid = int(self.values[0])
+        await skull_choose_reveal_target(interaction, self.game_id, self.actor_uid, target_uid)
+
+# ---------------------------------------------------------
+# ロビー View（Join）
+# ---------------------------------------------------------
+class SkullLobbyView(discord.ui.View):
+    def __init__(self, lobby_msg_id: int, deadline_ts: float):
+        # timeoutは「締切まで」
+        timeout = max(5, int(deadline_ts - _skull_now()))
+        super().__init__(timeout=timeout)
+        self.lobby_msg_id = int(lobby_msg_id)
+
+    async def on_timeout(self):
+        # 締切
+        await skull_close_lobby(self.lobby_msg_id)
+
+    @discord.ui.button(label="🎟️ 参加", style=discord.ButtonStyle.success)
+    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await skull_lobby_join(interaction, self.lobby_msg_id)
+
+    @discord.ui.button(label="❌ 辞退", style=discord.ButtonStyle.secondary)
+    async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await skull_lobby_leave(interaction, self.lobby_msg_id)
+
+# ---------------------------------------------------------
+# ロビー操作
+# ---------------------------------------------------------
+async def skull_lobby_join(interaction: discord.Interaction, lobby_msg_id: int):
+    lobby = _skull_lobbies.get(int(lobby_msg_id))
+    if not lobby or lobby.get("status") != "open":
+        return await interaction.followup.send("この募集は締め切ったのだ", ephemeral=True)
+
+    uid = int(interaction.user.id)
+    if uid in lobby["players"]:
+        return await interaction.followup.send("もう参加済みなのだ", ephemeral=True)
+
+    # 参加時徴収（軽さ最優先）
+    fee = int(lobby["bet"])
+    async with get_user_lock(uid):
+        u = store.get_user(uid)
+        if int(u.get("coins", 0) or 0) < fee:
+            return await interaction.followup.send(f"コインが足りないのだ（必要:{fee} / 残高:{u['coins']}）", ephemeral=True)
+        u["coins"] -= fee
+        await sheets_upsert_async(u)
+
+    lobby["players"][uid] = {
+        "uid": uid,
+        "type": "human",
+        "name": interaction.user.display_name,
+        "paid_fee": fee,
+        "user_obj": interaction.user,  # DM用に保持（再起動跨ぐならfetchする設計に変更）
+    }
+    lobby["pot"] += fee
+
+    await interaction.followup.send(f"参加したのだ！（参加費 -{fee}）", ephemeral=True)
+
+    # ロビー表示更新
+    await skull_update_lobby_message(lobby_msg_id)
+
+async def skull_lobby_leave(interaction: discord.Interaction, lobby_msg_id: int):
+    lobby = _skull_lobbies.get(int(lobby_msg_id))
+    if not lobby or lobby.get("status") != "open":
+        return await interaction.followup.send("この募集は締め切ったのだ", ephemeral=True)
+
+    uid = int(interaction.user.id)
+    p = lobby["players"].pop(uid, None)
+    if not p:
+        return await interaction.followup.send("参加してないのだ", ephemeral=True)
+
+    # 参加費返金（ロビー締切前ならOK）
+    fee = int(p.get("paid_fee", 0) or 0)
+    if fee > 0:
+        async with get_user_lock(uid):
+            u = store.get_user(uid)
+            u["coins"] = int(u.get("coins", 0) or 0) + fee
+            await sheets_upsert_async(u)
+        lobby["pot"] -= fee
+
+    await interaction.followup.send("辞退したのだ（返金したのだ）", ephemeral=True)
+    await skull_update_lobby_message(lobby_msg_id)
+
+async def skull_update_lobby_message(lobby_msg_id: int):
+    lobby = _skull_lobbies.get(int(lobby_msg_id))
+    if not lobby:
+        return
+    ch = bot.get_channel(lobby["channel_id"])
+    if ch is None:
+        try:
+            ch = await bot.fetch_channel(lobby["channel_id"])
+        except Exception:
+            return
+    try:
+        msg = await ch.fetch_message(int(lobby_msg_id))
+    except Exception:
+        return
+
+    names = [f"<@{uid}>" for uid in lobby["players"].keys()]
+    joined = " ".join(names) if names else "（まだいないのだ）"
+
+    ends_text = datetime.fromtimestamp(lobby["deadline_ts"], JST).strftime("%Y-%m-%d %H:%M")
+    bet = int(lobby["bet"])
+    pot = int(lobby["pot"])
+
+    await msg.edit(
+        content=(
+            "🪙 **スカル募集なのだ**\n\n"
+            f"参加費（マルチ時）：{bet} コイン\n"
+            f"締切：{ends_text}（JST）\n"
+            f"現在の参加者：{len(lobby['players'])}人\n"
+            f"{joined}\n\n"
+            f"現在のpot：{pot} コインなのだ\n"
+            "（締切時に1人だけなら自動ソロに切替、参加費は50にするのだ）"
+        )
+    )
+
+async def skull_close_lobby(lobby_msg_id: int):
+    lobby = _skull_lobbies.get(int(lobby_msg_id))
+    if not lobby or lobby.get("status") != "open":
+        return
+    lobby["status"] = "closed"
+
+    ch = bot.get_channel(lobby["channel_id"])
+    if ch is None:
+        try:
+            ch = await bot.fetch_channel(lobby["channel_id"])
+        except Exception:
+            return
+
+    players = list(lobby["players"].values())
+    if len(players) <= 0:
+        # 誰もいない
+        try:
+            await ch.send("🪦 スカル募集締切なのだ\n参加者がいなかったのだ…！")
+        except Exception:
+            pass
+        _skull_lobbies.pop(int(lobby_msg_id), None)
+        return
+
+    if len(players) == 1:
+        # 自動ソロ化：betは無視して50徴収に組み替え
+        human = players[0]
+        uid = int(human["uid"])
+
+        # いったん返金（bet分）
+        old_fee = int(human.get("paid_fee", 0) or 0)
+        if old_fee > 0:
+            async with get_user_lock(uid):
+                u = store.get_user(uid)
+                u["coins"] = int(u.get("coins", 0) or 0) + old_fee
+                await sheets_upsert_async(u)
+
+        # 50徴収
+        async with get_user_lock(uid):
+            u = store.get_user(uid)
+            if int(u.get("coins", 0) or 0) < SKULL_SOLO_ENTRY_FEE:
+                # 足りないなら中止（返金済み）
+                await ch.send("🪦 ソロに切替しようとしたけど、50コインが足りないのだ…（中止なのだ）")
+                _skull_lobbies.pop(int(lobby_msg_id), None)
+                return
+            u["coins"] -= SKULL_SOLO_ENTRY_FEE
+            await sheets_upsert_async(u)
+
+        human["paid_fee"] = SKULL_SOLO_ENTRY_FEE
+
+        await ch.send("✅ 募集締切：参加者1人なので **自動ソロ** に切り替えるのだ（参加費50）")
+        await skull_start_solo(human_player=human)
+
+        _skull_lobbies.pop(int(lobby_msg_id), None)
+        return
+
+    # マルチ開始
+    await ch.send("✅ 募集締切：マルチで開始するのだ（DMに送るのだ）")
+    await skull_start_multi(players=players, pot=int(lobby["pot"]), bet=int(lobby["bet"]))
+    _skull_lobbies.pop(int(lobby_msg_id), None)
+
+# ---------------------------------------------------------
+# ゲーム開始：ソロ（NPC3人）
+# ---------------------------------------------------------
+async def skull_start_solo(human_player: dict):
+    gid = _skull_gid()
+
+    # human_player は lobbyから来ていて user_obj も入っている想定
+    human_uid = int(human_player["uid"])
+
+    npcs = [
+        {"uid": -1, "type": "npc", "name": "ずんだもん", "hand": _skull_deck_init(), "pile": [], "score": 0},
+        {"uid": -2, "type": "npc", "name": "ずん子", "hand": _skull_deck_init(), "pile": [], "score": 0},
+        {"uid": -3, "type": "npc", "name": "きりたん", "hand": _skull_deck_init(), "pile": [], "score": 0},
+    ]
+
+    human = {
+        "uid": human_uid,
+        "type": "human",
+        "name": human_player.get("name") or "あなた",
+        "hand": _skull_deck_init(),
+        "pile": [],
+        "score": 0,
+        "paid_fee": int(human_player.get("paid_fee", SKULL_SOLO_ENTRY_FEE) or 0),
+        "user_obj": human_player.get("user_obj"),
+    }
+
+    game = {
+        "id": gid,
+        "is_solo": True,
+        "pot": 0,               # ソロはpotなし
+        "players": [human] + npcs,
+        "starter_idx": 0,
+        "current_idx": 0,
+        "phase": "place",
+        "bids": {},
+        "highest_bid_uid": None,
+        "highest_bid": 0,
+        "reveals_left": 0,
+        "reveal_target_uid": None,
+        "last_action_ts": _skull_now(),
+        "turn_deadline_ts": _skull_now() + SKULL_TURN_TIMEOUT_SEC,
+    }
+    _skull_games[gid] = game
+
+    await dm_send_safe(human["user_obj"], "🃏 **スカル（ソロ）開始なのだ**\n勝てば +100、負けたら0なのだ\nタイムアウト時は全額返金なのだ")
+
+    await skull_round_start(gid)
+
+# ---------------------------------------------------------
+# ゲーム開始：マルチ
+# ---------------------------------------------------------
+async def skull_start_multi(players: list[dict], pot: int, bet: int):
+    gid = _skull_gid()
+
+    plist = []
+    for p in players:
+        uid = int(p["uid"])
+        plist.append({
+            "uid": uid,
+            "type": "human",
+            "name": p.get("name") or f"User{uid}",
+            "hand": _skull_deck_init(),
+            "pile": [],
+            "score": 0,
+            "paid_fee": int(p.get("paid_fee", bet) or 0),
+            "user_obj": p.get("user_obj"),
+        })
+
+    game = {
+        "id": gid,
+        "is_solo": False,
+        "pot": int(pot),
+        "bet": int(bet),
+        "players": plist,
+        "starter_idx": 0,
+        "current_idx": 0,
+        "phase": "place",
+        "bids": {},
+        "highest_bid_uid": None,
+        "highest_bid": 0,
+        "reveals_left": 0,
+        "reveal_target_uid": None,
+        "last_action_ts": _skull_now(),
+        "turn_deadline_ts": _skull_now() + SKULL_TURN_TIMEOUT_SEC,
+    }
+    _skull_games[gid] = game
+
+    await _skull_broadcast(
+        game,
+        "🃏 **スカル（マルチ）開始なのだ**\n"
+        f"pot：{pot} コイン（勝者総取り）\n"
+        "タイムアウト時は全額返金なのだ",
+    )
+
+    await skull_round_start(gid)
+
+# ---------------------------------------------------------
+# ラウンド開始（配置フェーズへ）
+# ---------------------------------------------------------
+async def skull_round_start(game_id: str):
+    game = _skull_games.get(game_id)
+    if not game:
+        return
+    _skull_touch(game)
+
+    # 生存者だけで進行（死亡者は除外しないと永遠に置けない）
+    # ただし簡易実装として「手札0なら行動スキップ」にする
+    game["phase"] = "place"
+    game["bids"] = {}
+    game["highest_bid_uid"] = None
+    game["highest_bid"] = 0
+    game["reveals_left"] = 0
+    game["reveal_target_uid"] = None
+
+    await _skull_broadcast(
+        game,
+        "🔻 **配置フェーズ** なのだ\n"
+        "各自、手札から1枚を伏せて置くのだ（他人には中身は見えないのだ）\n\n"
+        "現在の場:\n" + _skull_visible_table(game),
+    )
+
+    # 配置順：starterから時計回り
+    await skull_next_place_turn(game_id)
+
+async def skull_next_place_turn(game_id: str):
+    game = _skull_games.get(game_id)
+    if not game:
+        return
+    _skull_touch(game)
+
+    # 全員が1枚置いたら入札へ
+    alive_players = [p for p in game["players"] if _skull_alive_cards(p) > 0]
+    # 「このラウンドで置いたか？」は pile lengthで判定（全員1枚置きが前提）
+    if all(len(p["pile"]) >= 1 for p in alive_players):
+        await skull_start_bidding(game_id)
+        return
+
+    # 次の置く人を探す
+    n = len(game["players"])
+    for _ in range(n):
+        p = game["players"][game["current_idx"]]
+        if _skull_alive_cards(p) > 0 and len(p["pile"]) < 1:
+            # この人の番
+            if p["type"] == "human":
+                view = SkullPlaceView(game_id, int(p["uid"]))
+                await dm_send_safe(
+                    p["user_obj"],
+                    "🃏 あなたの番なのだ：1枚置くのだ（花/スカル）",
+                    view=view,
+                )
+                game["turn_deadline_ts"] = _skull_now() + SKULL_TURN_TIMEOUT_SEC
+                return
+            else:
+                # NPCは自動配置（2秒演出は人間へ1人ずつ送る）
+                card = _npc_choose_place_card(p)
+                p["hand"].remove(card)
+                p["pile"].append(card)
+
+                # humanへ演出送信（ソロ時のみ人間がいる）
+                humans = _skull_humans(game)
+                if humans:
+                    lines = [f"🤖 {_skull_public_name(p)} はカードを1枚伏せて置いたのだ"]
+                    await npc_action_sequence(humans[0]["user_obj"], lines)
+
+                game["current_idx"] = (game["current_idx"] + 1) % n
+                break
+
+        game["current_idx"] = (game["current_idx"] + 1) % n
+
+    # 再帰的に次へ
+    await skull_next_place_turn(game_id)
+
+async def skull_place_card(interaction: discord.Interaction, game_id: str, actor_uid: int, card: str):
+    game = _skull_games.get(game_id)
+    if not game:
+        return await interaction.followup.send("ゲームが見つからないのだ", ephemeral=True)
+
+    # タイムアウト判定
+    if _skull_now() > float(game.get("turn_deadline_ts", 0) or 0):
+        await _skull_refund_all(game)
+        await _skull_end_game(game_id, "タイムアウトで全額返金したのだ")
+        return
+
+    p = _skull_player(game, actor_uid)
+    if not p or p.get("type") != "human":
+        return await interaction.followup.send("あなたの番ではないのだ", ephemeral=True)
+
+    if len(p["pile"]) >= 1:
+        return await interaction.followup.send("このラウンドではもう置いたのだ", ephemeral=True)
+
+    if card not in p["hand"]:
+        return await interaction.followup.send("そのカードはもう持ってないのだ", ephemeral=True)
+
+    p["hand"].remove(card)
+    p["pile"].append(card)
+    _skull_touch(game)
+
+    # 自分には中身を見せる
+    await interaction.followup.send(f"✅ **{_skull_card_name(card)}** を伏せて置いたのだ", ephemeral=True)
+
+    # 全員へ「置いた」だけ通知（中身は伏せる）
+    await _skull_broadcast(
+        game,
+        f"📌 {_skull_public_name(p)} が1枚置いたのだ\n\n現在の場:\n{_skull_visible_table(game)}"
+    )
+
+    # 次へ
+    game["current_idx"] = (game["current_idx"] + 1) % len(game["players"])
+    await skull_next_place_turn(game_id)
+
+# ---------------------------------------------------------
+# 入札フェーズ
+# ---------------------------------------------------------
+async def skull_start_bidding(game_id: str):
+    game = _skull_games.get(game_id)
+    if not game:
+        return
+    _skull_touch(game)
+
+    game["phase"] = "bid"
+    game["bids"] = {}
+    game["highest_bid_uid"] = None
+    game["highest_bid"] = 0
+
+    await _skull_broadcast(
+        game,
+        "💰 **入札フェーズ** なのだ\n"
+        f"このラウンドの総枚数：{_skull_all_placed_count(game)}\n"
+        "パス（0）もできるのだ\n\n"
+        "現在の場:\n" + _skull_visible_table(game),
+    )
+
+    game["current_idx"] = game["starter_idx"]
+    await skull_next_bid_turn(game_id)
+
+async def skull_next_bid_turn(game_id: str):
+    game = _skull_games.get(game_id)
+    if not game:
+        return
+    _skull_touch(game)
+
+    alive = [p for p in game["players"] if _skull_alive_cards(p) > 0]
+    # 参加者全員がbid済みなら確定
+    if all(int(p["uid"]) in game["bids"] for p in alive):
+        await skull_finish_bidding(game_id)
+        return
+
+    n = len(game["players"])
+    for _ in range(n):
+        p = game["players"][game["current_idx"]]
+        uid = int(p["uid"])
+
+        if _skull_alive_cards(p) <= 0:
+            game["current_idx"] = (game["current_idx"] + 1) % n
+            continue
+
+        if uid in game["bids"]:
+            game["current_idx"] = (game["current_idx"] + 1) % n
+            continue
+
+        if p["type"] == "human":
+            max_bid = _skull_all_placed_count(game)
+            view = SkullBidView(game_id, uid, max_bid)
+            await dm_send_safe(p["user_obj"], f"💰 あなたの入札なのだ（最大 {max_bid}）", view=view)
+            game["turn_deadline_ts"] = _skull_now() + SKULL_TURN_TIMEOUT_SEC
+            return
+        else:
+            bid = _npc_choose_bid(game, p)
+            game["bids"][uid] = bid
+
+            # 演出：人間へNPC1人ずつ2秒
+            humans = _skull_humans(game)
+            if humans:
+                await npc_action_sequence(humans[0]["user_obj"], [f"🤖 {_skull_public_name(p)} は **{bid}** で入札したのだ"])
+
+            game["current_idx"] = (game["current_idx"] + 1) % n
+            break
+
+    await skull_next_bid_turn(game_id)
+
+async def skull_submit_bid(interaction: discord.Interaction, game_id: str, actor_uid: int, bid: int):
+    game = _skull_games.get(game_id)
+    if not game:
+        return await interaction.followup.send("ゲームがないのだ", ephemeral=True)
+
+    if _skull_now() > float(game.get("turn_deadline_ts", 0) or 0):
+        await _skull_refund_all(game)
+        await _skull_end_game(game_id, "タイムアウトで全額返金したのだ")
+        return
+
+    p = _skull_player(game, actor_uid)
+    if not p or p.get("type") != "human":
+        return await interaction.followup.send("あなたの番ではないのだ", ephemeral=True)
+
+    uid = int(actor_uid)
+    if uid in game["bids"]:
+        return await interaction.followup.send("もう入札したのだ", ephemeral=True)
+
+    max_bid = _skull_all_placed_count(game)
+    if bid < 0 or bid > max_bid:
+        return await interaction.followup.send("入札が不正なのだ", ephemeral=True)
+
+    game["bids"][uid] = int(bid)
+    _skull_touch(game)
+
+    await interaction.followup.send(f"✅ 入札：{bid} なのだ", ephemeral=True)
+
+    await _skull_broadcast(game, f"💰 {_skull_public_name(p)} が **{bid}** で入札したのだ")
+
+    game["current_idx"] = (game["current_idx"] + 1) % len(game["players"])
+    await skull_next_bid_turn(game_id)
+
+async def skull_finish_bidding(game_id: str):
+    game = _skull_games.get(game_id)
+    if not game:
+        return
+    _skull_touch(game)
+
+    # 最高bidを決める（同値なら先に出した方を優先）
+    highest_uid = None
+    highest = -1
+    for uid, b in game["bids"].items():
+        if b > highest:
+            highest = b
+            highest_uid = uid
+
+    if highest_uid is None or highest <= 0:
+        # 全員パス扱い：ラウンドやり直し
+        await _skull_broadcast(game, "🌀 全員パスっぽいのだ…ラウンドをやり直すのだ")
+        _skull_reset_round(game)
+        await skull_round_start(game_id)
+        return
+
+    game["highest_bid_uid"] = int(highest_uid)
+    game["highest_bid"] = int(highest)
+    game["phase"] = "reveal"
+    game["reveals_left"] = int(highest)
+    game["reveal_target_uid"] = int(highest_uid)
+
+    bidder = _skull_player(game, int(highest_uid))
+    await _skull_broadcast(
+        game,
+        "🏁 **入札確定なのだ**\n"
+        f"落札者：{_skull_public_name(bidder) if bidder else highest_uid}\n"
+        f"めくる枚数：{highest}\n"
+        "ここからは落札者がめくるのだ",
+    )
+
+    await skull_prompt_reveal_target(game_id)
+
+# ---------------------------------------------------------
+# めくりフェーズ：誰の山からめくるか
+# ---------------------------------------------------------
+async def skull_prompt_reveal_target(game_id: str):
+    game = _skull_games.get(game_id)
+    if not game:
+        return
+    _skull_touch(game)
+
+    uid = int(game["reveal_target_uid"])
+    actor = _skull_player(game, uid)
+    if not actor:
+        return
+
+    # まだめくれる山がある人だけ選択肢にする
+    choices = []
+    for p in game["players"]:
+        if len(p["pile"]) > 0:
+            choices.append((int(p["uid"]), _skull_public_name(p)))
+
+    if not choices:
+        # あり得ないが安全に
+        await _skull_broadcast(game, "場にめくれるカードが無いのだ…ラウンドやり直しなのだ")
+        _skull_reset_round(game)
+        await skull_round_start(game_id)
+        return
+
+    # NPCなら自動
+    if actor["type"] == "npc":
+        t_uid = _npc_choose_reveal_target(game, actor)
+        humans = _skull_humans(game)
+        if humans:
+            await npc_action_sequence(humans[0]["user_obj"], [f"🤖 {_skull_public_name(actor)} は **{_skull_public_name(_skull_player(game, t_uid) or {'name':t_uid})}** をめくるのだ"])
+        await skull_resolve_reveal(game_id, uid, t_uid)
+        return
+
+    # 人間ならDMで選ばせる
+    view = SkullRevealTargetView(game_id, uid, choices)
+    await dm_send_safe(
+        actor["user_obj"],
+        f"🫴 めくる対象を選ぶのだ（残り {game['reveals_left']} 枚）",
+        view=view,
+    )
+    game["turn_deadline_ts"] = _skull_now() + SKULL_TURN_TIMEOUT_SEC
+
+async def skull_choose_reveal_target(interaction: discord.Interaction, game_id: str, actor_uid: int, target_uid: int):
+    game = _skull_games.get(game_id)
+    if not game:
+        return await interaction.followup.send("ゲームがないのだ", ephemeral=True)
+
+    if _skull_now() > float(game.get("turn_deadline_ts", 0) or 0):
+        await _skull_refund_all(game)
+        await _skull_end_game(game_id, "タイムアウトで全額返金したのだ")
+        return
+
+    if int(game.get("reveal_target_uid")) != int(actor_uid):
+        return await interaction.followup.send("今はあなたのめくり番じゃないのだ", ephemeral=True)
+
+    target = _skull_player(game, int(target_uid))
+    if not target or len(target["pile"]) <= 0:
+        return await interaction.followup.send("その人の山にめくれるカードがないのだ", ephemeral=True)
+
+    await interaction.followup.send(f"✅ **{_skull_public_name(target)}** をめくるのだ", ephemeral=True)
+    await _skull_broadcast(game, f"🫴 {_skull_public_name(_skull_player(game, actor_uid) or {'name':actor_uid})} が **{_skull_public_name(target)}** をめくるのだ")
+
+    await skull_resolve_reveal(game_id, actor_uid, target_uid)
+
+async def skull_resolve_reveal(game_id: str, actor_uid: int, target_uid: int):
+    game = _skull_games.get(game_id)
+    if not game:
+        return
+    _skull_touch(game)
+
+    actor = _skull_player(game, int(actor_uid))
+    target = _skull_player(game, int(target_uid))
+    if not actor or not target or len(target["pile"]) <= 0:
+        return
+
+    # 山札から1枚めくる（最後に置いたものから）
+    card = target["pile"].pop()
+    game["reveals_left"] -= 1
+
+    # 公開ログ：めくった結果は全員に見える（ゲーム仕様）
+    await _skull_broadcast(
+        game,
+        f"🃏 めくったのだ：{_skull_public_name(target)} のカード → **{_skull_card_emoji(card)} {_skull_card_name(card)}**\n"
+        f"残りめくり：{max(0, int(game['reveals_left']))}枚"
+    )
+
+    # スカルなら失敗：カード1枚失う（残ってる手札からランダム）
+    if card == "skull":
+        # 失敗演出
+        await _skull_broadcast(game, f"💥 **スカルを踏んだのだ！**\n{_skull_public_name(actor)} はペナルティなのだ")
+
+        # 失うカード（手札があるならランダムで1枚除去）
+        if len(actor["hand"]) > 0:
+            lost = random.choice(actor["hand"])
+            actor["hand"].remove(lost)
+            await _skull_broadcast(game, f"🗑️ {_skull_public_name(actor)} は手札を1枚失ったのだ（残り{len(actor['hand'])}枚）")
+
+        # ラウンド終了→次ラウンド
+        _skull_reset_round(game)
+
+        # 勝敗判定（手札0で脱落の扱い。ソロは手札0なら負け）
+        if game.get("is_solo"):
+            human = _skull_humans(game)[0]
+            if len(human["hand"]) <= 0:
+                # ソロ負け：0（返金なし）
+                await dm_send_safe(human["user_obj"], "🪦 ソロスカル：手札が尽きたのだ…負けなのだ（報酬0）")
+                await _skull_end_game(game_id, "ソロ敗北なのだ")
+                return
+        else:
+            # マルチ：脱落者が出てもゲーム継続（最後に勝者決定）
+            pass
+
+        await skull_round_start(game_id)
+        return
+
+    # 花なら継続：まだめくりが残るなら続ける
+    if int(game["reveals_left"]) > 0:
+        await skull_prompt_reveal_target(game_id)
+        return
+
+    # 成功：得点+1
+    actor["score"] = int(actor.get("score", 0) or 0) + 1
+    await _skull_broadcast(game, f"✅ **成功なのだ！** {_skull_public_name(actor)} の得点：{actor['score']}")
+
+    # 勝利条件（2点先取）
+    if actor["score"] >= 2:
+        # 人間が勝者なら配当。NPCが勝った場合は（ソロ）報酬なしで終了
+        if actor["type"] == "human":
+            await _skull_payout_winner(game, int(actor["uid"]))
+            if game.get("is_solo"):
+                await dm_send_safe(actor["user_obj"], f"🎉 ソロ勝利なのだ！ +{SKULL_SOLO_WIN_REWARD} コインなのだ")
+            else:
+                await _skull_broadcast(game, f"🏆 勝者：{_skull_public_name(actor)}\n総額 {int(game.get('pot',0))} コインを付与したのだ！")
+        else:
+            # ソロでNPCが勝った扱い：報酬0
+            humans = _skull_humans(game)
+            if humans:
+                await dm_send_safe(humans[0]["user_obj"], "🪦 ソロスカル：NPCが先に2点取ったのだ…負けなのだ（報酬0）")
+
+        await _skull_end_game(game_id, "ゲーム終了なのだ")
+        return
+
+    # 次ラウンドへ
+    _skull_reset_round(game)
+    await skull_round_start(game_id)
+
+# ---------------------------------------------------------
+# /skullsolo コマンド（即ソロ開始：参加費50を徴収）
+# ---------------------------------------------------------
+@bot.tree.command(name="skullsolo", description="スカルをソロで遊ぶのだ（参加費50）")
+async def skullsolo_cmd(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except Exception:
+        pass
+
+    uid = int(interaction.user.id)
+
+    # 参加費50徴収
+    async with get_user_lock(uid):
+        u = store.get_user(uid)
+        if int(u.get("coins", 0) or 0) < SKULL_SOLO_ENTRY_FEE:
+            return await interaction.followup.send("コインが足りないのだ（必要50）", ephemeral=True)
+        u["coins"] -= SKULL_SOLO_ENTRY_FEE
+        await sheets_upsert_async(u)
+
+    # lobbyを介さず開始
+    human = {
+        "uid": uid,
+        "type": "human",
+        "name": interaction.user.display_name,
+        "paid_fee": SKULL_SOLO_ENTRY_FEE,
+        "user_obj": interaction.user,
+    }
+
+    await interaction.followup.send("✅ ソロを開始するのだ（DMを見てほしいのだ）", ephemeral=True)
+    await skull_start_solo(human_player=human)
+
+# ---------------------------------------------------------
+# /skull bet と minutes（締切あり募集）
+# ---------------------------------------------------------
+@bot.tree.command(name="skull", description="スカル募集をするのだ（締切あり）")
+@app_commands.describe(
+    bet="参加費（マルチ時）",
+    minutes="締切までの分数（1以上）",
+)
+async def skull_cmd(interaction: discord.Interaction, bet: int, minutes: int):
+    # 募集はチャンネルに出す
+    if minutes < 1:
+        return await interaction.response.send_message("minutesは1以上なのだ", ephemeral=True)
+    if bet < 1:
+        return await interaction.response.send_message("betは1以上なのだ", ephemeral=True)
+
+    deadline_ts = _skull_now() + (minutes * 60)
+
+    await interaction.response.defer(ephemeral=True)
+
+    msg = await interaction.channel.send(
+        "🪙 **スカル募集なのだ**\n準備中なのだ…",
+        view=SkullLobbyView(lobby_msg_id=0, deadline_ts=deadline_ts),
+    )
+
+    lobby = {
+        "status": "open",
+        "channel_id": int(msg.channel.id),
+        "guild_id": int(interaction.guild_id or 0),
+        "created_by": int(interaction.user.id),
+        "created_at": int(_skull_now()),
+        "deadline_ts": float(deadline_ts),
+        "bet": int(bet),
+        "pot": 0,
+        "players": {},  # uid -> player dict
+    }
+    _skull_lobbies[int(msg.id)] = lobby
+
+    # view差し替え（message_id確定後）
+    await msg.edit(view=SkullLobbyView(lobby_msg_id=msg.id, deadline_ts=deadline_ts))
+    await skull_update_lobby_message(msg.id)
+
+    await interaction.followup.send("募集を作成したのだ", ephemeral=True)
+
+# =========================================================
 # 起動イベント
 # =========================================================
 @bot.event
@@ -3590,6 +4611,8 @@ async def on_ready():
     if not lottery_watcher.is_running():
         lottery_watcher.start()
 
+    if not skull_timeout_watcher.is_running():
+        skull_timeout_watcher.start()
 
 # =========================================================
 # Flask Keep Alive
@@ -3624,6 +4647,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
