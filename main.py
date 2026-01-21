@@ -1234,21 +1234,32 @@ async def maybe_award_hidden_titles(
         except Exception:
             return
 
-    async def award_once(key: str, role_id: int, message: str):
-        if role_id is None:
-            return
-        if key in award_keys_set(u):
-            return
+async def award_once(key: str, role_id: int, message: str):
+    if role_id is None:
+        return
 
-        add_title_to_inventory(u, role_id)
-        u["title_role_id"] = role_id
-        set_award_key(u, key)
+    # 役職オブジェクト取得
+    role = member.guild.get_role(role_id)
+    has_role = role is not None and any(r.id == role_id for r in member.roles)
 
-        await apply_title_role(member, role_id)
-        await sheets_upsert_async(u)
+    # ✅ 「付与済み記録」があって、かつ実際にロールも付いているなら何もしない
+    #    （過去に失敗して award_keys だけ付いたケースは has_role=False なので再付与される）
+    if key in award_keys_set(u) and has_role:
+        return
 
-        # ✅ 獲得者だけに通知（DM優先）
-        await notify_title_earned_only_user(interaction, member, message)
+    # 念のためロールが存在しないなら中断（ログ出してもOK）
+    if role is None:
+        return
+
+    add_title_to_inventory(u, role_id)
+    u["title_role_id"] = role_id
+    set_award_key(u, key)
+
+    await apply_title_role(member, role_id)
+    await sheets_upsert_async(u)
+
+    # ✅ 獲得者だけに通知（DM優先）
+    await notify_title_earned_only_user(interaction, member, message)
 
     if u["daikichi_count"] >= 10:
         await award_once(
@@ -4899,6 +4910,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
