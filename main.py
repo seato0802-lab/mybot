@@ -2188,69 +2188,76 @@ async def chinchiro_cmd(interaction: discord.Interaction):
 
     DICE_COST = 5
 
-def roll_dice(turn: int, jackpot_boost: bool):
-    BASE_JACKPOT_RATE = 1 / 2000
-    BOOSTED_JACKPOT_RATE = 1 / 100
-    SEVEN_BAR_RATE = 1 / 1000
-    PEE_RATE = 1 / 500
+    def roll_dice(turn: int, jackpot_boost: bool) -> list[str]:
+        BASE_JACKPOT_RATE = 1 / 2000
+        BOOSTED_JACKPOT_RATE = 1 / 100
+        SEVEN_BAR_RATE = 1 / 1000
+        PEE_RATE = 1 / 500
 
-    r = random.random()
-    jackpot_rate = BOOSTED_JACKPOT_RATE if jackpot_boost else BASE_JACKPOT_RATE
+        r = random.random()
+        jackpot_rate = BOOSTED_JACKPOT_RATE if jackpot_boost else BASE_JACKPOT_RATE
 
-    if r < jackpot_rate:
-        return ["7", "7", "7"]
+        # 🎰 JP
+        if r < jackpot_rate:
+            return ["7", "7", "7"]
 
-    if turn < 3 and r < jackpot_rate + SEVEN_BAR_RATE:
-        return ["7", "7", "BAR"]
+        # 7-7-BAR（次回ブーストのトリガー）
+        if turn < 3 and r < jackpot_rate + SEVEN_BAR_RATE:
+            return ["7", "7", "BAR"]
 
-    # 💦 しょんべん（サイコロを振らない事故）
-    if r < jackpot_rate + SEVEN_BAR_RATE + PEE_RATE:
-        return ["💦 しょんべん"]
+        # 💦 しょんべん（サイコロを振らない事故）
+        if r < jackpot_rate + SEVEN_BAR_RATE + PEE_RATE:
+            return ["💦 しょんべん"]
 
-    return sorted([str(random.randint(1, 6)) for _ in range(3)])
+        # 通常ちんちろ
+        return sorted([str(random.randint(1, 6)) for _ in range(3)])
 
-def judge(dice: list[str]):
-    if dice == ["7", "7", "7"]:
-        return "🎰 ジャックポット！"
-    if dice == ["7", "7", "BAR"]:
+    def judge(dice: list[str]) -> str | None:
+        # 特殊目
+        if dice == ["7", "7", "7"]:
+            return "🎰 ジャックポット！"
+        if dice == ["7", "7", "BAR"]:
+            return None
+        if dice == ["💦 しょんべん"]:
+            return "💦 しょんべん"
+
+        # 通常ちんちろ
+        nums = sorted(map(int, dice))
+        a, b, c = nums
+
+        if nums == [1, 1, 1]:
+            return "🎉 ピンゾロ"
+        if a == b == c:
+            return f"🌪 {a}のアラシ"
+        if nums == [1, 2, 3]:
+            return "💀 ヒフミ"
+        if nums == [4, 5, 6]:
+            return "🔥 シゴロ"
+
+        if a == b and b != c:
+            return f"👉 目：{c}"
+        if b == c and a != b:
+            return f"👉 目：{a}"
+        if a == c and b != a:
+            return f"👉 目：{b}"
         return None
-
-    nums = sorted(map(int, dice))
-    a, b, c = nums
-
-    if nums == [1, 1, 1]:
-        return "🎉 ピンゾロ"
-    if a == b == c:
-        return f"🌪 {a}のアラシ"
-    if nums == [1, 2, 3]:
-        return "💀 ヒフミ"
-    if nums == [4, 5, 6]:
-        return "🔥 シゴロ"
-
-    if a == b and b != c:
-        return f"👉 目：{c}"
-    if b == c and a != b:
-        return f"👉 目：{a}"
-    if a == c and b != a:
-        return f"👉 目：{b}"
-    return None
 
     async with get_user_lock(interaction.user.id):
         u = store.get_user(interaction.user.id)
 
-        if u["coins"] < DICE_COST:
+        if int(u.get("coins", 0) or 0) < DICE_COST:
             return await interaction.followup.send(
                 f"コインが足りないのだ（必要：{DICE_COST} / 残高：{u['coins']}）"
             )
 
-        before_cost = int(u.get("coins", 0))
-        u["coins"] = before_cost - DICE_COST
+        # 参加費
+        u["coins"] = int(u.get("coins", 0) or 0) - DICE_COST
 
-        results_text = []
-        role = None
+        results_text: list[str] = []
+        role: str | None = None
         seven_bar_triggered = False
         had_seven_bar = False
-        final_dice = None
+        final_dice: list[str] | None = None
 
         for i in range(1, 4):
             dice = roll_dice(i, seven_bar_triggered)
@@ -2261,25 +2268,26 @@ def judge(dice: list[str]):
                 seven_bar_triggered = True
                 had_seven_bar = True
 
-            # 💦 しょんべんは即終了
-            if dice == ["💦 しょんべん"]:
-                role = "💦 しょんべん"
-                results_text.append(
-                    f"{i}回目：💦 **しょんべん**（サイコロが器から落ちたのだ…）"
-                )
-                break
-
+            # 役判定
             role = judge(dice)
             dice_text = "・".join(dice)
 
-            if role:
-                results_text.append(f"{i}回目：🎲 {dice_text} → **{role}**")
-                break
-            else:
+            if role is None:
                 results_text.append(f"{i}回目：🎲 {dice_text} → 役なし")
-        if not role:
+                continue
+
+            # 💦 しょんべんは即終了（結果表示も専用に）
+            if role == "💦 しょんべん":
+                results_text.append(f"{i}回目：💦 **しょんべん**（サイコロが器から落ちたのだ…）")
+                break
+
+            results_text.append(f"{i}回目：🎲 {dice_text} → **{role}**")
+            break
+
+        if role is None:
             role = "❌ メなし"
 
+        # コイン増減
         delta = 0
         if role == "🎉 ピンゾロ":
             delta = 70
@@ -2298,7 +2306,7 @@ def judge(dice: list[str]):
             delta = -100
         elif role == "💀 ヒフミ":
             delta = -10
-        elif role and role.startswith("👉 目："):
+        elif role.startswith("👉 目："):
             try:
                 num = int(role.replace("👉 目：", "").strip())
                 if num <= 2:
@@ -2310,16 +2318,16 @@ def judge(dice: list[str]):
             except Exception:
                 delta = 0
 
-        before_delta = int(u.get("coins", 0))
         if delta != 0:
-            u["coins"] = before_delta + delta
+            u["coins"] = int(u.get("coins", 0) or 0) + delta
             if delta > 0:
-                u["total_earned"] = int(u.get("total_earned", 0)) + delta
-        after_all = int(u.get("coins", 0))
+                u["total_earned"] = int(u.get("total_earned", 0) or 0) + delta
+
+        after_all = int(u.get("coins", 0) or 0)
 
         just_events = set()
         if final_dice == ["7", "7", "7"]:
-            u["jackpot_count"] = int(u.get("jackpot_count", 0)) + 1
+            u["jackpot_count"] = int(u.get("jackpot_count", 0) or 0) + 1
             just_events.add("JP_EVENT")
         if had_seven_bar and final_dice != ["7", "7", "7"]:
             just_events.add("BAR_MISS_EVENT")
@@ -2342,6 +2350,7 @@ def judge(dice: list[str]):
     except Exception as e:
         print("dice award error:", e)
         traceback.print_exc()
+
 
 # =========================================================
 # 抽選締切処理
@@ -4845,5 +4854,6 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
