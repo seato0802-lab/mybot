@@ -1234,33 +1234,31 @@ async def maybe_award_hidden_titles(
         except Exception:
             return
 
-async def award_once(key: str, role_id: int, message: str):
-    if role_id is None:
-        return
+    async def award_once(key: str, role_id: int, message: str):
+        if role_id is None:
+            return
 
-    # 役職オブジェクト取得
-    role = member.guild.get_role(role_id)
-    has_role = role is not None and any(r.id == role_id for r in member.roles)
+        # 役職オブジェクト取得
+        role = member.guild.get_role(role_id)
+        has_role = role is not None and any(r.id == role_id for r in member.roles)
 
-    # ✅ 「付与済み記録」があって、かつ実際にロールも付いているなら何もしない
-    #    （過去に失敗して award_keys だけ付いたケースは has_role=False なので再付与される）
-    if key in award_keys_set(u) and has_role:
-        return
+        # 「付与済み記録」かつ「実ロールも付いてる」ならスキップ
+        if key in award_keys_set(u) and has_role:
+            return
 
-    # 念のためロールが存在しないなら中断（ログ出してもOK）
-    if role is None:
-        return
+        # ロールが存在しないなら中断
+        if role is None:
+            return
 
-    add_title_to_inventory(u, role_id)
-    u["title_role_id"] = role_id
-    set_award_key(u, key)
+        add_title_to_inventory(u, role_id)
+        u["title_role_id"] = role_id
+        set_award_key(u, key)
 
-    await apply_title_role(member, role_id)
-    await sheets_upsert_async(u)
+        await apply_title_role(member, role_id)
+        await sheets_upsert_async(u)
 
-    # ✅ 獲得者だけに通知（DM優先）
-    await notify_title_earned_only_user(interaction, member, message)
-
+        await notify_title_earned_only_user(interaction, member, message)
+        
     if u["daikichi_count"] >= 10:
         await award_once(
             "AWARD_DAIKICHI_10",
@@ -1352,7 +1350,7 @@ async def award_once(key: str, role_id: int, message: str):
 # AI称号（ずんだもん）付与
 # 条件: ai_chat_count の回数で付与（好きに変更OK）
 # =========================================================
-    ai_cnt = int(u.get("ai_chat_count", 0))
+    ai_cnt = int(u.get("ai_chat_count", 0) or 0)
 
     if ai_cnt >= 10:
         await award_once(
@@ -1374,7 +1372,7 @@ async def award_once(key: str, role_id: int, message: str):
             ROLE_AI_FAMILY,
             "🎉✨称号獲得✨\n\n💚 ずんだもんの家族なのだ！\nを獲得したのだ！",
         )
-
+        
 # =========================================================
 # 入口メッセージ（ショップ・BJ）
 # =========================================================
@@ -4910,6 +4908,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
