@@ -3372,49 +3372,6 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
     results = []
 
     for idx, hand in enumerate(session["hands"]):
-        bet = session["bets"][idx]
-        v = hand_value(hand)
-
-        if v > 21:
-            results.append(f"手札{idx+1}：負け（バースト）")
-            profit -= bet
-            continue
-
-        if immediate_dealer_bj:
-            results.append(f"手札{idx+1}：負け（ディーラー21）")
-            profit -= bet
-            continue
-
-        if dealer_bust:
-            if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
-                payout = (bet * 5) // 2
-                payout_total += payout
-                results.append(f"手札{idx+1}：勝ち（BJ 3:2）")
-                profit += (payout - bet)
-            else:
-                payout_total += bet * 2
-                results.append(f"手札{idx+1}：勝ち（ディーラーバースト）")
-                profit += bet
-            continue
-
-        if v > dealer_val:
-            if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
-                payout = (bet * 5) // 2
-                payout_total += payout
-                results.append(f"手札{idx+1}：勝ち（BJ 3:2）")
-                profit += (payout - bet)
-            else:
-                payout_total += bet * 2
-                results.append(f"手札{idx+1}：勝ち")
-                profit += bet
-        elif v < dealer_val:
-            results.append(f"手札{idx+1}：負け")
-            profit -= bet
-        else:
-            payout_total += bet
-            results.append(f"手札{idx+1}：引き分け")
-
-    for idx, hand in enumerate(session["hands"]):
         bet = int(session["bets"][idx])
         v = hand_value(hand)
 
@@ -4942,6 +4899,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
