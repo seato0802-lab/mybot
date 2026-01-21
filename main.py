@@ -1937,22 +1937,28 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
     await interaction.response.defer(ephemeral=False)
 
     user_id = interaction.user.id
-    save_chat(user_id, message)
-    def get_summary(user_id: int) -> str:
-    u = store.get_user(user_id)
-    s = (u.get("ai_summary") or "").strip()
-    return s
 
+    # 直近ログ（SQLite）
+    save_chat(user_id, message)
     recent_chats = get_recent_chats(user_id)
+
+    # ★ 要約は Sheets から読む
+    summary = get_ai_summary_from_sheet(user_id)
 
     messages = [{"role": "system", "content": ZUNDAMON_SYSTEM}]
     if summary:
-        messages.append({"role": "system", "content": f"このユーザーの傾向メモ（非公開）:\n{summary}"})
+        messages.append(
+            {"role": "system", "content": f"このユーザーの傾向メモ（非公開）:\n{summary}"}
+        )
     for m in recent_chats:
         messages.append({"role": "user", "content": m})
 
+    new_summary: str | None = None
+
     try:
         loop = asyncio.get_running_loop()
+
+        # ずんだもん返信
         response = await loop.run_in_executor(
             None,
             lambda: client.chat.completions.create(
@@ -1963,27 +1969,19 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
             ),
         )
         reply = (response.choices[0].message.content or "").strip()
-        await interaction.followup.send(f"🗣 **あなた**：{message}\n\n🟢 **ずんだもん**：{reply}")
 
-    async with get_user_lock(interaction.user.id):
-        u = store.get_user(interaction.user.id)
+        await interaction.followup.send(
+            f"🗣 **あなた**：{message}\n\n🟢 **ずんだもん**：{reply}"
+        )
 
-        # ★ 回数を記入（Sheetsへ）
-        u["ai_chat_count"] = int(u.get("ai_chat_count", 0)) + 1
-
-        # ★ 要約を Sheets に保存（SQLiteは使わない）
-        if new_summary:  # 既に生成している要約文字列
-            u["ai_summary"] = new_summary
-
-    await sheets_upsert_async(u)
-    
-    # ★ 称号判定（獲得者のみ通知）
-    await maybe_award_hidden_titles(interaction, u, {"AI_CHAT"})
-
+        # ★ 3発たまったら要約生成
         if len(recent_chats) >= 3:
             summary_prompt = [
                 {"role": "system", "content": ZUNDAMON_SYSTEM},
-                {"role": "system", "content": "以下の会話から、この人の話し方や好みを短く要約してください。"},
+                {
+                    "role": "system",
+                    "content": "以下の会話から、この人の話し方や好みを短く要約してください。",
+                },
             ]
             for m in recent_chats:
                 summary_prompt.append({"role": "user", "content": m})
@@ -1998,13 +1996,33 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
                 ),
             )
             new_summary = (s.choices[0].message.content or "").strip()
-            save_summary(user_id, new_summary)
             clear_chats(user_id)
 
     except Exception as e:
-        await interaction.followup.send("ごめんなのだ…今はうまく答えられないのだ 💦")
         print("AI error:", e)
         traceback.print_exc()
+        return await interaction.followup.send(
+            "ごめんなのだ…今はうまく答えられないのだ 💦"
+        )
+
+    # =========================
+    # Sheets 更新（回数・要約）
+    # =========================
+    async with get_user_lock(user_id):
+        u = store.get_user(user_id)
+
+        # 回数
+        u["ai_chat_count"] = int(u.get("ai_chat_count", 0)) + 1
+
+        # 要約（あれば上書き）
+        if new_summary:
+            u["ai_summary"] = new_summary
+
+        await sheets_upsert_async(u)
+
+    # ★ AI称号チェック（獲得者のみ通知）
+    await maybe_award_hidden_titles(interaction, u, {"AI_CHAT"})
+
 
 @bot.tree.command(name="lottery", description="抽選を作成するのだ（管理者専用）")
 @app_commands.describe(
@@ -4929,6 +4947,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
