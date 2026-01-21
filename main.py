@@ -446,6 +446,10 @@ ROLE_BJ_BIGLOSE  = 1462690685944856677  # 破滅王
 ROLE_NUMA_CLEAR  = 1462810553553780796  # 沼踏破者
 ROLE_NUMA_LEGEND = 1462810693156737087  # 沼を支配せし者
 
+ROLE_AI_FRIEND = 123456789012345678  # 友達
+ROLE_AI_BEST   = 123456789012345679  # 親友
+ROLE_AI_FAMILY = 123456789012345680  # 家族
+
 AWARD_NUMA_CLEAR = "AWARD_NUMA_CLEAR"
 AWARD_NUMA_LEGEND = "AWARD_NUMA_LEGEND"
 
@@ -481,6 +485,10 @@ MANAGED_TITLE_ROLES = {
 
     ROLE_NUMA_CLEAR,
     ROLE_NUMA_LEGEND,
+    
+    ROLE_AI_FRIEND,
+    ROLE_AI_BEST
+    ROLE_AI_FAMILY
 }
 
 USER_HEADERS = [
@@ -1926,6 +1934,7 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         await interaction.followup.send("ごめんなのだ…今はうまく答えられないのだ 💦")
         print("AI error:", e)
         traceback.print_exc()
+
 
 @bot.tree.command(name="lottery", description="抽選を作成するのだ（管理者専用）")
 @app_commands.describe(
@@ -4850,6 +4859,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
