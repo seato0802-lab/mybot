@@ -1238,20 +1238,22 @@ async def maybe_award_hidden_titles(
             member = await interaction.guild.fetch_member(interaction.user.id)
         except Exception:
             return
-       async def award_once(key: str, role_id, message: str):
+
+    async def award_once(key: str, role_id: int, message: str):
         if role_id is None:
             return
         if key in award_keys_set(u):
             return
+
         add_title_to_inventory(u, role_id)
         u["title_role_id"] = role_id
         set_award_key(u, key)
+
         await apply_title_role(member, role_id)
         await sheets_upsert_async(u)
 
         # ✅ 獲得者だけに通知（DM優先）
         await notify_title_earned_only_user(interaction, member, message)
-
 
     if u["daikichi_count"] >= 10:
         await award_once(
@@ -4927,6 +4929,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
