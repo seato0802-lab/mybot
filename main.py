@@ -4263,21 +4263,25 @@ async def skull_next_place_turn(game_id: str):
             game["turn_deadline_ts"] = _skull_now() + SKULL_TURN_TIMEOUT_SEC
             return
 
-        # NPC：最低1枚置くまでは置く。全員1枚後は「置く/入札開始」判断
+       # NPC：最低1枚置くまでは置く。全員1枚後は「置く/入札開始」判断
         else:
             if not all_one:
                 await skull_npc_place_one(game_id, int(p["uid"]))
                 game["current_idx"] = (game["current_idx"] + 1) % n
+        # ✅ 次へ進める（ここが無いと止まる）
+                await skull_next_place_turn(game_id)
                 return
 
-            # 全員1枚後：たまに入札開始
+        # 全員1枚後：たまに入札開始
             if _npc_should_start_bid(game, p):
                 await skull_start_bidding_internal(game_id, starter_uid=int(p["uid"]))
                 return
 
-            await skull_npc_place_one(game_id, int(p["uid"]))
-            game["current_idx"] = (game["current_idx"] + 1) % n
-            return
+                await skull_npc_place_one(game_id, int(p["uid"]))
+                game["current_idx"] = (game["current_idx"] + 1) % n
+        # ✅ 次へ進める（ここが無いと止まる）
+                await skull_next_place_turn(game_id)
+                return
 
     # 全員スキップされた（あり得る）→安全に次ラウンド
     _skull_reset_round(game)
@@ -4854,6 +4858,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
