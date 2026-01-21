@@ -237,14 +237,9 @@ def clear_chats(user_id: int):
     conn.close()
 
 
-def get_summary(user_id: int):
-    conn = sqlite3.connect("ai_memory.db")
-    cur = conn.cursor()
-    cur.execute("SELECT summary FROM user_summary WHERE user_id=?", (user_id,))
-    row = cur.fetchone()
-    conn.close()
-    return row[0] if row else ""
-
+def get_ai_summary_from_sheet(user_id: int) -> str:
+    u = store.get_user(user_id)
+    return (u.get("ai_summary") or "").strip()
 
 def save_summary(user_id: int, summary: str):
     conn = sqlite3.connect("ai_memory.db")
@@ -4947,6 +4942,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
