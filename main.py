@@ -2252,31 +2252,31 @@ def judge(dice: list[str]):
         had_seven_bar = False
         final_dice = None
 
-	for i in range(1, 4):
-   	 dice = roll_dice(i, seven_bar_triggered)
-   	 final_dice = dice
-	
-  	  # 7-7-BAR トリガー
-   	 if dice == ["7", "7", "BAR"]:
-   	     seven_bar_triggered = True
-    	    had_seven_bar = True
+	        for i in range(1, 4):
+            dice = roll_dice(i, seven_bar_triggered)
+            final_dice = dice
 
-   	 # 💦 しょんべんは即終了
-   	 if dice == ["💦 しょんべん"]:
-    	    role = "💦 しょんべん"
-    	    results_text.append(
-      	      f"{i}回目：💦 **しょんべん**（サイコロが器から落ちたのだ…）"
-      	  )
-      	  break
+            # 7-7-BAR トリガー
+            if dice == ["7", "7", "BAR"]:
+                seven_bar_triggered = True
+                had_seven_bar = True
 
-   	 role = judge(dice)
-   	 dice_text = "・".join(dice)
-	
-   	 if role:
-   	     results_text.append(f"{i}回目：🎲 {dice_text} → **{role}**")
-    	    break
-   	 else:
-     	   results_text.append(f"{i}回目：🎲 {dice_text} → 役なし")
+            # 💦 しょんべんは即終了
+            if dice == ["💦 しょんべん"]:
+                role = "💦 しょんべん"
+                results_text.append(
+                    f"{i}回目：💦 **しょんべん**（サイコロが器から落ちたのだ…）"
+                )
+                break
+
+            role = judge(dice)
+            dice_text = "・".join(dice)
+
+            if role:
+                results_text.append(f"{i}回目：🎲 {dice_text} → **{role}**")
+                break
+            else:
+                results_text.append(f"{i}回目：🎲 {dice_text} → 役なし")
 
         if not role:
             role = "❌ メなし"
@@ -4846,3 +4846,4 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
