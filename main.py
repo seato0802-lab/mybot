@@ -2252,7 +2252,7 @@ def judge(dice: list[str]):
         had_seven_bar = False
         final_dice = None
 
-	        for i in range(1, 4):
+        for i in range(1, 4):
             dice = roll_dice(i, seven_bar_triggered)
             final_dice = dice
 
@@ -2277,7 +2277,6 @@ def judge(dice: list[str]):
                 break
             else:
                 results_text.append(f"{i}回目：🎲 {dice_text} → 役なし")
-
         if not role:
             role = "❌ メなし"
 
@@ -2296,7 +2295,7 @@ def judge(dice: list[str]):
         elif role == "🎰 ジャックポット！":
             delta = 1000
         elif role == "💦 しょんべん":
-             delta = -100
+            delta = -100
         elif role == "💀 ヒフミ":
             delta = -10
         elif role and role.startswith("👉 目："):
@@ -4846,4 +4845,5 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
