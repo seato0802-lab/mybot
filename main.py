@@ -447,11 +447,15 @@ ROLE_NUMA_CLEAR  = 1462810553553780796  # 沼踏破者
 ROLE_NUMA_LEGEND = 1462810693156737087  # 沼を支配せし者
 
 ROLE_AI_FRIEND = 123456789012345678  # 友達
-ROLE_AI_BEST   = 123456789012345679  # 親友
+ROLE_AI_BFF   = 123456789012345679  # 親友
 ROLE_AI_FAMILY = 123456789012345680  # 家族
 
 AWARD_NUMA_CLEAR = "AWARD_NUMA_CLEAR"
 AWARD_NUMA_LEGEND = "AWARD_NUMA_LEGEND"
+
+AWARD_AI_FRIEND = "ai_zunda_friend"
+AWARD_AI_BFF    = "ai_zunda_bff"
+AWARD_AI_FAMILY = "ai_zunda_family"
 
 SHOP_ITEMS = [
     {"key": "title_1000", "name": "🌱 ずんだ見習い", "price": 1000, "type": "role", "role_name": "ずんだ見習い"},
@@ -487,8 +491,8 @@ MANAGED_TITLE_ROLES = {
     ROLE_NUMA_LEGEND,
     
     ROLE_AI_FRIEND,
-    ROLE_AI_BEST
-    ROLE_AI_FAMILY
+    ROLE_AI_BFF,
+    ROLE_AI_FAMILY,
 }
 
 USER_HEADERS = [
@@ -506,6 +510,8 @@ USER_HEADERS = [
     "last_login_ymd",
     "owned_title_role_ids",
     "award_keys",
+    "ai_chat_count",
+    "ai_summary",
 ]
 
 
@@ -757,6 +763,8 @@ class SheetsStore:
             "last_login_ymd": s("last_login_ymd", ""),
             "owned_title_role_ids": s("owned_title_role_ids", ""),
             "award_keys": s("award_keys", ""),
+            "ai_chat_count": i("ai_chat_count", 0),
+            "ai_summary": s("ai_summary", ""),
         }
 
     def _load_users_and_index(self):
@@ -1230,8 +1238,7 @@ async def maybe_award_hidden_titles(
             member = await interaction.guild.fetch_member(interaction.user.id)
         except Exception:
             return
-
-    async def award_once(key: str, role_id, message: str):
+       async def award_once(key: str, role_id, message: str):
         if role_id is None:
             return
         if key in award_keys_set(u):
@@ -1241,10 +1248,10 @@ async def maybe_award_hidden_titles(
         set_award_key(u, key)
         await apply_title_role(member, role_id)
         await sheets_upsert_async(u)
-        try:
-            await interaction.followup.send(message, ephemeral=True)
-        except Exception:
-            pass
+
+        # ✅ 獲得者だけに通知（DM優先）
+        await notify_title_earned_only_user(interaction, member, message)
+
 
     if u["daikichi_count"] >= 10:
         await award_once(
@@ -1316,6 +1323,49 @@ async def maybe_award_hidden_titles(
             "🎉🎉🎉\n✨【破滅への道】✨\n\nブラックジャックで\n一度に1,000コイン以上\n失ったのだ……\n💀「ずんだの破滅王」\nを獲得したのだよ！\n🎉🎉🎉",
         )
 
+    # =========================================================
+    # 沼（NUMA）
+    # =========================================================
+    if "NUMA_CLEAR" in just_events:
+        await award_once(
+            AWARD_NUMA_CLEAR,
+            ROLE_NUMA_CLEAR,
+            "🎉🎉🎉\n✨【沼踏破】✨\n\n沼を最後まで突破したのだ！\n🕳️「沼踏破者」\nを獲得したのだよ！\n🎉🎉🎉",
+        )
+
+    if "NUMA_LEGEND" in just_events:
+        await award_once(
+            AWARD_NUMA_LEGEND,
+            ROLE_NUMA_LEGEND,
+            "🎉🎉🎉\n✨【沼の伝説】✨\n\n通過玉が1発で沼を制覇したのだ…！\n👑「沼を支配せし者」\nを獲得したのだよ！\n🎉🎉🎉",
+        )
+
+# =========================================================
+# AI称号（ずんだもん）付与
+# 条件: ai_chat_count の回数で付与（好きに変更OK）
+# =========================================================
+    ai_cnt = int(u.get("ai_chat_count", 0))
+
+    if ai_cnt >= 10:
+         await award_once(
+            AWARD_AI_FRIEND,
+            ROLE_AI_FRIEND,
+           "🎉✨称号獲得✨\n\n🌱 ずんだもんの友達なのだ！\nを獲得したのだ！",
+        )
+    
+    if ai_cnt >= 50:
+        await award_once(
+            AWARD_AI_BFF,
+            ROLE_AI_BFF,
+            "🎉✨称号獲得✨\n\n🫛 ずんだもんの親友なのだ！\nを獲得したのだ！",
+        )
+
+    if ai_cnt >= 100:
+        await award_once(
+            AWARD_AI_FAMILY,
+            ROLE_AI_FAMILY,
+            "🎉✨称号獲得✨\n\n💚 ずんだもんの家族なのだ！\nを獲得したのだ！",
+        )
 
 # =========================================================
 # 入口メッセージ（ショップ・BJ）
@@ -1886,7 +1936,11 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
 
     user_id = interaction.user.id
     save_chat(user_id, message)
-    summary = get_summary(user_id)
+    def get_summary(user_id: int) -> str:
+    u = store.get_user(user_id)
+    s = (u.get("ai_summary") or "").strip()
+    return s
+
     recent_chats = get_recent_chats(user_id)
 
     messages = [{"role": "system", "content": ZUNDAMON_SYSTEM}]
@@ -1908,6 +1962,21 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         )
         reply = (response.choices[0].message.content or "").strip()
         await interaction.followup.send(f"🗣 **あなた**：{message}\n\n🟢 **ずんだもん**：{reply}")
+
+    async with get_user_lock(interaction.user.id):
+        u = store.get_user(interaction.user.id)
+
+        # ★ 回数を記入（Sheetsへ）
+        u["ai_chat_count"] = int(u.get("ai_chat_count", 0)) + 1
+
+        # ★ 要約を Sheets に保存（SQLiteは使わない）
+        if new_summary:  # 既に生成している要約文字列
+            u["ai_summary"] = new_summary
+
+    await sheets_upsert_async(u)
+    
+    # ★ 称号判定（獲得者のみ通知）
+    await maybe_award_hidden_titles(interaction, u, {"AI_CHAT"})
 
         if len(recent_chats) >= 3:
             summary_prompt = [
@@ -1934,7 +2003,6 @@ async def ai_cmd(interaction: discord.Interaction, message: str):
         await interaction.followup.send("ごめんなのだ…今はうまく答えられないのだ 💦")
         print("AI error:", e)
         traceback.print_exc()
-
 
 @bot.tree.command(name="lottery", description="抽選を作成するのだ（管理者専用）")
 @app_commands.describe(
@@ -4859,6 +4927,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
