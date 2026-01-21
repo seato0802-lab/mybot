@@ -4002,8 +4002,8 @@ async def skull_start_solo(human_player: dict):
 
     npcs = [
         {"uid": -1, "type": "npc", "name": "ずんだもん", "hand": _skull_deck_init(), "pile": [], "score": 0},
-        {"uid": -2, "type": "npc", "name": "ずん子", "hand": _skull_deck_init(), "pile": [], "score": 0},
-        {"uid": -3, "type": "npc", "name": "きりたん", "hand": _skull_deck_init(), "pile": [], "score": 0},
+        {"uid": -2, "type": "npc", "name": "すごいずんだもん", "hand": _skull_deck_init(), "pile": [], "score": 0},
+        {"uid": -3, "type": "npc", "name": "大魔神", "hand": _skull_deck_init(), "pile": [], "score": 0},
     ]
 
     human = {
@@ -4144,10 +4144,9 @@ async def skull_next_place_turn(game_id: str):
                 game["turn_deadline_ts"] = _skull_now() + SKULL_TURN_TIMEOUT_SEC
                 return
             else:
-                # NPCは自動配置（2秒演出は人間へ1人ずつ送る）
+               # NPCは自動配置（置いたカードでは手札は減らさない）
                 card = _npc_choose_place_card(p)
-                p["hand"].remove(card)
-                p["pile"].append(card)
+                 p["pile"].append(card)
 
                 # humanへ演出送信（ソロ時のみ人間がいる）
                 humans = _skull_humans(game)
@@ -4181,10 +4180,6 @@ async def skull_place_card(interaction: discord.Interaction, game_id: str, actor
     if len(p["pile"]) >= 1:
         return await interaction.followup.send("このラウンドではもう置いたのだ", ephemeral=True)
 
-    if card not in p["hand"]:
-        return await interaction.followup.send("そのカードはもう持ってないのだ", ephemeral=True)
-
-    p["hand"].remove(card)
     p["pile"].append(card)
     _skull_touch(game)
 
@@ -4435,11 +4430,10 @@ async def skull_resolve_reveal(game_id: str, actor_uid: int, target_uid: int):
         # 失敗演出
         await _skull_broadcast(game, f"💥 **スカルを踏んだのだ！**\n{_skull_public_name(actor)} はペナルティなのだ")
 
-        # 失うカード（手札があるならランダムで1枚除去）
-        if len(actor["hand"]) > 0:
-            lost = random.choice(actor["hand"])
-            actor["hand"].remove(lost)
-            await _skull_broadcast(game, f"🗑️ {_skull_public_name(actor)} は手札を1枚失ったのだ（残り{len(actor['hand'])}枚）")
+     # ✅ 0枚になったら敗北（脱落）
+    if len(actor["hand"]) <= 0:
+        actor["eliminated"] = True
+        await _skull_broadcast(game, f"🪦 {_skull_public_name(actor)} は手札0枚で脱落なのだ")
 
         # ラウンド終了→次ラウンド
         _skull_reset_round(game)
@@ -4647,6 +4641,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
