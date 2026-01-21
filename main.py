@@ -4295,67 +4295,91 @@ async def skull_npc_place_one(game_id: str, npc_uid: int):
     npc = _skull_player(game, npc_uid)
     if not npc:
         return
-    rh = npc.get("round_hand") or []
+
+    # ✅ round_hand が空なら手札から復旧（事故対策）
+    rh = npc.get("round_hand")
     if not rh:
-        return
+        npc["round_hand"] = list(npc.get("hand", []))
+        rh = npc["round_hand"]
+
+    if not rh:
+        return  # 手札0（脱落相当）
 
     card = _npc_choose_place_card(npc)
-    # round_hand から消す（同一ラウンドで重複配置を防ぐ）
+
     try:
         rh.remove(card)
     except ValueError:
         pass
     npc["round_hand"] = rh
+
+    npc.setdefault("pile", [])
     npc["pile"].append(card)
     _skull_touch(game)
 
     humans = _skull_humans(game)
     if humans:
-        await npc_action_sequence(humans[0]["user_obj"], [f"🤖 {_skull_public_name(npc)} はカードを1枚伏せて置いたのだ"])
+        await npc_action_sequence(
+            humans[0]["user_obj"],
+            [f"🤖 {_skull_public_name(npc)} はカードを1枚伏せて置いたのだ"],
+        )
 
-
-async def skull_place_card(interaction: discord.Interaction, game_id: str, actor_uid: int, card: str):
+async def skull_next_place_turn(game_id: str):
     game = _skull_games.get(game_id)
     if not game:
-        return await interaction.followup.send("ゲームが見つからないのだ", ephemeral=True)
+        return
+    _skull_touch(game)
 
     if _skull_now() > float(game.get("turn_deadline_ts", 0) or 0):
         await _skull_refund_all(game)
         await _skull_end_game(game_id, "タイムアウトで全額返金したのだ")
         return
 
-    p = _skull_player(game, actor_uid)
-    if not p or p.get("type") != "human":
-        return await interaction.followup.send("あなたの番ではないのだ", ephemeral=True)
+    n = len(game["players"])
 
-    if game.get("phase") != "place":
-        return await interaction.followup.send("今は配置フェーズじゃないのだ", ephemeral=True)
+    # ✅ NPCは自動で進めて、人間の番になったら止める
+    for _ in range(n * 3):  # 余裕を持って回す
+        all_one = _skull_all_have_at_least_one(game)
+        p = game["players"][game["current_idx"]]
 
-    # 全員が最低1枚置くまでは入札開始不可（View側でも無効化済み）
-    if card not in ("flower", "skull"):
-        return await interaction.followup.send("不正なカードなのだ", ephemeral=True)
+        # 脱落/手札0はスキップ
+        if _skull_alive_cards(p) <= 0 or p.get("eliminated"):
+            game["current_idx"] = (game["current_idx"] + 1) % n
+            continue
 
-    rh = p.get("round_hand") or []
-    if card not in rh:
-        return await interaction.followup.send("そのカードはこのラウンドではもう置けないのだ", ephemeral=True)
+        # 人間：DM提示して終了
+        if p["type"] == "human":
+            uid = int(p["uid"])
 
-    rh.remove(card)
-    p["round_hand"] = rh
-    p["pile"].append(card)
+            if game.get("await_kind") == "place_or_bid" and int(game.get("await_uid") or 0) == uid:
+                return  # 二重DM防止
 
-    _skull_clear_await(game)
-    _skull_touch(game)
+            can_start_bid = bool(all_one)
+            view = SkullPlaceOrBidView(game_id, uid, can_start_bid=can_start_bid)
 
-    await interaction.followup.send(f"✅ **{_skull_card_name(card)}** を伏せて置いたのだ", ephemeral=True)
+            msg = (
+                "🃏 あなたの番なのだ：\n「1枚置く」か「入札開始」を選ぶのだ"
+                if all_one
+                else "🃏 あなたの番なのだ：\nまずは最低1枚置くのだ（入札はまだできないのだ）"
+            )
 
-    await _skull_broadcast(
-        game,
-        f"📌 {_skull_public_name(p)} がカードを1枚置いたのだ\n\n現在の場:\n{_skull_visible_table(game)}"
-    )
+            await dm_send_safe(p["user_obj"], msg, view=view)
+            _skull_set_await(game, kind="place_or_bid", uid=uid)
+            game["turn_deadline_ts"] = _skull_now() + SKULL_TURN_TIMEOUT_SEC
+            return
 
-    game["current_idx"] = (game["current_idx"] + 1) % len(game["players"])
-    await skull_next_place_turn(game_id)
+        # NPC：行動して次へ（ここで必ず current_idx を進める）
+        if all_one and _npc_should_start_bid(game, p):
+            await skull_start_bidding_internal(game_id, starter_uid=int(p["uid"]))
+            return
 
+        await skull_npc_place_one(game_id, int(p["uid"]))
+        game["current_idx"] = (game["current_idx"] + 1) % n
+        continue
+
+    # ここに来るのは異常系：安全に次ラウンドへ
+    _skull_reset_round(game)
+    await skull_round_start(game_id)
 
 # ---------------------------------------------------------
 # 入札開始（人間ボタン / NPC内部）
@@ -4858,6 +4882,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
