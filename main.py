@@ -3828,26 +3828,28 @@ def _npc_choose_reveal_target(game: dict, npc: dict) -> int:
 # DM View：配置 or 入札開始（重要）
 # ---------------------------------------------------------
 class SkullPlaceOrBidView(discord.ui.View):
-    def __init__(self, game_id: str, actor_uid: int, *, can_start_bid: bool):
+    def __init__(self, game_id: str, actor_uid: int, *, can_start_bid: bool, on_place):
         super().__init__(timeout=SKULL_VIEW_TIMEOUT_SEC)
         self.game_id = game_id
         self.actor_uid = int(actor_uid)
-
-        # 入札開始を無効化したい場合
+        self.on_place = on_place
         self.start_bid_btn.disabled = (not can_start_bid)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return int(interaction.user.id) == self.actor_uid and self.game_id in _skull_games
-
-    @discord.ui.button(label="🌸 花を置く", style=discord.ButtonStyle.primary)
-    async def place_flower(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        await skull_place_card(interaction, self.game_id, self.actor_uid, "flower")
 
     @discord.ui.button(label="💀 スカルを置く", style=discord.ButtonStyle.danger)
     async def place_skull(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        await skull_place_card(interaction, self.game_id, self.actor_uid, "skull")
+        try:
+            await interaction.response.defer()
+        except discord.InteractionResponded:
+            pass
+        await self.on_place(interaction, self.game_id, self.actor_uid, "skull")
+
+    @discord.ui.button(label="🌸 花を置く", style=discord.ButtonStyle.primary)
+    async def place_flower(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.response.defer()
+        except discord.InteractionResponded:
+            pass
+        await self.on_place(interaction, self.game_id, self.actor_uid, "flower")
 
     @discord.ui.button(label="💰 入札開始", style=discord.ButtonStyle.success)
     async def start_bid_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4286,6 +4288,12 @@ async def skull_next_place_turn(game_id: str):
     # 全員スキップされた（あり得る）→安全に次ラウンド
     _skull_reset_round(game)
     await skull_round_start(game_id)
+
+    view = SkullPlaceOrBidView(
+        game_id, uid,
+        can_start_bid=can_start_bid,
+        on_place=skull_place_card,   # ✅ ここで実体を渡す
+    )
 
 
 async def skull_npc_place_one(game_id: str, npc_uid: int):
@@ -4882,6 +4890,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
