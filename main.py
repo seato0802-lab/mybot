@@ -1001,8 +1001,7 @@ async def safe_send(
             return await interaction.followup.send(content, ephemeral=ephemeral, view=view)
         except Exception:
             return None
-None
-
+            
 # =========================================================
 # コイン・称号ユーティリティ
 # =========================================================
@@ -4851,6 +4850,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
