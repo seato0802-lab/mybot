@@ -4144,9 +4144,9 @@ async def skull_next_place_turn(game_id: str):
                 game["turn_deadline_ts"] = _skull_now() + SKULL_TURN_TIMEOUT_SEC
                 return
             else:
-               # NPCは自動配置（置いたカードでは手札は減らさない）
+                # NPCは自動配置（置いたカードでは手札は減らさない）
                 card = _npc_choose_place_card(p)
-                 p["pile"].append(card)
+                p["pile"].append(card)
 
                 # humanへ演出送信（ソロ時のみ人間がいる）
                 humans = _skull_humans(game)
@@ -4176,6 +4176,9 @@ async def skull_place_card(interaction: discord.Interaction, game_id: str, actor
     p = _skull_player(game, actor_uid)
     if not p or p.get("type") != "human":
         return await interaction.followup.send("あなたの番ではないのだ", ephemeral=True)
+       
+    if card not in ("flower", "skull"):
+        return await interaction.followup.send("不正なカードなのだ", ephemeral=True)
 
     if len(p["pile"]) >= 1:
         return await interaction.followup.send("このラウンドではもう置いたのだ", ephemeral=True)
@@ -4641,6 +4644,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
