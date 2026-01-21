@@ -1344,12 +1344,12 @@ async def maybe_award_hidden_titles(
     ai_cnt = int(u.get("ai_chat_count", 0))
 
     if ai_cnt >= 10:
-         await award_once(
+        await award_once(
             AWARD_AI_FRIEND,
             ROLE_AI_FRIEND,
-           "🎉✨称号獲得✨\n\n🌱 ずんだもんの友達なのだ！\nを獲得したのだ！",
+            "🎉✨称号獲得✨\n\n🌱 ずんだもんの友達なのだ！\nを獲得したのだ！",
         )
-    
+
     if ai_cnt >= 50:
         await award_once(
             AWARD_AI_BFF,
@@ -4942,6 +4942,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
