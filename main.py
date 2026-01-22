@@ -3009,31 +3009,32 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
                 try:
                     bet_val = int(str(self.bet.value).strip())
                 except Exception:
-                    return await interaction.response.send_message(
-                        f"現在の残高：{u['coins']} コイン\n数字を入力するのだ",
-                        ephemeral=True,
+                    # ✅ 同じメッセージを「掛け金入力画面」のまま更新
+                    return await interaction.response.edit_message(
+                        content=f"現在の残高：{u['coins']} コイン\n数字を入力するのだ",
+                        view=BJBetView(interaction.user.id),
                     )
 
                 if bet_val <= 0:
-                    return await interaction.response.send_message(
-                        f"現在の残高：{u['coins']} コイン\n1以上で入力するのだ",
-                        ephemeral=True,
+                    return await interaction.response.edit_message(
+                        content=f"現在の残高：{u['coins']} コイン\n1以上で入力するのだ",
+                        view=BJBetView(interaction.user.id),
                     )
 
                 if bet_val > u["coins"]:
-                    return await interaction.response.send_message(
-                        f"現在の残高：{u['coins']} コイン\nコインが足りないのだ",
-                        ephemeral=True,
+                    return await interaction.response.edit_message(
+                        content=f"現在の残高：{u['coins']} コイン\nコインが足りないのだ",
+                        view=BJBetView(interaction.user.id),
                     )
 
                 MAX_BJ_BET = 1000
                 if bet_val > MAX_BJ_BET:
-                    return await interaction.response.send_message(
-                        f"掛け金は最大 {MAX_BJ_BET} までなのだ",
-                        ephemeral=True,
+                    return await interaction.response.edit_message(
+                        content=f"掛け金は最大 {MAX_BJ_BET} までなのだ",
+                        view=BJBetView(interaction.user.id),
                     )
 
-                # 既にセッションがある場合は上書き（念のため）
+                # 既にセッションがある場合は消す（念のため）
                 bj_sessions.pop(interaction.user.id, None)
 
                 u["coins"] -= bet_val
@@ -3059,19 +3060,13 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
 
                 bj_sessions[interaction.user.id] = session
 
-            # Modalの返信は「新しいephemeralゲーム画面」を出す（ここが基点になる）
-            # ※この1枚を以後ずっと edit していく
-            await interaction.response.send_message(
-                content=bj_state_text(bj_sessions[interaction.user.id]),
-                view=build_bj_action_view(interaction.user.id, bj_sessions[interaction.user.id]),
-                ephemeral=True,
+            # ✅ ここも「新規送信」ではなく、同じメッセージをゲーム画面へ編集
+            await interaction.response.edit_message(
+                content=bj_state_text(session),
+                view=build_bj_action_view(interaction.user.id, session),
             )
 
-            # ディーラーが最初から21等の特殊ケースは、この「ゲーム画面」を編集して進める
-            session = bj_sessions.get(interaction.user.id)
-            if not session:
-                return
-
+            # 特殊ケースは「同じメッセージを編集」しながら進める
             if hand_value(session["dealer"]) == 21:
                 await bj_finish(interaction, u, immediate_dealer_bj=True)
                 return
@@ -3085,17 +3080,16 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
             print("BetModal on_submit error:", e)
             traceback.print_exc()
             try:
-                await interaction.response.send_message(
-                    "掛け金処理でエラーが出たのだ…（ログを確認してほしいのだ）",
-                    ephemeral=True,
+                await interaction.response.edit_message(
+                    content="掛け金処理でエラーが出たのだ…（ログを確認してほしいのだ）",
+                    view=BJBetView(interaction.user.id),
                 )
             except Exception:
                 pass
 
-
-class BJBetView(discord.ui.View):
+class BJEndView(discord.ui.View):
     def __init__(self, uid: int):
-        super().__init__(timeout=120)
+        super().__init__(timeout=180)
         self.uid = uid
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -3107,26 +3101,22 @@ class BJBetView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="💰 掛け金を入力", style=discord.ButtonStyle.primary)
-    async def open_bet(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            if not is_in_channel(interaction, BJ_CHANNEL_ID):
-                return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+    @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary)
+    async def restart(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # ✅ 押したら同じメッセージを「掛け金入力画面」に切り替える
+        u = store.get_user(interaction.user.id)
+        await interaction.response.edit_message(
+            content=(
+                f"🎴 もう一回やるのだ\n現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
+                "下のボタンから掛け金を入力するのだ"
+            ),
+            view=BJBetView(interaction.user.id),
+        )
 
-            u = store.get_user(interaction.user.id)
-            # send_modal の前に defer しない
-            await interaction.response.send_modal(BetModal(balance=int(u.get("coins", 0) or 0)))
-        except discord.NotFound:
-            return
-        except discord.errors.InteractionResponded:
-            return
-        except Exception:
-            traceback.print_exc()
-            try:
-                await interaction.response.send_message("掛け金入力でエラーが出たのだ…", ephemeral=True)
-            except Exception:
-                pass
-
+    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary)
+    async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # ✅ view=None でボタン自体を消す → もう一回スタートも無効化
+        await bj_edit(interaction, content="終了したのだ", view=None)
 
 # ---------------------------------------------------------
 # 入口（永久）：setupで置くスタートだけは persistent（custom_id + timeout=None）
@@ -4956,6 +4946,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
