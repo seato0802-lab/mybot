@@ -3561,13 +3561,23 @@ class BJEndView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.uid:
-            try:
-                await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
-            except Exception:
-                pass
+            await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
             return False
-        return True
 
+        if interaction.user.id not in bj_sessions:
+            u = store.get_user(interaction.user.id)
+            await bj_edit(
+                interaction,
+                content=(
+                    f"🎴 セッションが終了/期限切れなのだ\n"
+                    f"現在の残高：{int(u.get('coins',0) or 0)} コイン\n\n"
+                    "もう一度掛け金を入力するのだ"
+                ),
+                view=BJBetView(interaction.user.id),
+            )
+            return False
+
+        return True
     @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary)
     async def restart(self, interaction: discord.Interaction, button: discord.ui.Button):
         u = store.get_user(interaction.user.id)
@@ -3592,13 +3602,23 @@ class BJVIPEndView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.uid:
-            try:
-                await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
-            except Exception:
-                pass
+            await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
             return False
-        return True
 
+        if interaction.user.id not in bjvip_sessions:
+            u = store.get_user(interaction.user.id)
+            await bj_edit(
+                interaction,
+                content=(
+                    f"💎 VIPセッションが終了/期限切れなのだ\n"
+                    f"現在の残高：{int(u.get('coins',0) or 0)} コイン\n\n"
+                    f"もう一度掛け金を入力するのだ（最低 {BJVIP_MIN_BET}）"
+                ),
+                view=BJVIPBetView(interaction.user.id),
+            )
+            return False
+
+        return True
     @discord.ui.button(label="💎 VIPでもう一回", style=discord.ButtonStyle.danger)
     async def restart_vip(self, interaction: discord.Interaction, button: discord.ui.Button):
         u = store.get_user(interaction.user.id)
@@ -3635,123 +3655,140 @@ async def bj_render(interaction: discord.Interaction, u: dict, show_dealer_all: 
     )
 
 
+# =========================================================
+# 進行ロジック：通常BJ（ロックでレース防止版）
+#  - セッション辞書の更新/参照も get_user_lock(uid) の中でやる
+# =========================================================
+
 async def bj_hit(interaction: discord.Interaction, u: dict):
-    session = bj_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="セッションがないのだ", view=None)
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        session = bj_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="セッションがないのだ", view=None)
 
-    touch_bj_session(interaction.user.id)
+        touch_bj_session(uid)
 
-    i = session["active"]
-    session["hands"][i].append(draw_card(session["deck"]))
-    v = hand_value(session["hands"][i])
+        i = session["active"]
+        session["hands"][i].append(draw_card(session["deck"]))
+        v = hand_value(session["hands"][i])
 
-    if v > 21:
-        session["finished_hands"][i] = True
+        if v > 21:
+            session["finished_hands"][i] = True
+            await bj_render(interaction, u)
+            await bj_next_or_dealer(interaction, u)
+            return
+
         await bj_render(interaction, u)
-        await bj_next_or_dealer(interaction, u)
-        return
-
-    await bj_render(interaction, u)
 
 
 async def bj_stand(interaction: discord.Interaction, u: dict):
-    session = bj_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="セッションがないのだ", view=None)
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        session = bj_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="セッションがないのだ", view=None)
 
-    touch_bj_session(interaction.user.id)
+        touch_bj_session(uid)
 
-    i = session["active"]
-    session["finished_hands"][i] = True
-    await bj_next_or_dealer(interaction, u)
+        i = session["active"]
+        session["finished_hands"][i] = True
+        await bj_next_or_dealer(interaction, u)
 
 
 async def bj_double(interaction: discord.Interaction, u: dict):
-    session = bj_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="セッションがないのだ", view=None)
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        session = bj_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="セッションがないのだ", view=None)
 
-    touch_bj_session(interaction.user.id)
+        touch_bj_session(uid)
 
-    if len(session["hands"]) != 1:
-        return await bj_edit(
-            interaction,
-            content="スプリット後はダブルダウンできないのだ",
-            view=build_bj_action_view(interaction.user.id, session),
-        )
+        if len(session["hands"]) != 1:
+            return await bj_edit(
+                interaction,
+                content="スプリット後はダブルダウンできないのだ",
+                view=build_bj_action_view(uid, session),
+            )
 
-    i = session["active"]
-    hand = session["hands"][i]
-    if len(hand) != 2 or session["doubled"][i]:
-        return await bj_render(interaction, u)
+        i = session["active"]
+        hand = session["hands"][i]
+        if len(hand) != 2 or session["doubled"][i]:
+            return await bj_render(interaction, u)
 
-    async with get_user_lock(interaction.user.id):
-        add = session["bets"][i]
-        if int(u.get("coins", 0) or 0) < add:
+        # 追加ベット分の所持チェック＆差し引き（uは外で作られてても、ここで最新で扱う）
+        add = int(session["bets"][i])
+        u_local = store.get_user(uid)  # 念のため最新を取る
+        if int(u_local.get("coins", 0) or 0) < add:
             return await bj_edit(
                 interaction,
                 content="コインが足りないのだ",
-                view=build_bj_action_view(interaction.user.id, session),
+                view=build_bj_action_view(uid, session),
             )
 
-        u["coins"] = int(u.get("coins", 0) or 0) - add
+        u_local["coins"] = int(u_local.get("coins", 0) or 0) - add
         session["bets"][i] += add
         session["doubled"][i] = True
-        await sheets_upsert_async(u)
+        await sheets_upsert_async(u_local)
 
-    session["hands"][i].append(draw_card(session["deck"]))
-    session["finished_hands"][i] = True
+        # 1枚引いて終了
+        session["hands"][i].append(draw_card(session["deck"]))
+        session["finished_hands"][i] = True
 
-    await bj_next_or_dealer(interaction, u)
+        # 表示＆次へ
+        await bj_next_or_dealer(interaction, u_local)
 
 
 async def bj_split(interaction: discord.Interaction, u: dict):
-    session = bj_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="セッションがないのだ", view=None)
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        session = bj_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="セッションがないのだ", view=None)
 
-    touch_bj_session(interaction.user.id)
+        touch_bj_session(uid)
 
-    if len(session["hands"]) != 1:
-        return await bj_edit(
-            interaction,
-            content="もうスプリット済みなのだ",
-            view=build_bj_action_view(interaction.user.id, session),
-        )
+        if len(session["hands"]) != 1:
+            return await bj_edit(
+                interaction,
+                content="もうスプリット済みなのだ",
+                view=build_bj_action_view(uid, session),
+            )
 
-    hand = session["hands"][0]
-    if len(hand) != 2 or hand[0][0] != hand[1][0]:
-        return await bj_render(interaction, u)
+        hand = session["hands"][0]
+        if len(hand) != 2 or hand[0][0] != hand[1][0]:
+            return await bj_render(interaction, u)
 
-    async with get_user_lock(interaction.user.id):
-        bet = session["bets"][0]
-        if int(u.get("coins", 0) or 0) < bet:
+        bet = int(session["bets"][0])
+
+        # スプリット分の追加ベットを差し引き
+        u_local = store.get_user(uid)  # 念のため最新を取る
+        if int(u_local.get("coins", 0) or 0) < bet:
             return await bj_edit(
                 interaction,
                 content="スプリット分のコインが足りないのだ",
-                view=build_bj_action_view(interaction.user.id, session),
+                view=build_bj_action_view(uid, session),
             )
 
-        u["coins"] = int(u.get("coins", 0) or 0) - bet
-        await sheets_upsert_async(u)
+        u_local["coins"] = int(u_local.get("coins", 0) or 0) - bet
+        await sheets_upsert_async(u_local)
 
-    c1, c2 = hand[0], hand[1]
-    bet = session["bets"][0]
+        c1, c2 = hand[0], hand[1]
 
-    session["hands"] = [[c1], [c2]]
-    session["bets"] = [bet, bet]
-    session["finished_hands"] = [False, False]
-    session["doubled"] = [False, False]
-    session["active"] = 0
-    session["was_split"] = True
-    session["is_natural_bj"] = [False, False]
+        session["hands"] = [[c1], [c2]]
+        session["bets"] = [bet, bet]
+        session["finished_hands"] = [False, False]
+        session["doubled"] = [False, False]
+        session["active"] = 0
+        session["was_split"] = True
+        session["is_natural_bj"] = [False, False]
 
-    session["hands"][0].append(draw_card(session["deck"]))
-    session["hands"][1].append(draw_card(session["deck"]))
+        # 各手札に1枚ずつ配る
+        session["hands"][0].append(draw_card(session["deck"]))
+        session["hands"][1].append(draw_card(session["deck"]))
 
-    await bj_render(interaction, u)
-
+        await bj_render(interaction, u_local)
 
 async def bj_next_or_dealer(interaction: discord.Interaction, u: dict):
     session = bj_sessions.get(interaction.user.id)
@@ -4045,122 +4082,415 @@ async def bjvip_render(interaction: discord.Interaction, u: dict, show_dealer_al
     )
 
 
-async def bjvip_hit(interaction: discord.Interaction, u: dict):
-    session = bjvip_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+# =========================================================
+# VIP 進行ロジック（完全差し替え：ロック統一 / 引き分け返金 / バースト勝ち）
+# =========================================================
 
-    touch_bjvip_session(interaction.user.id)
+def vip_dealer_target_by_player_best(player_best: int) -> str:
+    """
+    VIP用：プレイヤーの最高値（バースト除く）に応じて、
+    ディーラーの狙う結果を確率で決めるのだ。
 
-    i = session["active"]
-    session["hands"][i].append(draw_card(session["deck"]))
-    v = hand_value(session["hands"][i])
+    戻り値:
+      "WIN"  : プレイヤー勝ち（ディーラーが低い or バースト）
+      "PUSH" : 引き分け
+      "LOSE" : プレイヤー負け（ディーラーが上）
+    """
+    r = random.random()
 
-    if v > 21:
-        session["finished_hands"][i] = True
-        await bjvip_render(interaction, u)
-        await bjvip_next_or_finish(interaction, u)
+    if player_best >= 21:
+        if r < 0.55:
+            return "WIN"
+        if r < 0.75:
+            return "PUSH"
+        return "LOSE"
+
+    if player_best == 20:
+        if r < 0.35:
+            return "WIN"
+        if r < 0.60:
+            return "PUSH"
+        return "LOSE"
+
+    if player_best == 19:
+        if r < 0.30:
+            return "WIN"
+        if r < 0.45:
+            return "PUSH"
+        return "LOSE"
+
+    if player_best == 18:
+        if r < 0.25:
+            return "WIN"
+        if r < 0.35:
+            return "PUSH"
+        return "LOSE"
+
+    if player_best == 17:
+        if r < 0.18:
+            return "WIN"
+        if r < 0.25:
+            return "PUSH"
+        return "LOSE"
+
+    if r < 0.10:
+        return "WIN"
+    return "LOSE"
+
+
+def _dealer_play_to_target_from_current(
+    dealer: list[tuple[str, str]],
+    deck: list[tuple[str, str]],
+    target: str,
+    player_best: int
+) -> None:
+    """
+    既に配られている dealer(2枚) から追加で引いて、
+    target（WIN/PUSH/LOSE）をそれっぽく狙うのだ。
+    """
+    max_steps = 10
+
+    def natural_dealer():
+        while hand_value(dealer) < 17:
+            dealer.append(draw_card(deck))
+
+    if target == "PUSH" and player_best < 17:
+        target = "LOSE"
+
+    dv = hand_value(dealer)
+    if dv > 21:
         return
 
-    await bjvip_render(interaction, u)
+    if target == "PUSH":
+        if dv == player_best and dv >= 17:
+            return
+
+    if target == "WIN":
+        if dv >= 17 and dv < player_best:
+            return
+
+    if target == "LOSE":
+        if dv >= 17 and dv <= 21 and dv > player_best:
+            return
+        if player_best >= 21 and dv == 21:
+            return
+
+    for _ in range(max_steps):
+        dv = hand_value(dealer)
+        if dv > 21:
+            return
+
+        if target == "PUSH":
+            if dv < player_best:
+                dealer.append(draw_card(deck))
+                continue
+            if dv == player_best and dv >= 17:
+                return
+            break
+
+        if target == "WIN":
+            if dv < 17:
+                dealer.append(draw_card(deck))
+                continue
+            if dv < player_best:
+                return
+            dealer.append(draw_card(deck))
+            continue
+
+        if target == "LOSE":
+            if dv < 17:
+                dealer.append(draw_card(deck))
+                continue
+            if player_best >= 21:
+                if dv == 21:
+                    return
+                dealer.append(draw_card(deck))
+                continue
+            if dv > player_best:
+                return
+            dealer.append(draw_card(deck))
+            continue
+
+    natural_dealer()
+
+
+async def bjvip_render_nolock(interaction: discord.Interaction, session: dict, *, show_dealer_all: bool = False):
+    """
+    ※ 呼び出し側で get_user_lock(uid) を持ってる前提なのだ
+    """
+    view = None if show_dealer_all else build_bjvip_action_view(interaction.user.id, session)
+    await bj_edit(
+        interaction,
+        content=bjvip_state_text(session, show_dealer_all=show_dealer_all),
+        view=view,
+    )
+
+
+async def bjvip_next_or_finish_nolock(interaction: discord.Interaction, u: dict, session: dict):
+    """
+    ※ 呼び出し側で get_user_lock(uid) を持ってる前提
+    """
+    for idx, fin in enumerate(session["finished_hands"]):
+        if not fin:
+            session["active"] = idx
+            await bjvip_render_nolock(interaction, session, show_dealer_all=False)
+            return
+
+    await bjvip_dealer_turn_and_finish_nolock(interaction, u, session)
+
+
+async def bjvip_dealer_turn_and_finish_nolock(interaction: discord.Interaction, u: dict, session: dict):
+    """
+    VIPは「狙った見た目」にディーラーを引かせる（ただし最終判定は比較で整合）
+    ※ 呼び出し側で get_user_lock(uid) を持ってる前提
+    """
+    touch_bjvip_session(interaction.user.id)
+
+    vals = [hand_value(h) for h in session["hands"]]
+    safe_vals = [v for v in vals if v <= 21]
+    player_best = max(safe_vals) if safe_vals else 0
+
+    target = vip_dealer_target_by_player_best(player_best)
+
+    dealer = session["dealer"]
+    _dealer_play_to_target_from_current(dealer, session["deck"], target, player_best)
+
+    await bj_edit(
+        interaction,
+        content="💎 ディーラーのターンなのだ\n\n" + bjvip_state_text(session, show_dealer_all=True),
+        view=None,
+    )
+    await asyncio.sleep(0.6)
+
+    await bjvip_finish_nolock(interaction, u, session)
+
+
+async def bjvip_finish_nolock(interaction: discord.Interaction, u: dict, session: dict):
+    """
+    VIPの勝敗判定（整合保証）
+    - dealer_bust ならバーストしてない手札は必ず勝ち
+    - 同値なら引き分け（返金）
+    - 通常比較で勝敗
+    ※ 呼び出し側で get_user_lock(uid) を持ってる前提
+    """
+    uid = interaction.user.id
+    touch_bjvip_session(uid)
+
+    dealer_val = hand_value(session["dealer"])
+    dealer_bust = dealer_val > 21
+
+    payout_total = 0
+    profit = 0
+    results: list[str] = []
+
+    for idx, hand in enumerate(session["hands"]):
+        bet = int(session["bets"][idx])
+        v = hand_value(hand)
+
+        payout = 0
+
+        if v > 21:
+            results.append(f"手札{idx+1}：負け（バースト）")
+            payout = 0
+
+        elif dealer_bust:
+            # ✅ ディーラーがバーストなら、バーストしてない手札は必ず勝ち
+            if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
+                payout = (bet * 5) // 2
+                results.append(f"手札{idx+1}：勝ち（ディーラーバースト / BJ 3:2）")
+            else:
+                payout = bet * 2
+                results.append(f"手札{idx+1}：勝ち（ディーラーバースト）")
+
+        else:
+            # ✅ 比較で勝敗／引き分け
+            if v > dealer_val:
+                if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
+                    payout = (bet * 5) // 2
+                    results.append(f"手札{idx+1}：勝ち（BJ 3:2）")
+                else:
+                    payout = bet * 2
+                    results.append(f"手札{idx+1}：勝ち（VIP）")
+            elif v < dealer_val:
+                payout = 0
+                results.append(f"手札{idx+1}：負け（VIP）")
+            else:
+                # ✅ 引き分けは返金
+                payout = bet
+                results.append(f"手札{idx+1}：引き分け（返金）")
+
+        payout_total += payout
+        profit += (payout - bet)
+
+    # ✅ コイン加算・統計更新は「1回だけ」
+    u_local = store.get_user(uid)
+    u_local["coins"] = int(u_local.get("coins", 0) or 0) + payout_total
+    u_local["bj_play_count"] = int(u_local.get("bj_play_count", 0) or 0) + 1
+    u_local["bj_win_streak"] = int(u_local.get("bj_win_streak", 0) or 0)
+    u_local["total_earned"] = int(u_local.get("total_earned", 0) or 0)
+
+    just_events = set()
+    if profit > 0:
+        u_local["bj_win_streak"] += 1
+        u_local["total_earned"] += profit
+        just_events.add("BJ_WIN_EVENT")
+        if profit >= 1000:
+            just_events.add("BJ_BIGWIN_EVENT")
+    elif profit < 0:
+        u_local["bj_win_streak"] = 0
+        if profit <= -1000:
+            just_events.add("BJ_BIGLOSE_EVENT")
+    else:
+        # 引き分けのみでも streak を切るなら0、維持したいならここを変えてOK
+        u_local["bj_win_streak"] = 0
+
+    await sheets_upsert_async(u_local)
+
+    msg = (
+        "💎 BJVIP 結果なのだ\n\n"
+        f"ディーラー：{fmt_cards(session['dealer'])}（{dealer_val}）\n"
+        + "\n".join(results)
+        + f"\n\n残高：{u_local['coins']} コインなのだ\n\n次はどうするのだ？"
+    )
+
+    await bj_edit(interaction, content=msg, view=BJVIPEndView(uid))
+
+    try:
+        await maybe_award_hidden_titles(interaction, u_local, just_events=just_events)
+    except Exception:
+        traceback.print_exc()
+
+    # セッション終了
+    bjvip_sessions.pop(uid, None)
+
+
+# ---------------------------------------------------------
+# VIP：ボタン操作（ここが入口）…全部ロックで直列化
+# ---------------------------------------------------------
+
+async def bjvip_hit(interaction: discord.Interaction, u: dict):
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        session = bjvip_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+
+        touch_bjvip_session(uid)
+
+        i = session["active"]
+        session["hands"][i].append(draw_card(session["deck"]))
+        v = hand_value(session["hands"][i])
+
+        if v > 21:
+            session["finished_hands"][i] = True
+            await bjvip_render_nolock(interaction, session, show_dealer_all=False)
+            await bjvip_next_or_finish_nolock(interaction, store.get_user(uid), session)
+            return
+
+        await bjvip_render_nolock(interaction, session, show_dealer_all=False)
 
 
 async def bjvip_stand(interaction: discord.Interaction, u: dict):
-    session = bjvip_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        session = bjvip_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
 
-    touch_bjvip_session(interaction.user.id)
+        touch_bjvip_session(uid)
 
-    i = session["active"]
-    session["finished_hands"][i] = True
-    await bjvip_next_or_finish(interaction, u)
+        i = session["active"]
+        session["finished_hands"][i] = True
+        await bjvip_next_or_finish_nolock(interaction, store.get_user(uid), session)
 
 
 async def bjvip_double(interaction: discord.Interaction, u: dict):
-    session = bjvip_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        session = bjvip_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
 
-    touch_bjvip_session(interaction.user.id)
+        touch_bjvip_session(uid)
 
-    if len(session["hands"]) != 1:
-        return await bj_edit(
-            interaction,
-            content="スプリット後はダブルダウンできないのだ",
-            view=build_bjvip_action_view(interaction.user.id, session),
-        )
+        if len(session["hands"]) != 1:
+            return await bj_edit(
+                interaction,
+                content="スプリット後はダブルダウンできないのだ",
+                view=build_bjvip_action_view(uid, session),
+            )
 
-    i = session["active"]
-    hand = session["hands"][i]
-    if len(hand) != 2 or session["doubled"][i]:
-        return await bjvip_render(interaction, u)
+        i = session["active"]
+        hand = session["hands"][i]
+        if len(hand) != 2 or session["doubled"][i]:
+            return await bjvip_render_nolock(interaction, session, show_dealer_all=False)
 
-    async with get_user_lock(interaction.user.id):
-        add = session["bets"][i]
-        if int(u.get("coins", 0) or 0) < add:
+        add = int(session["bets"][i])
+        u_local = store.get_user(uid)
+        if int(u_local.get("coins", 0) or 0) < add:
             return await bj_edit(
                 interaction,
                 content="コインが足りないのだ",
-                view=build_bjvip_action_view(interaction.user.id, session),
+                view=build_bjvip_action_view(uid, session),
             )
 
-        u["coins"] = int(u.get("coins", 0) or 0) - add
+        u_local["coins"] = int(u_local.get("coins", 0) or 0) - add
         session["bets"][i] += add
         session["doubled"][i] = True
-        await sheets_upsert_async(u)
+        await sheets_upsert_async(u_local)
 
-    session["hands"][i].append(draw_card(session["deck"]))
-    session["finished_hands"][i] = True
+        session["hands"][i].append(draw_card(session["deck"]))
+        session["finished_hands"][i] = True
 
-    await bjvip_next_or_finish(interaction, u)
+        await bjvip_next_or_finish_nolock(interaction, u_local, session)
 
 
 async def bjvip_split(interaction: discord.Interaction, u: dict):
-    session = bjvip_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        session = bjvip_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
 
-    touch_bjvip_session(interaction.user.id)
+        touch_bjvip_session(uid)
 
-    if len(session["hands"]) != 1:
-        return await bj_edit(
-            interaction,
-            content="もうスプリット済みなのだ",
-            view=build_bjvip_action_view(interaction.user.id, session),
-        )
+        if len(session["hands"]) != 1:
+            return await bj_edit(
+                interaction,
+                content="もうスプリット済みなのだ",
+                view=build_bjvip_action_view(uid, session),
+            )
 
-    hand = session["hands"][0]
-    if len(hand) != 2 or hand[0][0] != hand[1][0]:
-        return await bjvip_render(interaction, u)
+        hand = session["hands"][0]
+        if len(hand) != 2 or hand[0][0] != hand[1][0]:
+            return await bjvip_render_nolock(interaction, session, show_dealer_all=False)
 
-    async with get_user_lock(interaction.user.id):
-        bet = session["bets"][0]
-        if int(u.get("coins", 0) or 0) < bet:
+        bet = int(session["bets"][0])
+        u_local = store.get_user(uid)
+        if int(u_local.get("coins", 0) or 0) < bet:
             return await bj_edit(
                 interaction,
                 content="スプリット分のコインが足りないのだ",
-                view=build_bjvip_action_view(interaction.user.id, session),
+                view=build_bjvip_action_view(uid, session),
             )
 
-        u["coins"] = int(u.get("coins", 0) or 0) - bet
-        await sheets_upsert_async(u)
+        u_local["coins"] = int(u_local.get("coins", 0) or 0) - bet
+        await sheets_upsert_async(u_local)
 
-    c1, c2 = hand[0], hand[1]
-    bet = session["bets"][0]
+        c1, c2 = hand[0], hand[1]
 
-    session["hands"] = [[c1], [c2]]
-    session["bets"] = [bet, bet]
-    session["finished_hands"] = [False, False]
-    session["doubled"] = [False, False]
-    session["active"] = 0
-    session["was_split"] = True
-    session["is_natural_bj"] = [False, False]
+        session["hands"] = [[c1], [c2]]
+        session["bets"] = [bet, bet]
+        session["finished_hands"] = [False, False]
+        session["doubled"] = [False, False]
+        session["active"] = 0
+        session["was_split"] = True
+        session["is_natural_bj"] = [False, False]  # スプリット後BJを3:2扱いしないならこれでOK
 
-    session["hands"][0].append(draw_card(session["deck"]))
-    session["hands"][1].append(draw_card(session["deck"]))
+        session["hands"][0].append(draw_card(session["deck"]))
+        session["hands"][1].append(draw_card(session["deck"]))
 
-    await bjvip_render(interaction, u)
+        await bjvip_render_nolock(interaction, session, show_dealer_all=False)
 
 
 async def bjvip_next_or_finish(interaction: discord.Interaction, u: dict):
@@ -6163,6 +6493,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
