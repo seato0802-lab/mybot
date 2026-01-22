@@ -2996,7 +2996,9 @@ def bj_state_text(session: dict, show_dealer_all: bool = False) -> str:
         nat = ""
         if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
             nat = "（BJ）"
-        lines.append(f"{mark}手札{idx+1}：{fmt_cards(hand)}（{v}）{nat} 賭け：{session['bets'][idx]}")
+        lines.append(
+            f"{mark}手札{idx+1}：{fmt_cards(hand)}（{v}）{nat} 賭け：{session['bets'][idx]}"
+        )
 
     return (
         "🎴 ブラックジャックなのだ\n\n"
@@ -3027,52 +3029,57 @@ async def bj_edit(interaction: discord.Interaction, *, content: str, view: disco
 class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
     bet = discord.ui.TextInput(label="掛け金（数字）", placeholder="例：100", required=True)
 
-    def __init__(self, balance: int):
+    def __init__(self, uid: int):
         super().__init__()
-        self.balance = balance
+        self.uid = uid
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
+            if interaction.user.id != self.uid:
+                return await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+
             if not is_in_channel(interaction, BJ_CHANNEL_ID):
                 return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
             async with get_user_lock(interaction.user.id):
                 u = store.get_user(interaction.user.id)
 
+                # 入力値
                 try:
                     bet_val = int(str(self.bet.value).strip())
                 except Exception:
-                    # ✅ 同じメッセージを「掛け金入力画面」のまま更新
                     return await interaction.response.edit_message(
-                        content=f"現在の残高：{u['coins']} コイン\n数字を入力するのだ",
+                        content=f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\n数字を入力するのだ",
                         view=BJBetView(interaction.user.id),
                     )
 
                 if bet_val <= 0:
                     return await interaction.response.edit_message(
-                        content=f"現在の残高：{u['coins']} コイン\n1以上で入力するのだ",
+                        content=f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\n1以上で入力するのだ",
                         view=BJBetView(interaction.user.id),
                     )
 
-                if bet_val > u["coins"]:
+                if bet_val > int(u.get("coins", 0) or 0):
                     return await interaction.response.edit_message(
-                        content=f"現在の残高：{u['coins']} コイン\nコインが足りないのだ",
+                        content=f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\nコインが足りないのだ",
                         view=BJBetView(interaction.user.id),
                     )
 
                 MAX_BJ_BET = 1000
                 if bet_val > MAX_BJ_BET:
                     return await interaction.response.edit_message(
-                        content=f"掛け金は最大 {MAX_BJ_BET} までなのだ",
+                        content=f"掛け金は最大 {MAX_BJ_BET} までなのだ\n現在の残高：{int(u.get('coins', 0) or 0)} コイン",
                         view=BJBetView(interaction.user.id),
                     )
 
                 # 既にセッションがある場合は消す（念のため）
                 bj_sessions.pop(interaction.user.id, None)
 
-                u["coins"] -= bet_val
+                # コイン差し引き
+                u["coins"] = int(u.get("coins", 0) or 0) - bet_val
                 await sheets_upsert_async(u)
 
+                # セッション開始
                 session = {
                     "deck": new_deck(),
                     "dealer": [],
@@ -3093,13 +3100,13 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
 
                 bj_sessions[interaction.user.id] = session
 
-            # ✅ ここも「新規送信」ではなく、同じメッセージをゲーム画面へ編集
+            # ✅ 同じメッセージをゲーム画面へ編集
             await interaction.response.edit_message(
                 content=bj_state_text(session),
                 view=build_bj_action_view(interaction.user.id, session),
             )
 
-            # 特殊ケースは「同じメッセージを編集」しながら進める
+            # 特殊ケースは同じメッセージを編集しながら進行
             if hand_value(session["dealer"]) == 21:
                 await bj_finish(interaction, u, immediate_dealer_bj=True)
                 return
@@ -3120,7 +3127,9 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
             except Exception:
                 pass
 
-class BJEndView(discord.ui.View):
+
+class BJBetView(discord.ui.View):
+    """掛け金入力画面（非永久）"""
     def __init__(self, uid: int):
         super().__init__(timeout=180)
         self.uid = uid
@@ -3134,22 +3143,26 @@ class BJEndView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary)
-    async def restart(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ 押したら同じメッセージを「掛け金入力画面」に切り替える
-        u = store.get_user(interaction.user.id)
-        await interaction.response.edit_message(
-            content=(
-                f"🎴 もう一回やるのだ\n現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
-                "下のボタンから掛け金を入力するのだ"
-            ),
-            view=BJBetView(interaction.user.id),
-        )
+    @discord.ui.button(label="💰 掛け金を入力", style=discord.ButtonStyle.primary)
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # ✅ send_modal の前に defer しない
+        try:
+            await interaction.response.send_modal(BetModal(uid=self.uid))
+        except discord.NotFound:
+            return
+        except discord.errors.InteractionResponded:
+            return
+        except Exception:
+            traceback.print_exc()
+            try:
+                await interaction.followup.send("モーダル表示に失敗したのだ…", ephemeral=True)
+            except Exception:
+                pass
 
     @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary)
-    async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ view=None でボタン自体を消す → もう一回スタートも無効化
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await bj_edit(interaction, content="終了したのだ", view=None)
+
 
 # ---------------------------------------------------------
 # 入口（永久）：setupで置くスタートだけは persistent（custom_id + timeout=None）
@@ -3255,7 +3268,7 @@ def build_bj_action_view(uid: int, session: dict) -> discord.ui.View:
 
 
 # ---------------------------------------------------------
-# 終了（非永久）：短めtimeout / quitでview消す
+# 終了（非永久）：restartで掛け金画面に戻す / quitでボタン消す
 # ---------------------------------------------------------
 class BJEndView(discord.ui.View):
     def __init__(self, uid: int):
@@ -3273,13 +3286,20 @@ class BJEndView(discord.ui.View):
 
     @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary)
     async def restart(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ここは Modal を返す都合で、このメッセージ自体を即座に無効化できない
-        # 代わりに timeout を短くして放置で消える＆次のゲームは新しいephemeralで開始
+        # ✅ 押したら同じメッセージを「掛け金入力画面」に切り替える（要件どおり）
         u = store.get_user(interaction.user.id)
-        await interaction.response.send_modal(BetModal(balance=int(u.get("coins", 0) or 0)))
+        await bj_edit(
+            interaction,
+            content=(
+                f"🎴 もう一回やるのだ\n現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
+                "下のボタンから掛け金を入力するのだ"
+            ),
+            view=BJBetView(interaction.user.id),
+        )
 
     @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # ✅ view=None でボタン自体を消す → もう一回スタートも無効化
         await bj_edit(interaction, content="終了したのだ", view=None)
 
 
@@ -3314,7 +3334,7 @@ async def bj_hit(interaction: discord.Interaction, u: dict):
 
     if v > 21:
         session["finished_hands"][i] = True
-        await bj_render(interaction, u)  # バーストも表示（手札値が>21で分かる）
+        await bj_render(interaction, u)
         await bj_next_or_dealer(interaction, u)
         return
 
@@ -3341,7 +3361,11 @@ async def bj_double(interaction: discord.Interaction, u: dict):
     touch_bj_session(interaction.user.id)
 
     if len(session["hands"]) != 1:
-        return await bj_edit(interaction, content="スプリット後はダブルダウンできないのだ", view=build_bj_action_view(interaction.user.id, session))
+        return await bj_edit(
+            interaction,
+            content="スプリット後はダブルダウンできないのだ",
+            view=build_bj_action_view(interaction.user.id, session),
+        )
 
     i = session["active"]
     hand = session["hands"][i]
@@ -3350,10 +3374,14 @@ async def bj_double(interaction: discord.Interaction, u: dict):
 
     async with get_user_lock(interaction.user.id):
         add = session["bets"][i]
-        if u["coins"] < add:
-            return await bj_edit(interaction, content="コインが足りないのだ", view=build_bj_action_view(interaction.user.id, session))
+        if int(u.get("coins", 0) or 0) < add:
+            return await bj_edit(
+                interaction,
+                content="コインが足りないのだ",
+                view=build_bj_action_view(interaction.user.id, session),
+            )
 
-        u["coins"] -= add
+        u["coins"] = int(u.get("coins", 0) or 0) - add
         session["bets"][i] += add
         session["doubled"][i] = True
         await sheets_upsert_async(u)
@@ -3372,7 +3400,11 @@ async def bj_split(interaction: discord.Interaction, u: dict):
     touch_bj_session(interaction.user.id)
 
     if len(session["hands"]) != 1:
-        return await bj_edit(interaction, content="もうスプリット済みなのだ", view=build_bj_action_view(interaction.user.id, session))
+        return await bj_edit(
+            interaction,
+            content="もうスプリット済みなのだ",
+            view=build_bj_action_view(interaction.user.id, session),
+        )
 
     hand = session["hands"][0]
     if len(hand) != 2 or hand[0][0] != hand[1][0]:
@@ -3380,10 +3412,14 @@ async def bj_split(interaction: discord.Interaction, u: dict):
 
     async with get_user_lock(interaction.user.id):
         bet = session["bets"][0]
-        if u["coins"] < bet:
-            return await bj_edit(interaction, content="スプリット分のコインが足りないのだ", view=build_bj_action_view(interaction.user.id, session))
+        if int(u.get("coins", 0) or 0) < bet:
+            return await bj_edit(
+                interaction,
+                content="スプリット分のコインが足りないのだ",
+                view=build_bj_action_view(interaction.user.id, session),
+            )
 
-        u["coins"] -= bet
+        u["coins"] = int(u.get("coins", 0) or 0) - bet
         await sheets_upsert_async(u)
 
     c1, c2 = hand[0], hand[1]
@@ -3395,7 +3431,7 @@ async def bj_split(interaction: discord.Interaction, u: dict):
     session["doubled"] = [False, False]
     session["active"] = 0
     session["was_split"] = True
-    session["is_natural_bj"] = [False, False]  # スプリット後のBJ扱いは無しで統一
+    session["is_natural_bj"] = [False, False]  # スプリット後のBJ扱いは無し
 
     session["hands"][0].append(draw_card(session["deck"]))
     session["hands"][1].append(draw_card(session["deck"]))
@@ -3499,10 +3535,10 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
 
     # 統計/残高更新
     async with get_user_lock(interaction.user.id):
-        u["coins"] = int(u.get("coins", 0)) + payout_total
-        u["bj_play_count"] = int(u.get("bj_play_count", 0)) + 1
-        u["bj_win_streak"] = int(u.get("bj_win_streak", 0))
-        u["total_earned"] = int(u.get("total_earned", 0))
+        u["coins"] = int(u.get("coins", 0) or 0) + payout_total
+        u["bj_play_count"] = int(u.get("bj_play_count", 0) or 0) + 1
+        u["bj_win_streak"] = int(u.get("bj_win_streak", 0) or 0)
+        u["total_earned"] = int(u.get("total_earned", 0) or 0)
 
         just_events = set()
         if profit > 0:
@@ -3530,13 +3566,14 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
     # 結果画面（同じメッセージで表示・ボタンは EndView に切り替え）
     await bj_edit(interaction, content=msg, view=BJEndView(interaction.user.id))
 
-    # 称号（DMなし前提：あなたの notify 系は呼ばない想定）
+    # 称号（エラーになってもゲームは続く）
     try:
         await maybe_award_hidden_titles(interaction, u, just_events=just_events)
     except Exception:
         traceback.print_exc()
 
     bj_sessions.pop(interaction.user.id, None)
+
 
 # ---------------------------------------------------------
 # setup（入口メッセージだけ永久）
@@ -3546,7 +3583,10 @@ async def setup_bj_cmd(interaction: discord.Interaction):
     if not is_admin_user(interaction):
         return await interaction.response.send_message("権限がないのだ", ephemeral=True)
     if BJ_CHANNEL_ID and interaction.channel_id != BJ_CHANNEL_ID:
-        return await interaction.response.send_message("指定のブラックジャックチャンネルで実行するのだ", ephemeral=True)
+        return await interaction.response.send_message(
+            "指定のブラックジャックチャンネルで実行するのだ",
+            ephemeral=True,
+        )
 
     await interaction.response.defer(ephemeral=True)
     if store.config.get("bj_entry_message_id"):
@@ -4927,7 +4967,6 @@ async def on_ready():
     if not VIEWS_READY:
         bot.add_view(ShopEntryView())
         bot.add_view(BjEntryView())
-        bot.add_view(BJActionView())
         bot.add_view(NumaEntryView())
         VIEWS_READY = True
 
@@ -4979,6 +5018,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
