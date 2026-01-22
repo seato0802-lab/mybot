@@ -1993,7 +1993,7 @@ async def starter100_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="ai", description="ずんだもんとおしゃべりするのだ")
 @app_commands.describe(message="ずんだもんに話しかける内容")
 async def ai_cmd(interaction: discord.Interaction, message: str):
-    await interaction.response.defer(ephemeral=False)
+    await interaction.response.defer(ephemeral=True)
 
     user_id = interaction.user.id
 
@@ -5040,6 +5040,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
