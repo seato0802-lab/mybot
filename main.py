@@ -1258,11 +1258,15 @@ async def notify_title_earned_only_user(
         return
 
 async def maybe_award_hidden_titles(
-    interaction: discord.Interaction, u: dict, just_events: set[str]
+    interaction: discord.Interaction,
+    u: dict,
+    just_events: set[str],
 ):
-   member = interaction.user
+    member = interaction.user
+
+    # guild外（DM等）は称号処理しない
     if not isinstance(member, discord.Member):
-        return  # DMなし運用なら、guild外(User)は称号処理しない
+        return
 
     async def award_once(key: str, role_id: int | None, message: str):
         if role_id is None:
@@ -5026,6 +5030,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
