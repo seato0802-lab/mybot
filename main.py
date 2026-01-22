@@ -4777,6 +4777,30 @@ def _skull_bid_active_uids(game: dict) -> list[int]:
     alive = _skull_alive_players(game)
     return [int(p["uid"]) for p in alive]
 
+def _skull_should_end_bidding_early(game: dict) -> bool:
+    """
+    最高入札者以外の全員が「パス済み」になったら、即入札終了。
+    ※パス=0 は game["bids"][uid]=0 で表現している前提
+    """
+    highest_uid = game.get("highest_bid_uid")
+    highest = int(game.get("highest_bid", 0) or 0)
+    if not highest_uid or highest <= 0:
+        return False
+
+    alive = _skull_alive_players(game)
+    if not alive:
+        return True
+
+    # 最高入札者以外の alive が全員パス(=0)しているなら終了
+    for p in alive:
+        uid = int(p["uid"])
+        if uid == int(highest_uid):
+            continue
+        if uid not in game["bids"]:
+            return False  # まだ入札してない人がいる
+        if int(game["bids"][uid]) != 0:
+            return False  # パス以外がいる
+    return True
 
 def _skull_bid_should_finish(game: dict) -> bool:
     """終了条件：最大入札 or（最高入札者以外が全員パス）or 周回完了（raise後に一巡）"""
@@ -4815,86 +4839,76 @@ async def skull_next_bid_turn(game_id: str):
         await _skull_end_game(game_id, "タイムアウトで全額返金したのだ")
         return
 
-    total = _skull_all_placed_count(game)
-    if total <= 0:
-        _skull_log(game, "🌀 場が空っぽなのだ…ラウンドやり直しなのだ")
-        await _skull_render_all(game)
-        _skull_reset_round(game)
-        await skull_round_start(game_id)
+    # ✅ 追加：早期終了（最高入札者以外が全員パス）
+    if _skull_should_end_bidding_early(game):
+        await skull_finish_bidding(game_id)
         return
 
-    # ✅ 最大入札が出ていたら即確定
-    if int(game.get("highest_bid", 0) or 0) >= total and total > 0:
+    alive = _skull_alive_players(game)
+
+    # 全員が一度入札（パス含む）したら通常終了
+    if all(int(p["uid"]) in game["bids"] for p in alive):
         await skull_finish_bidding(game_id)
         return
 
     n = len(game["players"])
-
-    # 次に回す相手を探す
-    for _ in range(n * 2):
+    for _ in range(n):
         p = game["players"][game["current_idx"]]
         uid = int(p["uid"])
 
-        # 脱落はスキップ
         if _skull_alive_cards(p) <= 0 or p.get("eliminated"):
             game["current_idx"] = (game["current_idx"] + 1) % n
             continue
 
-        # パス済みはスキップ（このラウンドは戻れない）
-        if uid in set(game.get("bid_passed") or set()):
+        if uid in game["bids"]:
             game["current_idx"] = (game["current_idx"] + 1) % n
             continue
 
-        # raise後に一巡して「最後のレイザーに戻る直前」なら終了（= もう上書きのチャンスを全員に与えた）
-        last_raiser = game.get("bid_last_raiser_uid")
-        if last_raiser is not None and bool(game.get("bid_wrapped_after_raise")) and uid == int(last_raiser):
-            await skull_finish_bidding(game_id)
-            return
-
+        total = _skull_all_placed_count(game)
         current = int(game.get("highest_bid", 0) or 0)
         min_bid = current + 1
 
-        # 人間
         if p["type"] == "human":
             if game.get("await_kind") == "bid" and int(game.get("await_uid") or 0) == uid:
-                return
+                # 二重通知抑止。固まり対策は place と同じ方針で必要なら入れてOK
+                if _skull_now() - float(game.get("await_ts", 0) or 0) < 3.0:
+                    return
+                _skull_clear_await(game)
 
-            # min_bidがtotal超えならパスしかない
-            min_for_view = min_bid if min_bid <= total else total + 1
-            view = SkullBidView(game_id, uid, max_bid=total, min_bid=min_for_view)
-
-            prompt = (
-                f"💰 **あなたの入札なのだ**（最大 {total} / 現在最高 {current}）\n"
-                "パスするとこのラウンドは入札に戻れないのだ"
+            view = SkullBidView(
+                game_id,
+                uid,
+                max_bid=total,
+                min_bid=min_bid if min_bid <= total else total + 1
             )
-
-            await _skull_render_all(game, actor_uid=uid, actor_prompt=prompt, actor_view=view)
+            txt = f"💰 あなたの入札なのだ（最大 {total} / 現在最高 {current}）\nパスするとこのラウンドは入札に戻れないのだ"
+            await dm_send_safe(p["user_obj"], txt, view=view)
             _skull_set_await(game, kind="bid", uid=uid)
             game["turn_deadline_ts"] = _skull_now() + SKULL_TURN_TIMEOUT_SEC
             return
 
         # NPC
         bid = _npc_choose_bid(game, p)
+        game["bids"][uid] = int(bid)
 
-        # NPCのbid処理
-        await skull_apply_bid_internal(game_id, actor_uid=uid, bid=bid, is_human=False)
-        # 1手ごとに見える速度
-        await asyncio.sleep(NPC_ACTION_DELAY_SEC)
+        if bid > int(game.get("highest_bid", 0) or 0):
+            game["highest_bid"] = int(bid)
+            game["highest_bid_uid"] = uid
 
-        # 次へ
+        humans = _skull_humans(game)
+        if humans:
+            await npc_action_sequence(humans[0]["user_obj"], [f"🤖 {_skull_public_name(p)} は **{bid}** で入札したのだ"])
+
         game["current_idx"] = (game["current_idx"] + 1) % n
 
-        # もし最大入札なら即終了
-        if int(game.get("highest_bid", 0) or 0) >= total:
+        # ✅ 追加：NPCの行動直後も早期終了チェック
+        if _skull_should_end_bidding_early(game):
             await skull_finish_bidding(game_id)
             return
 
-        # 続行
-        await skull_next_bid_turn(game_id)
-        return
+        break
 
-    # ここに来たら全員パス等で終了
-    await skull_finish_bidding(game_id)
+    await skull_next_bid_turn(game_id)
 
 
 async def skull_apply_bid_internal(game_id: str, actor_uid: int, bid: int, *, is_human: bool):
@@ -4947,7 +4961,7 @@ async def skull_apply_bid_internal(game_id: str, actor_uid: int, bid: int, *, is
 async def skull_submit_bid(interaction: discord.Interaction, game_id: str, actor_uid: int, bid: int):
     game = _skull_games.get(game_id)
     if not game:
-        return
+        return await interaction.followup.send("ゲームがないのだ", ephemeral=True)
 
     if _skull_now() > float(game.get("turn_deadline_ts", 0) or 0):
         await _skull_refund_all(game)
@@ -4955,52 +4969,43 @@ async def skull_submit_bid(interaction: discord.Interaction, game_id: str, actor
         return
 
     if game.get("phase") != "bid":
-        return
+        return await interaction.followup.send("今は入札フェーズじゃないのだ", ephemeral=True)
 
     p = _skull_player(game, actor_uid)
     if not p or p.get("type") != "human":
-        return
+        return await interaction.followup.send("あなたの番ではないのだ", ephemeral=True)
 
-    # すでにパス済みなら戻れない
-    if int(actor_uid) in set(game.get("bid_passed") or set()):
-        _skull_log(game, f"⚠️ {_skull_public_name(p)}：もうパス済みなのだ")
-        await _skull_render_all(game)
-        return
+    uid = int(actor_uid)
+    if uid in game["bids"]:
+        return await interaction.followup.send("もう入札したのだ", ephemeral=True)
 
     total = _skull_all_placed_count(game)
     current = int(game.get("highest_bid", 0) or 0)
     min_bid = current + 1
 
-    # ルールチェック
     if bid != 0:
         if bid < min_bid or bid > total:
-            _skull_log(game, f"⚠️ {_skull_public_name(p)}：不正入札なのだ")
-            await _skull_render_all(game, actor_uid=actor_uid, actor_prompt=f"⚠️ 入札が不正なのだ（パス=0 か {min_bid}〜{total}）", actor_view=None)
-            return
+            return await interaction.followup.send(f"入札が不正なのだ（パス=0 か {min_bid}〜{total}）", ephemeral=True)
+
+    game["bids"][uid] = int(bid)
+    if bid > current:
+        game["highest_bid"] = int(bid)
+        game["highest_bid_uid"] = uid
 
     _skull_clear_await(game)
     _skull_touch(game)
 
-    await skull_apply_bid_internal(game_id, actor_uid=actor_uid, bid=bid, is_human=True)
+    await interaction.followup.send(f"✅ 入札：{bid} なのだ", ephemeral=True)
+    await _skull_broadcast(game, f"💰 {_skull_public_name(p)} が **{bid}** で入札したのだ")
 
-    # 次へ回す
-    n = len(game["players"])
-    prev_uid = int(actor_uid)
-    game["current_idx"] = (game["current_idx"] + 1) % n
+    game["current_idx"] = (game["current_idx"] + 1) % len(game["players"])
 
-    # raise後に一巡したかフラグを立てる：
-    # 「次に回る相手」が最後のレイザーなら wrapped=True
-    last_raiser = game.get("bid_last_raiser_uid")
-    if last_raiser is not None and int(game["players"][game["current_idx"]]["uid"]) == int(last_raiser) and prev_uid != int(last_raiser):
-        game["bid_wrapped_after_raise"] = True
-
-    # 最大入札なら即終了
-    if int(game.get("highest_bid", 0) or 0) >= total and total > 0:
+    # ✅ 追加：ここで早期終了できるなら即終了
+    if _skull_should_end_bidding_early(game):
         await skull_finish_bidding(game_id)
         return
 
     await skull_next_bid_turn(game_id)
-
 
 async def skull_finish_bidding(game_id: str):
     game = _skull_games.get(game_id)
@@ -5364,6 +5369,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
