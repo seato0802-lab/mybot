@@ -3331,7 +3331,7 @@ class BJBetView(discord.ui.View):
     @discord.ui.button(label="💎 VIPで入場", style=discord.ButtonStyle.danger)
     async def vip_enter(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-             u = store.get_user(interaction.user.id)
+            u = store.get_user(interaction.user.id)
             await bj_edit(
                 interaction,
                 content=(
@@ -3344,7 +3344,10 @@ class BJBetView(discord.ui.View):
         except Exception:
             traceback.print_exc()
             try:
-                await interaction.response.send_message("VIP入場でエラーが出たのだ…", ephemeral=True)
+                await interaction.response.send_message(
+                    "VIP入場でエラーが出たのだ…",
+                    ephemeral=True,
+                )
             except Exception:
                 pass
 
@@ -5999,6 +6002,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
