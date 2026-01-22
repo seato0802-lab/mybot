@@ -3284,10 +3284,12 @@ class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"
                 bjvip_sessions[interaction.user.id] = session
 
             # ✅ 同じメッセージをVIPゲーム画面へ編集
-            await interaction.response.edit_message(
+            await bj_edit(
+                interaction,
                 content=bjvip_state_text(session),
                 view=build_bjvip_action_view(interaction.user.id, session),
             )
+
 
             # VIPは「ディーラー即21」みたいな処理はここではしない（VIPルールでfinish側が処理）
             # ただし自然BJ(21)でも操作できるよう通常通り進む
@@ -3310,7 +3312,7 @@ class BJBetView(discord.ui.View):
     """掛け金入力画面（非永久）"""
     def __init__(self, uid: int):
         super().__init__(timeout=180)
-        self.uid = uid
+        self.uid = int(uid)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.uid:
@@ -3344,10 +3346,7 @@ class BJBetView(discord.ui.View):
         except Exception:
             traceback.print_exc()
             try:
-                await interaction.response.send_message(
-                    "VIP入場でエラーが出たのだ…",
-                    ephemeral=True,
-                )
+                await interaction.response.send_message("VIP入場でエラーが出たのだ…", ephemeral=True)
             except Exception:
                 pass
 
@@ -3371,28 +3370,12 @@ class BJVIPBetView(discord.ui.View):
             return False
         return True
 
-@discord.ui.button(label="💎 VIPで入場", style=discord.ButtonStyle.danger)
-async def vip_enter(self, interaction: discord.Interaction, button: discord.ui.Button):
-    try:
-        u = store.get_user(interaction.user.id)
-        await bj_edit(
-            interaction,
-            content=(
-                f"💎 **BJVIP 開始なのだ**\n"
-                f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
-                f"下のボタンから掛け金を入力するのだ（最低 {BJVIP_MIN_BET}）"
-            ),
-            view=BJVIPBetView(interaction.user.id),
-        )
-    except Exception:
-        traceback.print_exc()
+    @discord.ui.button(label="💎 VIP掛け金を入力", style=discord.ButtonStyle.danger)
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            await interaction.response.send_message(
-                "VIP入場でエラーが出たのだ…",
-                ephemeral=True,
-            )
+            await interaction.response.send_modal(BetModalVIP(uid=self.uid))
         except Exception:
-            pass
+            traceback.print_exc()
 
     @discord.ui.button(label="戻る", style=discord.ButtonStyle.secondary)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -3400,7 +3383,8 @@ async def vip_enter(self, interaction: discord.Interaction, button: discord.ui.B
         await bj_edit(
             interaction,
             content=(
-                f"🎴 ブラックジャック開始なのだ\n現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
+                f"🎴 ブラックジャック開始なのだ\n"
+                f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
                 "下のボタンから掛け金を入力するのだ"
             ),
             view=BJBetView(interaction.user.id),
@@ -3409,7 +3393,6 @@ async def vip_enter(self, interaction: discord.Interaction, button: discord.ui.B
     @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await bj_edit(interaction, content="終了したのだ", view=None)
-
 
 # =========================================================
 # 入口（あなたの元コード通り：persistent）
@@ -6002,6 +5985,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
