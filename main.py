@@ -3916,17 +3916,16 @@ def _skull_log(game: dict, line: str):
 def _skull_screen_title(game: dict) -> str:
     if game.get("is_solo"):
         return (
-            "🃏 **スカル（ソロ）**\n"
+            "🃏 スカル（ソロ）\n"
             f"勝てば +{SKULL_SOLO_WIN_REWARD}、負けたら0なのだ\n"
-            "タイムアウト時は全額返金なのだ\n"
+            "タイムアウト時は全額返金なのだ"
         )
     pot = int(game.get("pot", 0) or 0)
     return (
-        "🃏 **スカル（マルチ）**\n"
+        "🃏 スカル（マルチ）\n"
         f"pot：{pot} コイン（勝者総取り）\n"
-        "タイムアウト時は全額返金なのだ\n"
+        "タイムアウト時は全額返金なのだ"
     )
-
 
 async def skull_dm_get_or_create_screen(p: dict, game: dict) -> discord.Message | None:
     """各プレイヤーのDM画面を1枚だけ作り、p['screen_msg']に保持"""
@@ -3941,20 +3940,48 @@ async def skull_dm_get_or_create_screen(p: dict, game: dict) -> discord.Message 
     return msg
 
 
-def skull_build_screen_text(game: dict, *, prompt: str = "") -> str:
-    """1枚DM本文：タイトル + 上部ログ + 現在の場 + プロンプト"""
+def skull_build_screen_text(game: dict, *, prompt: str = "", viewer_uid: int | None = None) -> str:
+    """
+    1枚DM本文：タイトル + 区切り + ログ + 区切り + 現在の場 + 自分の手札 + 区切り + プロンプト
+    viewer_uid: この画面を見る人（人によって手札表示が変わる）
+    """
+    title = _skull_screen_title(game).rstrip()
+
+    # ---ログ---
     logs = game.get("log_lines") or []
-    log_block = ""
-    if logs:
-        log_block = "\n".join(logs).strip() + "\n"
+    log_block = "\n".join(logs).strip() if logs else "（まだログはないのだ）"
 
-    body = "現在の場:\n" + _skull_visible_table(game)
+    # 現在の場
+    table = _skull_visible_table(game)
 
-    if prompt:
-        body += "\n\n" + prompt.strip()
+    # 自分の手札（花/どくろ枚数）
+    hand_line = "自分の手札：-"
+    if viewer_uid is not None:
+        vp = _skull_player(game, int(viewer_uid))
+        if vp and vp.get("type") == "human":
+            hand = vp.get("hand", []) or []
+            flowers = sum(1 for c in hand if c == "flower")
+            skulls = sum(1 for c in hand if c == "skull")
+            hand_line = f"自分の手札：🌸 花{flowers}枚 / 💀 どくろ{skulls}枚"
 
-    return _skull_screen_title(game) + log_block + "\n" + body
+    # プロンプト（ここに入札やあなたの番が来る）
+    prompt_block = prompt.strip() if prompt else ""
 
+    parts = [
+        title,
+        "───ログ───",
+        log_block,
+        "────────",
+        "現在の場:",
+        table,
+        "",
+        hand_line,
+    ]
+
+    if prompt_block:
+        parts += ["────────", prompt_block]
+
+    return "\n".join(parts).strip() + "\n"
 
 async def _skull_render_all(
     game: dict,
@@ -3963,23 +3990,19 @@ async def _skull_render_all(
     actor_prompt: str = "",
     actor_view: discord.ui.View | None = None,
 ):
-    """
-    全員のDM画面を編集して上書きする。
-    actor_uidの人だけ prompt + view を付ける（= 操作UI）
-    """
     for p in _skull_humans(game):
         msg = await skull_dm_get_or_create_screen(p, game)
         if not msg:
             continue
 
         uid = int(p["uid"])
+
         if actor_uid is not None and uid == int(actor_uid):
-            text = skull_build_screen_text(game, prompt=actor_prompt)
+            text = skull_build_screen_text(game, prompt=actor_prompt, viewer_uid=uid)
             await dm_edit_safe(msg, content=text, view=actor_view)
         else:
-            text = skull_build_screen_text(game, prompt="")
+            text = skull_build_screen_text(game, prompt="", viewer_uid=uid)
             await dm_edit_safe(msg, content=text, view=None)
-
 
 def _skull_reset_round(game: dict):
     # pileは0に戻し、round_handを「現在の手札」から作り直す
@@ -5333,6 +5356,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
