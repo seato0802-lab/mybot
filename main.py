@@ -3276,10 +3276,7 @@ class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"
                     "vip_win21": None,
                 }
 
-                deck = session["deck"]
-                session["hands"][0] = [draw_card(deck), draw_card(deck)]
-                session["dealer"] = [draw_card(deck), draw_card(deck)]
-                session["is_natural_bj"][0] = (hand_value(session["hands"][0]) == 21)
+                deal_initial_vip(session, interaction.user.id)
 
                 bjvip_sessions[interaction.user.id] = session
 
@@ -4128,33 +4125,17 @@ def _vip_build_dealer_hand(session: dict, target_mode: str):
 
 
 async def bjvip_dealer_turn_and_finish(interaction: discord.Interaction, u: dict):
-    """
-    VIPはディーラーの“勝敗ロジック”が特殊：
-      - プレイヤー手札が21未満 → 100%負け
-      - プレイヤー手札が21 → 50%で勝ち / 50%で負け
-    ※ 見た目のディーラー手札は「それっぽく」毎回変える
-    """
     session = bjvip_sessions.get(interaction.user.id)
     if not session:
         return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
 
     touch_bjvip_session(interaction.user.id)
 
-    # 21があるか
-    vals = [hand_value(h) for h in session["hands"]]
-    has_21 = any(v == 21 for v in vals)
+    # 演出：ディーラーは「それっぽく」17以上になるまで引く（普通のBJっぽい見た目）
+    dealer = session["dealer"]
+    while hand_value(dealer) < 17 and len(dealer) < 7:
+        dealer.append(draw_card(session["deck"]))
 
-    win21 = False
-    if has_21:
-        win21 = _vip_pick_win21(session)
-
-    # ディーラー演出用手札を作る（勝ち/負けをそれっぽく）
-    if has_21 and win21:
-        _vip_build_dealer_hand(session, "WIN21")   # 21未満を見せる
-    else:
-        _vip_build_dealer_hand(session, "LOSE")    # 21寄せで負けを見せる
-
-    # ディーラーターン表示（ボタン消す）
     await bj_edit(
         interaction,
         content="💎 ディーラーのターンなのだ\n\n" + bjvip_state_text(session, show_dealer_all=True),
@@ -4164,18 +4145,10 @@ async def bjvip_dealer_turn_and_finish(interaction: discord.Interaction, u: dict
 
     await bjvip_finish(interaction, u)
 
-
 async def bjvip_finish(interaction: discord.Interaction, u: dict):
     session = bjvip_sessions.get(interaction.user.id)
     if not session:
         return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
-
-    touch_bjvip_session(interaction.user.id)
-
-    # VIP勝敗：21だけ50%勝ち、それ以外は必ず負け
-    vals = [hand_value(h) for h in session["hands"]]
-    has_21 = any(v == 21 for v in vals)
-    win21 = _vip_pick_win21(session) if has_21 else False
 
     payout_total = 0
     profit = 0
@@ -4186,30 +4159,64 @@ async def bjvip_finish(interaction: discord.Interaction, u: dict):
         v = hand_value(hand)
 
         payout = 0
-
         if v > 21:
             results.append(f"手札{idx+1}：負け（バースト）")
-            payout = 0
-        elif v < 21:
-            # ★VIPルール：21未満は100%負け
-            results.append(f"手札{idx+1}：負け（VIPルール）")
-            payout = 0
         else:
-            # v == 21 のときだけ 50%勝ち
-            if win21:
-                # 21勝ち：通常BJの“勝ち”払いに合わせる（自然BJなら3:2）
-                if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
+            p = vip_win_prob(v)
+            win = (random.random() < p)
+
+            if win:
+                if session["is_natural_bj"][idx]:
                     payout = (bet * 5) // 2
-                    results.append(f"手札{idx+1}：勝ち（21 / BJ 3:2）")
+                    results.append(f"手札{idx+1}：勝ち（BJ 3:2 / VIP）")
                 else:
                     payout = bet * 2
-                    results.append(f"手札{idx+1}：勝ち（21）")
+                    results.append(f"手札{idx+1}：勝ち（VIP）")
             else:
-                results.append(f"手札{idx+1}：負け（21でも負け / VIPルール）")
-                payout = 0
+                results.append(f"手札{idx+1}：負け（VIP）")
 
         payout_total += payout
         profit += (payout - bet)
+
+    just_events = set()
+    async with get_user_lock(interaction.user.id):
+        u["coins"] = int(u.get("coins", 0) or 0) + payout_total
+        u["bj_play_count"] = int(u.get("bj_play_count", 0) or 0) + 1
+        u["bj_win_streak"] = int(u.get("bj_win_streak", 0) or 0)
+        u["total_earned"] = int(u.get("total_earned", 0) or 0)
+
+        if profit > 0:
+            u["bj_win_streak"] += 1
+            u["total_earned"] += profit
+            just_events.add("BJ_WIN_EVENT")
+            if profit >= 1000:
+                just_events.add("BJ_BIGWIN_EVENT")
+        else:
+            u["bj_win_streak"] = 0
+            if profit <= -1000:
+                just_events.add("BJ_BIGLOSE_EVENT")
+
+        await sheets_upsert_async(u)
+
+    dealer_val = hand_value(session["dealer"])
+    msg = (
+        "💎 BJVIP 結果なのだ\n\n"
+        f"ディーラー：{fmt_cards(session['dealer'])}（{dealer_val}）\n"
+        + "\n".join(results)
+        + f"\n\n残高：{u['coins']} コインなのだ\n\n次はどうするのだ？"
+    )
+
+    await bj_edit(interaction, content=msg, view=BJVIPEndView(interaction.user.id))
+
+    try:
+        await maybe_award_hidden_titles(interaction, u, just_events=just_events)
+    except Exception:
+        traceback.print_exc()
+
+    bjvip_sessions.pop(interaction.user.id, None)
+
+    await bj_edit(interaction, content=msg, view=BJVIPEndView(interaction.user.id))
+    bjvip_sessions.pop(interaction.user.id, None)
 
     async with get_user_lock(interaction.user.id):
         u["coins"] = int(u.get("coins", 0) or 0) + payout_total
@@ -6025,6 +6032,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
