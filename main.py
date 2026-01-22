@@ -4631,8 +4631,14 @@ async def skull_next_place_turn(game_id: str):
         # 人間の番
         if p["type"] == "human":
             uid = int(p["uid"])
+
+            # ✅ 二重通知ガード：
+            # 直近数秒なら「同じ案内を送り続けない」ためreturn
+            # でも await が古いまま残って固まるのを防ぐため、古ければ解除して再送する
             if game.get("await_kind") == "place_or_bid" and int(game.get("await_uid") or 0) == uid:
-                return
+                if _skull_now() - float(game.get("await_ts", 0) or 0) < 3.0:
+                    return
+                _skull_clear_await(game)  # 古いawaitは捨てて再送に進む
 
             can_start_bid = bool(all_one)
             view = SkullPlaceOrBidView(game_id, uid, can_start_bid=can_start_bid)
@@ -4660,7 +4666,6 @@ async def skull_next_place_turn(game_id: str):
     # 異常系：安全に次ラウンド
     _skull_reset_round(game)
     await skull_round_start(game_id)
-
 
 async def skull_place_card(interaction: discord.Interaction, game_id: str, actor_uid: int, card: str):
     game = _skull_games.get(game_id)
@@ -5359,6 +5364,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
