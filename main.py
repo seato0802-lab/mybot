@@ -1268,12 +1268,19 @@ async def maybe_award_hidden_titles(
     if not isinstance(member, discord.Member):
         return
 
+async def maybe_award_hidden_titles(
+    interaction: discord.Interaction,
+    u: dict,
+    just_events: set[str],
+):
+    member = interaction.user
+
+    # guild外（DM等）は称号処理しない
+    if not isinstance(member, discord.Member):
+        return
+
     async def award_once(key: str, role_id: int | None, message: str):
         if role_id is None:
-            return
-
-        # discord.Member じゃないと guild/roles が取れないのでここで弾く
-        if not isinstance(member, discord.Member):
             return
 
         role = member.guild.get_role(role_id)
@@ -1283,9 +1290,9 @@ async def maybe_award_hidden_titles(
         earned = (key in award_keys_set(u))
         has_role = any(r.id == role_id for r in member.roles)
 
-        # ✅ ここが重要：獲得済みなら通知は絶対しない
+        # ✅ 既に獲得済みなら「通知しない」
+        # ただしロールが外れてたら付け直す（通知なし）
         if earned:
-            # 任意：ロールが外れてたら付け直す（通知なし）
             if not has_role:
                 try:
                     await apply_title_role(member, role_id)
@@ -1293,16 +1300,19 @@ async def maybe_award_hidden_titles(
                     pass
             return
 
-    # --- 未獲得だけがここを通る ---
-    add_title_to_inventory(u, role_id)
-    u["title_role_id"] = role_id
-    set_award_key(u, key)
+        # ✅ 未獲得の時だけ：記録→付与→通知
+        add_title_to_inventory(u, role_id)
+        u["title_role_id"] = role_id
+        set_award_key(u, key)
 
-    await apply_title_role(member, role_id)
-    await sheets_upsert_async(u)
+        try:
+            await apply_title_role(member, role_id)
+        except Exception:
+            # 付与失敗なら通知しない（荒れ防止）
+            return
 
-    await notify_title_earned_only_user(interaction, member, message)
-
+        await sheets_upsert_async(u)
+        await notify_title_earned_only_user(interaction, member, message)
         
     if u["daikichi_count"] >= 10:
         await award_once(
@@ -5030,6 +5040,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
