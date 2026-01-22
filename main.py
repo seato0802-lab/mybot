@@ -4036,7 +4036,47 @@ async def bjvip_next_or_finish(interaction: discord.Interaction, u: dict):
             return
 
     await bjvip_dealer_turn_and_finish(interaction, u)
+    
+def vip_win_prob(v: int) -> float:
+    """
+    VIP勝率（体感重視）
+    """
+    if v >= 21:
+        return 0.75   # 21はかなり勝てる
+    if v == 20:
+        return 0.55
+    if v == 19:
+        return 0.40
+    if v == 18:
+        return 0.30
+    if v == 17:
+        return 0.20
+    return 0.08       # 16以下もワンチャンあり
+    
+bjvip_natural_streak: dict[int, int] = {}
 
+def deal_initial_vip(session: dict, uid: int):
+    """
+    VIP用初期配布
+    ・自然BJが2連続以上出たら抑制
+    """
+    deck = session["deck"]
+    streak = bjvip_natural_streak.get(uid, 0)
+
+    for _ in range(5):
+        session["hands"][0] = [draw_card(deck), draw_card(deck)]
+        session["dealer"] = [draw_card(deck), draw_card(deck)]
+        is_bj = (hand_value(session["hands"][0]) == 21)
+        session["is_natural_bj"][0] = is_bj
+
+        if streak >= 2 and is_bj:
+            continue
+        break
+
+    if session["is_natural_bj"][0]:
+        bjvip_natural_streak[uid] = streak + 1
+    else:
+        bjvip_natural_streak[uid] = 0
 
 def _vip_pick_win21(session: dict) -> bool:
     """
@@ -5985,6 +6025,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
