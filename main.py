@@ -1263,9 +1263,9 @@ async def maybe_award_hidden_titles(
     member = interaction.user
     if not isinstance(member, discord.Member):
         try:
-            member = await interaction.guild.fetch_member(interaction.user.id)
+            await notify_title_earned_only_user(interaction, member, message)
         except Exception:
-            return
+            pass
 
     async def award_once(key: str, role_id: int, message: str):
         if role_id is None:
@@ -4979,6 +4979,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
