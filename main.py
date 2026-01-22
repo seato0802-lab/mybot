@@ -1260,37 +1260,45 @@ async def notify_title_earned_only_user(
 async def maybe_award_hidden_titles(
     interaction: discord.Interaction, u: dict, just_events: set[str]
 ):
-    member = interaction.user
+   member = interaction.user
     if not isinstance(member, discord.Member):
-        try:
-            await notify_title_earned_only_user(interaction, member, message)
-        except Exception:
-            pass
+        return  # DMなし運用なら、guild外(User)は称号処理しない
 
-    async def award_once(key: str, role_id: int, message: str):
+    async def award_once(key: str, role_id: int | None, message: str):
         if role_id is None:
             return
 
-        # 役職オブジェクト取得
-        role = member.guild.get_role(role_id)
-        has_role = role is not None and any(r.id == role_id for r in member.roles)
-
-        # 「付与済み記録」かつ「実ロールも付いてる」ならスキップ
-        if key in award_keys_set(u) and has_role:
+        # discord.Member じゃないと guild/roles が取れないのでここで弾く
+        if not isinstance(member, discord.Member):
             return
 
-        # ロールが存在しないなら中断
+        role = member.guild.get_role(role_id)
         if role is None:
             return
 
-        add_title_to_inventory(u, role_id)
-        u["title_role_id"] = role_id
-        set_award_key(u, key)
+        earned = (key in award_keys_set(u))
+        has_role = any(r.id == role_id for r in member.roles)
 
-        await apply_title_role(member, role_id)
-        await sheets_upsert_async(u)
+        # ✅ ここが重要：獲得済みなら通知は絶対しない
+        if earned:
+            # 任意：ロールが外れてたら付け直す（通知なし）
+            if not has_role:
+                try:
+                    await apply_title_role(member, role_id)
+                except Exception:
+                    pass
+            return
 
-        await notify_title_earned_only_user(interaction, member, message)
+    # --- 未獲得だけがここを通る ---
+    add_title_to_inventory(u, role_id)
+    u["title_role_id"] = role_id
+    set_award_key(u, key)
+
+    await apply_title_role(member, role_id)
+    await sheets_upsert_async(u)
+
+    await notify_title_earned_only_user(interaction, member, message)
+
         
     if u["daikichi_count"] >= 10:
         await award_once(
@@ -5018,6 +5026,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
