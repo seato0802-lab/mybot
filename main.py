@@ -1223,6 +1223,39 @@ async def ai_fortune_message() -> tuple[str, str, str]:
     lucky_item = "ハンカチ" if fortune != "大凶" else "入手困難な限定アイテム"
     return fortune, fallback_msg.get(fortune, "無理せずいくのだ。"), lucky_item
 
+async def notify_title_earned_only_user(
+    interaction: discord.Interaction,
+    member: discord.Member | discord.User,
+    message: str,
+):
+    """
+    称号獲得の通知：DMなし、チャンネルにも流さず、本人にだけephemeralで通知する。
+    interaction が失効している可能性があるので、response/followup両対応。
+    """
+    # 念のため「本人以外」には送らない（interaction.userと違うmemberが来た場合の安全策）
+    if interaction.user.id != member.id:
+        return
+
+    text = f"🏅 称号を獲得したのだ！\n{message}"
+
+    try:
+        # まだ応答してなければ response で返す
+        if not interaction.response.is_done():
+            await interaction.response.send_message(text, ephemeral=True)
+        else:
+            await interaction.followup.send(text, ephemeral=True)
+    except discord.NotFound:
+        # Unknown interaction 等（10062）で失効していたら諦める
+        return
+    except discord.errors.InteractionResponded:
+        # 既にresponse済みならfollowupへ
+        try:
+            await interaction.followup.send(text, ephemeral=True)
+        except Exception:
+            pass
+    except Exception:
+        # 通知は落ちても本処理を止めない
+        return
 
 async def maybe_award_hidden_titles(
     interaction: discord.Interaction, u: dict, just_events: set[str]
@@ -4946,6 +4979,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
