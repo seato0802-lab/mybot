@@ -3876,9 +3876,12 @@ def _skull_alive_players(game: dict) -> list[dict]:
 def _skull_visible_table(game: dict) -> str:
     parts = []
     for p in game["players"]:
-        parts.append(f"- {_skull_public_name(p)}：{len(p.get('pile', []))}枚（残り手札{_skull_alive_cards(p)}）")
+        score = int(p.get("score", 0) or 0)
+        mark = "✅" if score >= 1 else "　"  # 1点以上でチェック
+        parts.append(
+            f"- {mark} {_skull_public_name(p)}：{len(p.get('pile', []))}枚（残り手札{_skull_alive_cards(p)}）"
+        )
     return "\n".join(parts)
-
 
 def _skull_all_placed_count(game: dict) -> int:
     return sum(len(p.get("pile", [])) for p in game["players"])
@@ -5356,6 +5359,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
