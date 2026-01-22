@@ -2929,9 +2929,23 @@ async def lottery_watcher():
 
 # =========================================================
 # ブラックジャック（完全差し替え版：ephemeral 1枚を編集し続ける / ボタン永久化しない）
+# + BJVIP（追加：VIPルールあり / 終了後はVIPに戻る）
 # =========================================================
+import random
+import time
+import asyncio
+import traceback
+
+import discord
+from discord.ext import tasks
+
 SUITS = ["♠", "♥", "♦", "♣"]
 RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+
+# ===== VIP 設定 =====
+BJVIP_ROLE_ID = 1462688366431567872
+BJVIP_MIN_BET = 10000
+BJVIP_SESSION_TIMEOUT_SEC = 20 * 60
 
 
 def new_deck() -> list[tuple[str, str]]:
@@ -2968,13 +2982,23 @@ def fmt_cards(cards: list[tuple[str, str]]) -> str:
     return " ".join([f"{s}{r}" for r, s in cards])
 
 
-# ユーザーごとのセッション（ephemeralで遊ぶので message_id は管理しなくてOK）
+# =========================================================
+# セッション管理（通常BJ / VIP）
+# =========================================================
 bj_sessions: dict[int, dict] = {}
 BJ_SESSION_TIMEOUT_SEC = 20 * 60
+
+bjvip_sessions: dict[int, dict] = {}
 
 
 def touch_bj_session(uid: int):
     s = bj_sessions.get(uid)
+    if s:
+        s["last_action_ts"] = time.time()
+
+
+def touch_bjvip_session(uid: int):
+    s = bjvip_sessions.get(uid)
     if s:
         s["last_action_ts"] = time.time()
 
@@ -3004,6 +3028,33 @@ async def cleanup_bj_sessions():
             traceback.print_exc()
 
 
+@tasks.loop(minutes=2)
+async def cleanup_bjvip_sessions():
+    now = time.time()
+    remove_ids = []
+    for uid, s in list(bjvip_sessions.items()):
+        last_ts = float(s.get("last_action_ts", now))
+        if now - last_ts > BJVIP_SESSION_TIMEOUT_SEC:
+            remove_ids.append(uid)
+
+    for uid in remove_ids:
+        try:
+            async with get_user_lock(uid):
+                s = bjvip_sessions.get(uid)
+                if not s:
+                    continue
+                refund = int(sum(s.get("bets", []) or [0]))
+                u = store.get_user(uid)
+                u["coins"] = int(u.get("coins", 0) or 0) + refund
+                await sheets_upsert_async(u)
+                bjvip_sessions.pop(uid, None)
+        except Exception:
+            traceback.print_exc()
+
+
+# =========================================================
+# 表示（通常 / VIP）
+# =========================================================
 def bj_state_text(session: dict, show_dealer_all: bool = False) -> str:
     dealer = session["dealer"]
     if show_dealer_all:
@@ -3029,6 +3080,15 @@ def bj_state_text(session: dict, show_dealer_all: bool = False) -> str:
     )
 
 
+def bjvip_state_text(session: dict, show_dealer_all: bool = False) -> str:
+    # 見た目は通常BJと同じ構成、タイトルだけVIP
+    base = bj_state_text(session, show_dealer_all=show_dealer_all)
+    return base.replace("🎴 ブラックジャックなのだ", "💎 BJVIP なのだ")
+
+
+# =========================================================
+# 編集ヘルパ（通常 / VIP 共通で使う）
+# =========================================================
 async def bj_edit(interaction: discord.Interaction, *, content: str, view: discord.ui.View | None):
     """
     「今押されたボタンが載ってるメッセージ」を同じまま編集し続ける。
@@ -3045,9 +3105,9 @@ async def bj_edit(interaction: discord.Interaction, *, content: str, view: disco
         traceback.print_exc()
 
 
-# ---------------------------------------------------------
-# ベット入力：案内メッセージ → 「掛け金入力」ボタン → Modal（安定）
-# ---------------------------------------------------------
+# =========================================================
+# ベット入力（通常BJ / VIP）
+# =========================================================
 class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
     bet = discord.ui.TextInput(label="掛け金（数字）", placeholder="例：100", required=True)
 
@@ -3066,7 +3126,6 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
             async with get_user_lock(interaction.user.id):
                 u = store.get_user(interaction.user.id)
 
-                # 入力値
                 try:
                     bet_val = int(str(self.bet.value).strip())
                 except Exception:
@@ -3150,6 +3209,104 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
                 pass
 
 
+class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"):
+    bet = discord.ui.TextInput(label="掛け金（最低10000）", placeholder="例：10000", required=True)
+
+    def __init__(self, uid: int):
+        super().__init__()
+        self.uid = int(uid)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            if interaction.user.id != self.uid:
+                return await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+
+            if not is_in_channel(interaction, BJ_CHANNEL_ID):
+                return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+
+            async with get_user_lock(interaction.user.id):
+                u = store.get_user(interaction.user.id)
+
+                try:
+                    bet_val = int(str(self.bet.value).strip())
+                except Exception:
+                    return await interaction.response.edit_message(
+                        content="数字で入力するのだ",
+                        view=BJVIPBetView(interaction.user.id),
+                    )
+
+                if bet_val < BJVIP_MIN_BET:
+                    return await interaction.response.edit_message(
+                        content=f"VIPは最低 {BJVIP_MIN_BET} からなのだ\n現在の残高：{int(u.get('coins',0) or 0)}",
+                        view=BJVIPBetView(interaction.user.id),
+                    )
+
+                if bet_val > int(u.get("coins", 0) or 0):
+                    return await interaction.response.edit_message(
+                        content=f"コインが足りないのだ（残高：{int(u.get('coins',0) or 0)}）",
+                        view=BJVIPBetView(interaction.user.id),
+                    )
+
+                # 混在防止：通常BJは消す
+                bj_sessions.pop(interaction.user.id, None)
+
+                # 既存VIPが残ってたら返金して潰す（事故防止）
+                old = bjvip_sessions.pop(interaction.user.id, None)
+                if old:
+                    refund = int(sum(old.get("bets", []) or [0]))
+                    u["coins"] = int(u.get("coins", 0) or 0) + refund
+
+                # 差し引き
+                u["coins"] = int(u.get("coins", 0) or 0) - bet_val
+                await sheets_upsert_async(u)
+
+                # VIP セッション開始（基本構造は通常BJと同じ）
+                session = {
+                    "deck": new_deck(),
+                    "dealer": [],
+                    "hands": [[]],
+                    "bets": [bet_val],
+                    "active": 0,
+                    "finished_hands": [False],
+                    "doubled": [False],
+                    "was_split": False,
+                    "is_natural_bj": [False],
+                    "last_action_ts": time.time(),
+                    "vip": True,
+                    # VIP：21勝敗のランダム（1ラウンド1回）
+                    "vip_win21": None,
+                }
+
+                deck = session["deck"]
+                session["hands"][0] = [draw_card(deck), draw_card(deck)]
+                session["dealer"] = [draw_card(deck), draw_card(deck)]
+                session["is_natural_bj"][0] = (hand_value(session["hands"][0]) == 21)
+
+                bjvip_sessions[interaction.user.id] = session
+
+            # ✅ 同じメッセージをVIPゲーム画面へ編集
+            await interaction.response.edit_message(
+                content=bjvip_state_text(session),
+                view=build_bjvip_action_view(interaction.user.id, session),
+            )
+
+            # VIPは「ディーラー即21」みたいな処理はここではしない（VIPルールでfinish側が処理）
+            # ただし自然BJ(21)でも操作できるよう通常通り進む
+
+        except Exception:
+            traceback.print_exc()
+            try:
+                await interaction.response.edit_message(
+                    content="VIP掛け金処理でエラーが出たのだ…",
+                    view=BJVIPBetView(interaction.user.id),
+                )
+            except Exception:
+                pass
+
+
+# =========================================================
+# 掛け金画面 View（通常 / VIP）
+# =========================================================
 class BJBetView(discord.ui.View):
     """掛け金入力画面（非永久）"""
     def __init__(self, uid: int):
@@ -3167,17 +3324,33 @@ class BJBetView(discord.ui.View):
 
     @discord.ui.button(label="💰 掛け金を入力", style=discord.ButtonStyle.primary)
     async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ send_modal の前に defer しない
         try:
             await interaction.response.send_modal(BetModal(uid=self.uid))
-        except discord.NotFound:
-            return
-        except discord.errors.InteractionResponded:
-            return
+        except Exception:
+            traceback.print_exc()
+
+    @discord.ui.button(label="💎 VIPで入場", style=discord.ButtonStyle.danger)
+    async def vip_enter(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            # VIPロールチェック
+            role_ids = {r.id for r in getattr(interaction.user, "roles", [])}
+            if BJVIP_ROLE_ID not in role_ids:
+                return await interaction.response.send_message("VIP入場権限がないのだ", ephemeral=True)
+
+            u = store.get_user(interaction.user.id)
+            await bj_edit(
+                interaction,
+                content=(
+                    f"💎 **BJVIP 開始なのだ**\n"
+                    f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
+                    f"下のボタンから掛け金を入力するのだ（最低 {BJVIP_MIN_BET}）"
+                ),
+                view=BJVIPBetView(interaction.user.id),
+            )
         except Exception:
             traceback.print_exc()
             try:
-                await interaction.followup.send("モーダル表示に失敗したのだ…", ephemeral=True)
+                await interaction.response.send_message("VIP入場でエラーが出たのだ…", ephemeral=True)
             except Exception:
                 pass
 
@@ -3186,9 +3359,48 @@ class BJBetView(discord.ui.View):
         await bj_edit(interaction, content="終了したのだ", view=None)
 
 
-# ---------------------------------------------------------
-# 入口（永久）：setupで置くスタートだけは persistent（custom_id + timeout=None）
-# ---------------------------------------------------------
+class BJVIPBetView(discord.ui.View):
+    """VIP掛け金入力画面（非永久）"""
+    def __init__(self, uid: int):
+        super().__init__(timeout=180)
+        self.uid = int(uid)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.uid:
+            try:
+                await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+            except Exception:
+                pass
+            return False
+        return True
+
+    @discord.ui.button(label="💎 VIP掛け金を入力", style=discord.ButtonStyle.danger)
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.response.send_modal(BetModalVIP(uid=self.uid))
+        except Exception:
+            traceback.print_exc()
+
+    @discord.ui.button(label="戻る", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        u = store.get_user(interaction.user.id)
+        await bj_edit(
+            interaction,
+            content=(
+                f"🎴 ブラックジャック開始なのだ\n現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
+                "下のボタンから掛け金を入力するのだ"
+            ),
+            view=BJBetView(interaction.user.id),
+        )
+
+    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await bj_edit(interaction, content="終了したのだ", view=None)
+
+
+# =========================================================
+# 入口（あなたの元コード通り：persistent）
+# =========================================================
 class BjEntryView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -3196,7 +3408,7 @@ class BjEntryView(discord.ui.View):
     @discord.ui.button(
         label="🎴 スタート",
         style=discord.ButtonStyle.primary,
-        custom_id="bj_start_entry_btn",  # persistent
+        custom_id="bj_start_entry_btn",
     )
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
@@ -3204,19 +3416,12 @@ class BjEntryView(discord.ui.View):
                 return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
 
             u = store.get_user(interaction.user.id)
-
-            # まず案内メッセージ（ephemeral）
             await interaction.response.send_message(
                 f"🎴 ブラックジャック開始なのだ\n現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
                 "下のボタンから掛け金を入力するのだ",
                 view=BJBetView(interaction.user.id),
                 ephemeral=True,
             )
-
-        except discord.NotFound:
-            return
-        except discord.errors.InteractionResponded:
-            return
         except Exception:
             traceback.print_exc()
             try:
@@ -3225,9 +3430,9 @@ class BjEntryView(discord.ui.View):
                 pass
 
 
-# ---------------------------------------------------------
-# アクション（非永久）：毎回作り直す / timeoutあり / custom_id無し
-# ---------------------------------------------------------
+# =========================================================
+# アクションView（通常BJ：元のまま）
+# =========================================================
 class BJActionView(discord.ui.View):
     def __init__(self, uid: int):
         super().__init__(timeout=900)
@@ -3289,9 +3494,73 @@ def build_bj_action_view(uid: int, session: dict) -> discord.ui.View:
     return view
 
 
-# ---------------------------------------------------------
-# 終了（非永久）：restartで掛け金画面に戻す / quitでボタン消す
-# ---------------------------------------------------------
+# =========================================================
+# VIP アクションView（追加）
+# =========================================================
+class BJVIPActionView(discord.ui.View):
+    def __init__(self, uid: int):
+        super().__init__(timeout=900)
+        self.uid = int(uid)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.uid:
+            try:
+                await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+            except Exception:
+                pass
+            return False
+
+        if interaction.user.id not in bjvip_sessions:
+            try:
+                await interaction.response.send_message("VIPセッションがないのだ（終了したのだ）", ephemeral=True)
+            except Exception:
+                pass
+            return False
+
+        return True
+
+    @discord.ui.button(label="ヒット", style=discord.ButtonStyle.primary)
+    async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        u = store.get_user(interaction.user.id)
+        await bjvip_hit(interaction, u)
+
+    @discord.ui.button(label="スタンド", style=discord.ButtonStyle.secondary)
+    async def stand(self, interaction: discord.Interaction, button: discord.ui.Button):
+        u = store.get_user(interaction.user.id)
+        await bjvip_stand(interaction, u)
+
+    @discord.ui.button(label="ダブルダウン", style=discord.ButtonStyle.danger)
+    async def double(self, interaction: discord.Interaction, button: discord.ui.Button):
+        u = store.get_user(interaction.user.id)
+        await bjvip_double(interaction, u)
+
+    @discord.ui.button(label="スプリット", style=discord.ButtonStyle.success)
+    async def split(self, interaction: discord.Interaction, button: discord.ui.Button):
+        u = store.get_user(interaction.user.id)
+        await bjvip_split(interaction, u)
+
+
+def build_bjvip_action_view(uid: int, session: dict) -> discord.ui.View:
+    view = BJVIPActionView(uid)
+
+    active = session["active"]
+    hand = session["hands"][active]
+    can_split = (len(session["hands"]) == 1) and (len(hand) == 2) and (hand[0][0] == hand[1][0])
+    can_double = (len(session["hands"]) == 1) and (len(hand) == 2) and (not session["doubled"][active])
+
+    for item in view.children:
+        if isinstance(item, discord.ui.Button):
+            if item.label == "スプリット":
+                item.disabled = not can_split
+            elif item.label == "ダブルダウン":
+                item.disabled = not can_double
+
+    return view
+
+
+# =========================================================
+# 終了View（通常 / VIP）
+# =========================================================
 class BJEndView(discord.ui.View):
     def __init__(self, uid: int):
         super().__init__(timeout=180)
@@ -3308,7 +3577,6 @@ class BJEndView(discord.ui.View):
 
     @discord.ui.button(label="🎴 もう一回スタート", style=discord.ButtonStyle.primary)
     async def restart(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ 押したら同じメッセージを「掛け金入力画面」に切り替える（要件どおり）
         u = store.get_user(interaction.user.id)
         await bj_edit(
             interaction,
@@ -3321,13 +3589,44 @@ class BJEndView(discord.ui.View):
 
     @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ view=None でボタン自体を消す → もう一回スタートも無効化
         await bj_edit(interaction, content="終了したのだ", view=None)
 
 
-# ---------------------------------------------------------
-# 進行ロジック：すべて「同じメッセージを編集」して進める
-# ---------------------------------------------------------
+class BJVIPEndView(discord.ui.View):
+    def __init__(self, uid: int):
+        super().__init__(timeout=180)
+        self.uid = int(uid)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.uid:
+            try:
+                await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+            except Exception:
+                pass
+            return False
+        return True
+
+    @discord.ui.button(label="💎 VIPでもう一回", style=discord.ButtonStyle.danger)
+    async def restart_vip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        u = store.get_user(interaction.user.id)
+        await bj_edit(
+            interaction,
+            content=(
+                f"💎 **BJVIP もう一回なのだ**\n"
+                f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\n\n"
+                f"下のボタンから掛け金を入力するのだ（最低 {BJVIP_MIN_BET}）"
+            ),
+            view=BJVIPBetView(interaction.user.id),
+        )
+
+    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary)
+    async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await bj_edit(interaction, content="終了したのだ", view=None)
+
+
+# =========================================================
+# 進行ロジック：通常BJ（あなたの元のまま）
+# =========================================================
 async def bj_render(interaction: discord.Interaction, u: dict, show_dealer_all: bool = False):
     session = bj_sessions.get(interaction.user.id)
     if not session:
@@ -3453,7 +3752,7 @@ async def bj_split(interaction: discord.Interaction, u: dict):
     session["doubled"] = [False, False]
     session["active"] = 0
     session["was_split"] = True
-    session["is_natural_bj"] = [False, False]  # スプリット後のBJ扱いは無し
+    session["is_natural_bj"] = [False, False]
 
     session["hands"][0].append(draw_card(session["deck"]))
     session["hands"][1].append(draw_card(session["deck"]))
@@ -3485,7 +3784,6 @@ async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
     dealer = session["dealer"]
     threshold = dealer_hit_threshold_by_balance(int(u.get("coins", 0) or 0))
 
-    # ディーラーターン中はボタンを消して進行
     await bj_edit(
         interaction,
         content="ディーラーのターンなのだ\n\n" + bj_state_text(session, show_dealer_all=True),
@@ -3555,7 +3853,6 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
         payout_total += payout
         profit += (payout - bet)
 
-    # 統計/残高更新
     async with get_user_lock(interaction.user.id):
         u["coins"] = int(u.get("coins", 0) or 0) + payout_total
         u["bj_play_count"] = int(u.get("bj_play_count", 0) or 0) + 1
@@ -3585,16 +3882,372 @@ async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_
         + f"\n\n残高：{u['coins']} コインなのだ\n\n次はどうするのだ？"
     )
 
-    # 結果画面（同じメッセージで表示・ボタンは EndView に切り替え）
     await bj_edit(interaction, content=msg, view=BJEndView(interaction.user.id))
 
-    # 称号（エラーになってもゲームは続く）
     try:
         await maybe_award_hidden_titles(interaction, u, just_events=just_events)
     except Exception:
         traceback.print_exc()
 
     bj_sessions.pop(interaction.user.id, None)
+
+
+# =========================================================
+# VIP 進行ロジック（追加）
+# =========================================================
+async def bjvip_render(interaction: discord.Interaction, u: dict, show_dealer_all: bool = False):
+    session = bjvip_sessions.get(interaction.user.id)
+    if not session:
+        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+
+    touch_bjvip_session(interaction.user.id)
+    view = None if show_dealer_all else build_bjvip_action_view(interaction.user.id, session)
+
+    await bj_edit(
+        interaction,
+        content=bjvip_state_text(session, show_dealer_all=show_dealer_all),
+        view=view,
+    )
+
+
+async def bjvip_hit(interaction: discord.Interaction, u: dict):
+    session = bjvip_sessions.get(interaction.user.id)
+    if not session:
+        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+
+    touch_bjvip_session(interaction.user.id)
+
+    i = session["active"]
+    session["hands"][i].append(draw_card(session["deck"]))
+    v = hand_value(session["hands"][i])
+
+    if v > 21:
+        session["finished_hands"][i] = True
+        await bjvip_render(interaction, u)
+        await bjvip_next_or_finish(interaction, u)
+        return
+
+    await bjvip_render(interaction, u)
+
+
+async def bjvip_stand(interaction: discord.Interaction, u: dict):
+    session = bjvip_sessions.get(interaction.user.id)
+    if not session:
+        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+
+    touch_bjvip_session(interaction.user.id)
+
+    i = session["active"]
+    session["finished_hands"][i] = True
+    await bjvip_next_or_finish(interaction, u)
+
+
+async def bjvip_double(interaction: discord.Interaction, u: dict):
+    session = bjvip_sessions.get(interaction.user.id)
+    if not session:
+        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+
+    touch_bjvip_session(interaction.user.id)
+
+    if len(session["hands"]) != 1:
+        return await bj_edit(
+            interaction,
+            content="スプリット後はダブルダウンできないのだ",
+            view=build_bjvip_action_view(interaction.user.id, session),
+        )
+
+    i = session["active"]
+    hand = session["hands"][i]
+    if len(hand) != 2 or session["doubled"][i]:
+        return await bjvip_render(interaction, u)
+
+    async with get_user_lock(interaction.user.id):
+        add = session["bets"][i]
+        if int(u.get("coins", 0) or 0) < add:
+            return await bj_edit(
+                interaction,
+                content="コインが足りないのだ",
+                view=build_bjvip_action_view(interaction.user.id, session),
+            )
+
+        u["coins"] = int(u.get("coins", 0) or 0) - add
+        session["bets"][i] += add
+        session["doubled"][i] = True
+        await sheets_upsert_async(u)
+
+    session["hands"][i].append(draw_card(session["deck"]))
+    session["finished_hands"][i] = True
+
+    await bjvip_next_or_finish(interaction, u)
+
+
+async def bjvip_split(interaction: discord.Interaction, u: dict):
+    session = bjvip_sessions.get(interaction.user.id)
+    if not session:
+        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+
+    touch_bjvip_session(interaction.user.id)
+
+    if len(session["hands"]) != 1:
+        return await bj_edit(
+            interaction,
+            content="もうスプリット済みなのだ",
+            view=build_bjvip_action_view(interaction.user.id, session),
+        )
+
+    hand = session["hands"][0]
+    if len(hand) != 2 or hand[0][0] != hand[1][0]:
+        return await bjvip_render(interaction, u)
+
+    async with get_user_lock(interaction.user.id):
+        bet = session["bets"][0]
+        if int(u.get("coins", 0) or 0) < bet:
+            return await bj_edit(
+                interaction,
+                content="スプリット分のコインが足りないのだ",
+                view=build_bjvip_action_view(interaction.user.id, session),
+            )
+
+        u["coins"] = int(u.get("coins", 0) or 0) - bet
+        await sheets_upsert_async(u)
+
+    c1, c2 = hand[0], hand[1]
+    bet = session["bets"][0]
+
+    session["hands"] = [[c1], [c2]]
+    session["bets"] = [bet, bet]
+    session["finished_hands"] = [False, False]
+    session["doubled"] = [False, False]
+    session["active"] = 0
+    session["was_split"] = True
+    session["is_natural_bj"] = [False, False]
+
+    session["hands"][0].append(draw_card(session["deck"]))
+    session["hands"][1].append(draw_card(session["deck"]))
+
+    await bjvip_render(interaction, u)
+
+
+async def bjvip_next_or_finish(interaction: discord.Interaction, u: dict):
+    session = bjvip_sessions.get(interaction.user.id)
+    if not session:
+        return
+
+    for idx, fin in enumerate(session["finished_hands"]):
+        if not fin:
+            session["active"] = idx
+            await bjvip_render(interaction, u)
+            return
+
+    await bjvip_dealer_turn_and_finish(interaction, u)
+
+
+def _vip_pick_win21(session: dict) -> bool:
+    """
+    VIPルール：
+    - 21のときだけ 50%で勝ち
+    - それ以外は勝たせない
+    1ラウンド1回だけ決めて固定（splitでブレないように）
+    """
+    if session.get("vip_win21") is None:
+        session["vip_win21"] = (random.random() < 0.5)
+    return bool(session["vip_win21"])
+
+
+def _vip_build_dealer_hand(session: dict, target_mode: str):
+    """
+    target_mode:
+      - "WIN21": ディーラーは 17〜20 くらい（21未満）を目指す（ユーザー21勝ち演出）
+      - "LOSE": ディーラーはなるべく 21 か、または 18〜21で堅く勝つように見せる
+    見た目が固定にならないように、目標値を毎回揺らす
+    """
+    deck = session["deck"]
+
+    # 初期2枚は“それっぽい”ランダム
+    dealer = [draw_card(deck), draw_card(deck)]
+
+    def try_make(min_v: int, max_v: int, max_draw: int = 8):
+        nonlocal dealer
+        for _ in range(20):  # 作り直しリトライ
+            dealer = [draw_card(deck), draw_card(deck)]
+            for _d in range(max_draw):
+                v = hand_value(dealer)
+                if min_v <= v <= max_v:
+                    return dealer
+                if v > max_v:
+                    break
+                dealer.append(draw_card(deck))
+        return dealer
+
+    if target_mode == "WIN21":
+        # 17-20のどこかに寄せる（固定にしない）
+        goal = random.choice([17, 18, 19, 20])
+        try_make(goal, goal)
+    else:
+        # 21 or 19-21のどこかに寄せる（負け演出）
+        goal = random.choice([19, 20, 21, 21])
+        try_make(goal, goal)
+
+    session["dealer"] = dealer
+
+
+async def bjvip_dealer_turn_and_finish(interaction: discord.Interaction, u: dict):
+    """
+    VIPはディーラーの“勝敗ロジック”が特殊：
+      - プレイヤー手札が21未満 → 100%負け
+      - プレイヤー手札が21 → 50%で勝ち / 50%で負け
+    ※ 見た目のディーラー手札は「それっぽく」毎回変える
+    """
+    session = bjvip_sessions.get(interaction.user.id)
+    if not session:
+        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+
+    touch_bjvip_session(interaction.user.id)
+
+    # 21があるか
+    vals = [hand_value(h) for h in session["hands"]]
+    has_21 = any(v == 21 for v in vals)
+
+    win21 = False
+    if has_21:
+        win21 = _vip_pick_win21(session)
+
+    # ディーラー演出用手札を作る（勝ち/負けをそれっぽく）
+    if has_21 and win21:
+        _vip_build_dealer_hand(session, "WIN21")   # 21未満を見せる
+    else:
+        _vip_build_dealer_hand(session, "LOSE")    # 21寄せで負けを見せる
+
+    # ディーラーターン表示（ボタン消す）
+    await bj_edit(
+        interaction,
+        content="💎 ディーラーのターンなのだ\n\n" + bjvip_state_text(session, show_dealer_all=True),
+        view=None,
+    )
+    await asyncio.sleep(0.6)
+
+    await bjvip_finish(interaction, u)
+
+
+async def bjvip_finish(interaction: discord.Interaction, u: dict):
+    session = bjvip_sessions.get(interaction.user.id)
+    if not session:
+        return await bj_edit(interaction, content="VIPセッションがないのだ", view=None)
+
+    touch_bjvip_session(interaction.user.id)
+
+    # VIP勝敗：21だけ50%勝ち、それ以外は必ず負け
+    vals = [hand_value(h) for h in session["hands"]]
+    has_21 = any(v == 21 for v in vals)
+    win21 = _vip_pick_win21(session) if has_21 else False
+
+    payout_total = 0
+    profit = 0
+    results = []
+
+    for idx, hand in enumerate(session["hands"]):
+        bet = int(session["bets"][idx])
+        v = hand_value(hand)
+
+        payout = 0
+
+        if v > 21:
+            results.append(f"手札{idx+1}：負け（バースト）")
+            payout = 0
+        elif v < 21:
+            # ★VIPルール：21未満は100%負け
+            results.append(f"手札{idx+1}：負け（VIPルール）")
+            payout = 0
+        else:
+            # v == 21 のときだけ 50%勝ち
+            if win21:
+                # 21勝ち：通常BJの“勝ち”払いに合わせる（自然BJなら3:2）
+                if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
+                    payout = (bet * 5) // 2
+                    results.append(f"手札{idx+1}：勝ち（21 / BJ 3:2）")
+                else:
+                    payout = bet * 2
+                    results.append(f"手札{idx+1}：勝ち（21）")
+            else:
+                results.append(f"手札{idx+1}：負け（21でも負け / VIPルール）")
+                payout = 0
+
+        payout_total += payout
+        profit += (payout - bet)
+
+    async with get_user_lock(interaction.user.id):
+        u["coins"] = int(u.get("coins", 0) or 0) + payout_total
+        # VIPも統計を同じ項目に入れる（システム変更を避ける）
+        u["bj_play_count"] = int(u.get("bj_play_count", 0) or 0) + 1
+        u["bj_win_streak"] = int(u.get("bj_win_streak", 0) or 0)
+        u["total_earned"] = int(u.get("total_earned", 0) or 0)
+
+        just_events = set()
+        if profit > 0:
+            u["bj_win_streak"] += 1
+            u["total_earned"] += profit
+            just_events.add("BJ_WIN_EVENT")
+            if profit >= 1000:
+                just_events.add("BJ_BIGWIN_EVENT")
+        else:
+            u["bj_win_streak"] = 0
+            if profit <= -1000:
+                just_events.add("BJ_BIGLOSE_EVENT")
+
+        await sheets_upsert_async(u)
+
+    dealer_val = hand_value(session["dealer"])
+    msg = (
+        "💎 BJVIP 結果なのだ\n\n"
+        f"ディーラー：{fmt_cards(session['dealer'])}（{dealer_val}）\n"
+        + "\n".join(results)
+        + f"\n\n残高：{u['coins']} コインなのだ\n\n次はどうするのだ？"
+    )
+
+    # ★VIPはVIPのEndViewにする（もう一回→VIP掛け金）
+    await bj_edit(interaction, content=msg, view=BJVIPEndView(interaction.user.id))
+
+    try:
+        await maybe_award_hidden_titles(interaction, u, just_events=just_events)
+    except Exception:
+        traceback.print_exc()
+
+    bjvip_sessions.pop(interaction.user.id, None)
+
+
+# =========================================================
+# setup（入口メッセージだけ永久）※あなたの元コード通り
+# =========================================================
+@bot.tree.command(name="setup_bj", description="ブラックジャック入口メッセージを設置するのだ（最初の1回のみ）")
+async def setup_bj_cmd(interaction: discord.Interaction):
+    if not is_admin_user(interaction):
+        return await interaction.response.send_message("権限がないのだ", ephemeral=True)
+    if BJ_CHANNEL_ID and interaction.channel_id != BJ_CHANNEL_ID:
+        return await interaction.response.send_message(
+            "指定のブラックジャックチャンネルで実行するのだ",
+            ephemeral=True,
+        )
+
+    await interaction.response.defer(ephemeral=True)
+    if store.config.get("bj_entry_message_id"):
+        return await interaction.followup.send("ブラックジャック入口はもう設置済みなのだ", ephemeral=True)
+
+    content = (
+        "🎴 ブラックジャック（ずんだもんカジノ）\n\n"
+        "・スタートを押して掛け金を入力するのだ\n"
+        "・初期手札ブラックジャックは 3:2（1.5倍利益）なのだ\n"
+        "・スプリットは同じランク2枚のときだけなのだ\n"
+        "・ダブルダウンは1枚引いて終了なのだ（スプリット後は不可）\n"
+        "・掛け金画面に VIP 入場があるのだ（権限ロールが必要）\n"
+        "※ゲーム中の操作は個人表示（ephemeral）で進むのだ\n"
+    )
+
+    msg = await interaction.channel.send(content, view=BjEntryView())
+    ok = await sheets_save_config_once_async("bj_entry_message_id", str(msg.id))
+    if not ok:
+        return await interaction.followup.send("もう設置済みなのだ", ephemeral=True)
+
+    await interaction.followup.send("ブラックジャック入口を設置したのだ", ephemeral=True)
 
 
 # ---------------------------------------------------------
@@ -5327,6 +5980,9 @@ async def on_ready():
         check_join_tasks.start()
     if not cleanup_bj_sessions.is_running():
         cleanup_bj_sessions.start()
+    if not cleanup_bjvip_sessions.is_running():
+        cleanup_bjvip_sessions.start()
+
 
     print(f"Bot logged in as {bot.user}")
     
@@ -5369,6 +6025,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
