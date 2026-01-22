@@ -3937,48 +3937,49 @@ def vip_dealer_target_by_player_best(player_best: int) -> str:
     """
     r = random.random()
 
-    # ここが体感調整ポイントなのだ（好きに変えてOK）
+    # 21：勝利50% / 引き分け50%（負けは無し）
     if player_best >= 21:
-        # 21は勝ちやすい
-        if r < 0.55:
+        if r < 0.50:
             return "WIN"
-        if r < 0.75:
-            return "PUSH"
-        return "LOSE"
+        return "PUSH"
 
+    # 20：負け30% / 引き分け30% / 勝利40%
     if player_best == 20:
-        if r < 0.35:
+        if r < 0.40:
             return "WIN"
-        if r < 0.60:
+        if r < 0.70:
             return "PUSH"
         return "LOSE"
 
+    # 19：負け50% / 引き分け25% / 勝利25%
     if player_best == 19:
-        if r < 0.30:
+        if r < 0.25:
             return "WIN"
-        if r < 0.45:
+        if r < 0.50:
             return "PUSH"
         return "LOSE"
 
+    # 18：負け70% / 引き分け20% / 勝利10%
     if player_best == 18:
-        if r < 0.25:
+        if r < 0.10:
             return "WIN"
-        if r < 0.35:
+        if r < 0.30:
             return "PUSH"
         return "LOSE"
 
+    # 17：負け80% / 引き分け10% / 勝利10%
     if player_best == 17:
-        if r < 0.18:
+        if r < 0.10:
             return "WIN"
-        if r < 0.25:
+        if r < 0.20:
             return "PUSH"
         return "LOSE"
 
-    # 16以下は基本負け（でも少し勝てる）
-    if r < 0.10:
+    # 16以下：勝利は「ディーラーがバースト(0.1%)」のみ、それ以外は負け
+    # ※ "WIN" を引いた時は、後段のディーラー生成でバーストを狙わせる必要がある
+    if r < 0.001:  # 0.1% = 0.001
         return "WIN"
     return "LOSE"
-
 
 def _dealer_play_to_target_from_current(dealer: list[tuple[str, str]], deck: list[tuple[str, str]],
                                        target: str, player_best: int) -> None:
@@ -4014,12 +4015,17 @@ def _dealer_play_to_target_from_current(dealer: list[tuple[str, str]], deck: lis
         if dv >= 17 and dv < player_best:
             return
 
+    # target == "LOSE" の処理の最後あたり（フォールバック前）に追加
     if target == "LOSE":
-        # ディーラー 17〜21 で player_best より上、または player_best==21なら21
-        if dv >= 17 and dv <= 21 and dv > player_best:
-            return
-        if player_best >= 21 and dv == 21:
-            return
+        # バーストしてたら作り直して 17〜21 に寄せる（見た目の整合性優先）
+        if hand_value(dealer) > 21:
+            # 作り直し（何回か試す）
+            for _ in range(10):
+                dealer[:] = [draw_card(deck), draw_card(deck)]
+                while hand_value(dealer) < 17:
+                    dealer.append(draw_card(deck))
+                if hand_value(dealer) <= 21:
+                    break
 
     # 追加で引いて狙う
     for _ in range(max_steps):
@@ -6493,6 +6499,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
