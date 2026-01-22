@@ -2943,7 +2943,6 @@ SUITS = ["♠", "♥", "♦", "♣"]
 RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 
 # ===== VIP 設定 =====
-BJVIP_ROLE_ID = 1462688366431567872
 BJVIP_MIN_BET = 10000
 BJVIP_SESSION_TIMEOUT_SEC = 20 * 60
 
@@ -3332,12 +3331,7 @@ class BJBetView(discord.ui.View):
     @discord.ui.button(label="💎 VIPで入場", style=discord.ButtonStyle.danger)
     async def vip_enter(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            # VIPロールチェック
-            role_ids = {r.id for r in getattr(interaction.user, "roles", [])}
-            if BJVIP_ROLE_ID not in role_ids:
-                return await interaction.response.send_message("VIP入場権限がないのだ", ephemeral=True)
-
-            u = store.get_user(interaction.user.id)
+             u = store.get_user(interaction.user.id)
             await bj_edit(
                 interaction,
                 content=(
@@ -5989,6 +5983,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
