@@ -4214,42 +4214,6 @@ async def bjvip_finish(interaction: discord.Interaction, u: dict):
 
     bjvip_sessions.pop(interaction.user.id, None)
 
-
-# =========================================================
-# setup（入口メッセージだけ永久）※あなたの元コード通り
-# =========================================================
-@bot.tree.command(name="setup_bj", description="ブラックジャック入口メッセージを設置するのだ（最初の1回のみ）")
-async def setup_bj_cmd(interaction: discord.Interaction):
-    if not is_admin_user(interaction):
-        return await interaction.response.send_message("権限がないのだ", ephemeral=True)
-    if BJ_CHANNEL_ID and interaction.channel_id != BJ_CHANNEL_ID:
-        return await interaction.response.send_message(
-            "指定のブラックジャックチャンネルで実行するのだ",
-            ephemeral=True,
-        )
-
-    await interaction.response.defer(ephemeral=True)
-    if store.config.get("bj_entry_message_id"):
-        return await interaction.followup.send("ブラックジャック入口はもう設置済みなのだ", ephemeral=True)
-
-    content = (
-        "🎴 ブラックジャック（ずんだもんカジノ）\n\n"
-        "・スタートを押して掛け金を入力するのだ\n"
-        "・初期手札ブラックジャックは 3:2（1.5倍利益）なのだ\n"
-        "・スプリットは同じランク2枚のときだけなのだ\n"
-        "・ダブルダウンは1枚引いて終了なのだ（スプリット後は不可）\n"
-        "・掛け金画面に VIP 入場があるのだ（権限ロールが必要）\n"
-        "※ゲーム中の操作は個人表示（ephemeral）で進むのだ\n"
-    )
-
-    msg = await interaction.channel.send(content, view=BjEntryView())
-    ok = await sheets_save_config_once_async("bj_entry_message_id", str(msg.id))
-    if not ok:
-        return await interaction.followup.send("もう設置済みなのだ", ephemeral=True)
-
-    await interaction.followup.send("ブラックジャック入口を設置したのだ", ephemeral=True)
-
-
 # ---------------------------------------------------------
 # setup（入口メッセージだけ永久）
 # ---------------------------------------------------------
@@ -6025,6 +5989,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
