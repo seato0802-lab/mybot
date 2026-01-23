@@ -2980,6 +2980,65 @@ def hand_value(cards: list[tuple[str, str]]) -> int:
 def fmt_cards(cards: list[tuple[str, str]]) -> str:
     return " ".join([f"{s}{r}" for r, s in cards])
 
+# =========================================================
+# VIP用：ディーラーが狙った点数を作るためのヘルパ
+# =========================================================
+
+def _card_points(card: tuple[str, str]) -> int:
+    r, _s = card
+    if r in ("J", "Q", "K"):
+        return 10
+    if r == "A":
+        return 1  # ここでは1扱い（hand_valueが11化する）
+    return int(r)
+
+
+def pop_card_with_points(deck: list[tuple[str, str]], pts: int) -> tuple[str, str] | None:
+    """
+    pts 点になるカードをデッキから探して1枚取り出す（VIP用チート）
+    なければ None
+    """
+    for i, c in enumerate(deck):
+        if _card_points(c) == pts:
+            return deck.pop(i)
+    return None
+
+
+def dealer_draw_to_target(session: dict, target_total: int):
+    """
+    ディーラーが target_total（17～21）になるようにカードを引く
+    ・通常は17で止まる
+    ・VIPでは target_total まで例外的に引く
+    """
+    dealer = session["dealer"]
+    deck = session["deck"]
+
+    target_total = max(17, min(int(target_total), 21))
+
+    for _ in range(12):  # 無限ループ防止
+        dv = hand_value(dealer)
+        if dv >= target_total or dv > 21:
+            break
+
+        need = target_total - dv
+
+        # ① 一発でピッタリを狙う
+        pick = pop_card_with_points(deck, need)
+        if pick:
+            dealer.append(pick)
+            continue
+
+        # ② 21狙いのときは「16まで寄せる」も試す
+        if target_total == 21 and dv <= 12:
+            to16 = 16 - dv
+            if 1 <= to16 <= 10:
+                pick2 = pop_card_with_points(deck, to16)
+                if pick2:
+                    dealer.append(pick2)
+                    continue
+
+        # ③ それでも無理なら普通に引く
+        dealer.append(draw_card(deck))
 
 # =========================================================
 # セッション管理（通常BJ / VIP）
@@ -3868,14 +3927,6 @@ async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
     touch_bj_session(interaction.user.id)
 
     dealer = session["dealer"]
-    threshold = dealer_hit_threshold_by_balance(int(u.get("coins", 0) or 0))
-
-    # ✅ ここが重要：21を超える閾値は無限ループの原因になる
-    try:
-        threshold = int(threshold)
-    except Exception:
-        threshold = 17
-    threshold = max(17, min(threshold, 21))
 
     await bj_edit(
         interaction,
@@ -3883,14 +3934,8 @@ async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
         view=None,
     )
 
-    # ✅ バーストしたら止める / 21閾値で止める
-    while True:
-        dv = hand_value(dealer)
-        if dv > 21:
-            break
-        if dv >= threshold:
-            break
-
+    # ✅ 17以上で必ず止まる（ソフト17も止めるならこのままでOK）
+    while hand_value(dealer) < 17:
         await asyncio.sleep(0.6)
         dealer.append(draw_card(session["deck"]))
         await bj_edit(
@@ -4685,19 +4730,33 @@ async def bjvip_dealer_turn_and_finish(interaction: discord.Interaction, u: dict
 
     touch_bjvip_session(interaction.user.id)
 
-    # バーストしてない手札の最大値を player_best にする（全バーストなら 0）
+    # プレイヤーの最高値（バースト除外）
     vals = [hand_value(h) for h in session["hands"]]
     safe_vals = [v for v in vals if v <= 21]
     player_best = max(safe_vals) if safe_vals else 0
 
-    # 確率で狙う結果を決める
+    # 勝敗ターゲットを決定（あなたが設定した確率関数）
     target = vip_dealer_target_by_player_best(player_best)
 
-    # ディーラー手札を “表示と矛盾しない範囲で” 狙って引く
-    dealer = session["dealer"]
-    _dealer_play_to_target_from_current(dealer, session["deck"], target, player_best)
+    # 狙うディーラー最終値を決める
+    if target == "PUSH":
+        target_total = max(17, min(player_best, 21))
 
-    # ディーラーターン表示（ボタン消す）
+    elif target == "LOSE":
+        # プレイヤーに勝つ → 21優先
+        if player_best >= 20:
+            target_total = 21
+        else:
+            target_total = min(21, max(17, player_best + 1))
+
+    else:  # "WIN"
+        hi = min(20, player_best - 1)
+        target_total = 17 if hi < 17 else random.randint(17, hi)
+
+    # ✅ ここで「狙って引く」
+    dealer_draw_to_target(session, target_total)
+
+    # 表示
     await bj_edit(
         interaction,
         content="💎 ディーラーのターンなのだ\n\n" + bjvip_state_text(session, show_dealer_all=True),
@@ -6575,6 +6634,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
