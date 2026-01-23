@@ -3112,20 +3112,32 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
 
     def __init__(self, uid: int):
         super().__init__()
-        self.uid = uid
+        self.uid = int(uid)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # ✅ まず3秒制限を回避する
+        # ✅ まず 3秒以内に「元メッセージ」を編集してACKする（deferしない）
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.edit_message(content="掛け金を処理中なのだ…", view=None)
         except Exception:
-            pass
+            # ここで失敗するなら、そもそも編集対象メッセージが無い/古いボタン等
+            traceback.print_exc()
+            return
+
         try:
             if interaction.user.id != self.uid:
-                return await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+                # もう response は使えないので edit_original_response で戻す
+                await interaction.edit_original_response(
+                    content="これはあなたの操作ではないのだ",
+                    view=BJBetView(interaction.user.id),
+                )
+                return
 
             if not is_in_channel(interaction, BJ_CHANNEL_ID):
-                return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+                await interaction.edit_original_response(
+                    content="このチャンネルでは使えないのだ",
+                    view=BJBetView(interaction.user.id),
+                )
+                return
 
             async with get_user_lock(interaction.user.id):
                 u = store.get_user(interaction.user.id)
@@ -3133,29 +3145,33 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
                 try:
                     bet_val = int(str(self.bet.value).strip())
                 except Exception:
-                    return await interaction.response.edit_message(
+                    await interaction.edit_original_response(
                         content=f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\n数字を入力するのだ",
                         view=BJBetView(interaction.user.id),
                     )
+                    return
 
                 if bet_val <= 0:
-                    return await interaction.response.edit_message(
+                    await interaction.edit_original_response(
                         content=f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\n1以上で入力するのだ",
                         view=BJBetView(interaction.user.id),
                     )
+                    return
 
                 if bet_val > int(u.get("coins", 0) or 0):
-                    return await interaction.response.edit_message(
+                    await interaction.edit_original_response(
                         content=f"現在の残高：{int(u.get('coins', 0) or 0)} コイン\nコインが足りないのだ",
                         view=BJBetView(interaction.user.id),
                     )
+                    return
 
                 MAX_BJ_BET = 1000
                 if bet_val > MAX_BJ_BET:
-                    return await interaction.response.edit_message(
+                    await interaction.edit_original_response(
                         content=f"掛け金は最大 {MAX_BJ_BET} までなのだ\n現在の残高：{int(u.get('coins', 0) or 0)} コイン",
                         view=BJBetView(interaction.user.id),
                     )
+                    return
 
                 # 既にセッションがある場合は消す（念のため）
                 bj_sessions.pop(interaction.user.id, None)
@@ -3185,33 +3201,33 @@ class BetModal(discord.ui.Modal, title="掛け金を入力するのだ"):
 
                 bj_sessions[interaction.user.id] = session
 
-            # ✅ 同じメッセージをゲーム画面へ編集
-            await interaction.response.edit_message(
+            # ✅ 同じメッセージをゲーム画面へ編集（方針そのまま）
+            await interaction.edit_original_response(
                 content=bj_state_text(session),
                 view=build_bj_action_view(interaction.user.id, session),
             )
 
-            # 特殊ケースは同じメッセージを編集しながら進行
+            # 特殊ケース
+            u2 = store.get_user(interaction.user.id)  # 最新を取り直す
             if hand_value(session["dealer"]) == 21:
-                await bj_finish(interaction, u, immediate_dealer_bj=True)
+                await bj_finish(interaction, u2, immediate_dealer_bj=True)
                 return
 
             if session["is_natural_bj"][0]:
                 session["finished_hands"][0] = True
-                await bj_dealer_turn(interaction, u)
+                await bj_dealer_turn(interaction, u2)
                 return
 
         except Exception as e:
             print("BetModal on_submit error:", e)
             traceback.print_exc()
             try:
-                await interaction.response.edit_message(
+                await interaction.edit_original_response(
                     content="掛け金処理でエラーが出たのだ…（ログを確認してほしいのだ）",
                     view=BJBetView(interaction.user.id),
                 )
             except Exception:
                 pass
-
 
 class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"):
     bet = discord.ui.TextInput(label="掛け金（最低10000）", placeholder="例：10000", required=True)
@@ -3221,12 +3237,27 @@ class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"
         self.uid = int(uid)
 
     async def on_submit(self, interaction: discord.Interaction):
+        # ✅ まず3秒制限回避：このモーダルを開いた元メッセージを即編集してACK
+        try:
+            await interaction.response.edit_message(content="VIP掛け金を処理中なのだ…", view=None)
+        except Exception:
+            traceback.print_exc()
+            return
+
         try:
             if interaction.user.id != self.uid:
-                return await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+                await interaction.edit_original_response(
+                    content="これはあなたの操作ではないのだ",
+                    view=BJVIPBetView(interaction.user.id),
+                )
+                return
 
             if not is_in_channel(interaction, BJ_CHANNEL_ID):
-                return await interaction.response.send_message("このチャンネルでは使えないのだ", ephemeral=True)
+                await interaction.edit_original_response(
+                    content="このチャンネルでは使えないのだ",
+                    view=BJVIPBetView(interaction.user.id),
+                )
+                return
 
             async with get_user_lock(interaction.user.id):
                 u = store.get_user(interaction.user.id)
@@ -3234,22 +3265,25 @@ class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"
                 try:
                     bet_val = int(str(self.bet.value).strip())
                 except Exception:
-                    return await interaction.response.edit_message(
+                    await interaction.edit_original_response(
                         content="数字で入力するのだ",
                         view=BJVIPBetView(interaction.user.id),
                     )
+                    return
 
                 if bet_val < BJVIP_MIN_BET:
-                    return await interaction.response.edit_message(
+                    await interaction.edit_original_response(
                         content=f"VIPは最低 {BJVIP_MIN_BET} からなのだ\n現在の残高：{int(u.get('coins',0) or 0)}",
                         view=BJVIPBetView(interaction.user.id),
                     )
+                    return
 
                 if bet_val > int(u.get("coins", 0) or 0):
-                    return await interaction.response.edit_message(
+                    await interaction.edit_original_response(
                         content=f"コインが足りないのだ（残高：{int(u.get('coins',0) or 0)}）",
                         view=BJVIPBetView(interaction.user.id),
                     )
+                    return
 
                 # 混在防止：通常BJは消す
                 bj_sessions.pop(interaction.user.id, None)
@@ -3264,7 +3298,7 @@ class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"
                 u["coins"] = int(u.get("coins", 0) or 0) - bet_val
                 await sheets_upsert_async(u)
 
-                # VIP セッション開始（基本構造は通常BJと同じ）
+                # VIP セッション開始
                 session = {
                     "deck": new_deck(),
                     "dealer": [],
@@ -3277,29 +3311,22 @@ class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"
                     "is_natural_bj": [False],
                     "last_action_ts": time.time(),
                     "vip": True,
-                    # VIP：21勝敗のランダム（1ラウンド1回）
                     "vip_win21": None,
                 }
 
                 deal_initial_vip(session, interaction.user.id)
-
                 bjvip_sessions[interaction.user.id] = session
 
-            # ✅ 同じメッセージをVIPゲーム画面へ編集
-            await bj_edit(
-                interaction,
+            # ✅ 同じメッセージをVIPゲーム画面へ編集（方式そのまま）
+            await interaction.edit_original_response(
                 content=bjvip_state_text(session),
                 view=build_bjvip_action_view(interaction.user.id, session),
             )
 
-
-            # VIPは「ディーラー即21」みたいな処理はここではしない（VIPルールでfinish側が処理）
-            # ただし自然BJ(21)でも操作できるよう通常通り進む
-
         except Exception:
             traceback.print_exc()
             try:
-                await interaction.response.edit_message(
+                await interaction.edit_original_response(
                     content="VIP掛け金処理でエラーが出たのだ…",
                     view=BJVIPBetView(interaction.user.id),
                 )
@@ -6540,6 +6567,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
