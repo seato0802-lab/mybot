@@ -3301,6 +3301,29 @@ class BetModalVIP(discord.ui.Modal, title="BJVIP 掛け金を入力するのだ"
             except Exception:
                 pass
 
+async def safe_modal_feedback(interaction: discord.Interaction, *, content: str, view: discord.ui.View):
+    """
+    Modal submit で edit_message ができない場合があるので、
+    できなければ ephemeral 返信にフォールバックするのだ
+    """
+    try:
+        # message があるなら編集（理想）
+        if interaction.message:
+            await interaction.response.edit_message(content=content, view=view)
+        else:
+            await interaction.response.send_message(content, view=view, ephemeral=True)
+    except discord.InteractionResponded:
+        # 既に response 済みなら original を編集（できる場合）
+        try:
+            await interaction.edit_original_response(content=content, view=view)
+        except Exception:
+            pass
+    except Exception:
+        traceback.print_exc()
+        try:
+            await interaction.response.send_message(content, view=view, ephemeral=True)
+        except Exception:
+            pass
 
 # =========================================================
 # 掛け金画面 View（通常 / VIP）
@@ -6529,6 +6552,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
