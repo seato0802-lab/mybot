@@ -3809,28 +3809,58 @@ async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
     if not session:
         return await bj_edit(interaction, content="セッションがないのだ", view=None)
 
-    touch_bj_session(interaction.user.id)
+    try:
+        touch_bj_session(interaction.user.id)
 
-    dealer = session["dealer"]
-    threshold = dealer_hit_threshold_by_balance(int(u.get("coins", 0) or 0))
+        dealer = session["dealer"]
 
-    await bj_edit(
-        interaction,
-        content="ディーラーのターンなのだ\n\n" + bj_state_text(session, show_dealer_all=True),
-        view=None,
-    )
+        # ✅ 閾値が変な値でも止まるようにクランプ
+        raw = dealer_hit_threshold_by_balance(int(u.get("coins", 0) or 0))
+        threshold = max(17, min(21, int(raw)))
 
-    while hand_value(dealer) < threshold:
-        await asyncio.sleep(0.6)
-        dealer.append(draw_card(session["deck"]))
         await bj_edit(
             interaction,
-            content="ディーラーがヒットしたのだ\n\n" + bj_state_text(session, show_dealer_all=True),
+            content="ディーラーのターンなのだ\n\n" + bj_state_text(session, show_dealer_all=True),
             view=None,
         )
 
-    await bj_finish(interaction, u, immediate_dealer_bj=False)
+        # ✅ 無限ループ防止（最大10回まで）
+        for _ in range(10):
+            touch_bj_session(interaction.user.id)
 
+            if hand_value(dealer) >= threshold:
+                break
+
+            await asyncio.sleep(0.6)
+            dealer.append(draw_card(session["deck"]))
+
+            await bj_edit(
+                interaction,
+                content="ディーラーがヒットしたのだ\n\n" + bj_state_text(session, show_dealer_all=True),
+                view=None,
+            )
+
+            # 21超えたら即終了
+            if hand_value(dealer) > 21:
+                break
+
+        await bj_finish(interaction, u, immediate_dealer_bj=False)
+
+    except Exception:
+        traceback.print_exc()
+
+        # ✅ 落ちても止まらない：返金して終了
+        try:
+            refund = int(sum(session.get("bets", []) or [0]))
+            async with get_user_lock(interaction.user.id):
+                uu = store.get_user(interaction.user.id)
+                uu["coins"] = int(uu.get("coins", 0) or 0) + refund
+                await sheets_upsert_async(uu)
+        except Exception:
+            traceback.print_exc()
+
+        bj_sessions.pop(interaction.user.id, None)
+        await bj_edit(interaction, content="ディーラー処理でエラーが出たのだ…返金したのだ", view=BJEndView(interaction.user.id))
 
 async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_bj: bool):
     session = bj_sessions.get(interaction.user.id)
@@ -6499,6 +6529,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
