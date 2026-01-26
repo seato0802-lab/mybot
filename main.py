@@ -1268,17 +1268,6 @@ async def maybe_award_hidden_titles(
     if not isinstance(member, discord.Member):
         return
 
-async def maybe_award_hidden_titles(
-    interaction: discord.Interaction,
-    u: dict,
-    just_events: set[str],
-):
-    member = interaction.user
-
-    # guild外（DM等）は称号処理しない
-    if not isinstance(member, discord.Member):
-        return
-
     async def award_once(key: str, role_id: int | None, message: str):
         if role_id is None:
             return
@@ -6634,6 +6623,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
