@@ -7153,8 +7153,33 @@ def build_gacha_embed(user: discord.User, weapons: list[dict], world: int, floor
         )
     e.add_field(name="候補", value="\n\n".join(lines)[:1024], inline=False)
     e.set_footer(text="下のリストから装備する武器を選ぶのだ（変更しない も選べるのだ）")
-    return e
+    return 
 
+class GachaCountView(discord.ui.View):
+    def __init__(self, uid: int):
+        super().__init__(timeout=30)
+        self.uid = uid
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # 押せるのは本人だけ
+        return interaction.user.id == self.uid
+
+    @discord.ui.button(label="🎲 1回", style=discord.ButtonStyle.primary)
+    async def one(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await safe_defer(interaction, ephemeral=False)
+        await do_gacha(interaction, 1)
+
+    @discord.ui.button(label="🎲 11連", style=discord.ButtonStyle.success)
+    async def eleven(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await safe_defer(interaction, ephemeral=False)
+        await do_gacha(interaction, 11)
+
+    @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(
+            content="ガチャをキャンセルしたのだ。",
+            view=None
+        )
 
 class GachaConfirmView(discord.ui.View):
     def __init__(self, *, uid: int, chosen_weapon: dict | None, on_confirm):
@@ -7273,33 +7298,17 @@ class DungeonEntryView(discord.ui.View):
 
     @discord.ui.button(label="🏰 ダンジョンに入る", style=discord.ButtonStyle.primary, custom_id="dungeon:enter")
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
-            await safe_send(interaction, "このチャンネルでは使えないのだ。", ephemeral=True)
-            return
+        await safe_defer(interaction, ephemeral=False)
         await start_battle(interaction)
 
-    @discord.ui.button(label="➡️ 次に進む", style=discord.ButtonStyle.success, custom_id="dungeon:next")
-    async def next_floor(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
-            await safe_send(interaction, "このチャンネルでは使えないのだ。", ephemeral=True)
-            return
-        # 「次に進む」= いまの状態を読み込んで次の戦闘を開始（戦闘終了時に保存）
-        await start_battle(interaction)
-
-    @discord.ui.button(label="🎲 ガチャ（1連）", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha1")
-    async def gacha1(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
-            await safe_send(interaction, "このチャンネルでは使えないのだ。", ephemeral=True)
-            return
-        await do_gacha(interaction, 1)
-
-    @discord.ui.button(label="🎲 ガチャ（11連）", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha11")
-    async def gacha11(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
-            await safe_send(interaction, "このチャンネルでは使えないのだ。", ephemeral=True)
-            return
-        await do_gacha(interaction, 11)
-
+    @discord.ui.button(label="🎲 ガチャ", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha")
+    async def gacha(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # ここでは defer しない（すぐ返す）
+        await interaction.response.send_message(
+            "何連ガチャを引くのだ？",
+            view=GachaCountView(interaction.user.id),
+            ephemeral=False
+        )
 
 @bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
 async def setup_dungeon_cmd(interaction: discord.Interaction):
@@ -7427,6 +7436,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
