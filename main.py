@@ -534,58 +534,59 @@ def boss_flags(floor: int) -> tuple[bool, bool]:
 
 
 def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
-    cap = WORLD_CAP.get(int(world), 50)
+    w = int(world)
     f = max(1, min(100, int(floor)))
     seg = (f - 1) // 20
+    cap = WORLD_CAP.get(w, 50)
 
+    is_boss, is_midboss = boss_flags(f)
+
+    # ✅ W1の1-20は“チュートリアル帯”として確実に弱くする
+    if w == 1 and seg == 0 and not is_boss and not is_midboss:
+        atk = random.randint(6, 10)
+        df  = random.randint(0, 5)
+        spd = random.randint(6, 10)
+        max_hp = random.randint(35, 60)
+        return {
+            "name": f"敵（W{w}-F{f}）",
+            "hp": max_hp,
+            "max_hp": max_hp,
+            "atk": atk,
+            "def": df,
+            "spd": spd,
+            "is_boss": False,
+            "is_midboss": False,
+            "debuff_zone": bool(debuff_zone),
+        }
+
+    # ── ここから先は通常生成 ──
     t_center = T_CENTER_BY_SEG[seg]
     t = _clamp(random.uniform(t_center - 0.06, t_center + 0.06), 0.40, 0.98)
 
-    # ✅ 進行度に応じたレンジ（DEFを抑えるのが重要）
-    # ATK: 標準
     atk = _rand_int(cap * (t - 0.10), cap * (t + 0.06))
-
-    # DEF: ATKより低め（これで与ダメ1固定をほぼ回避）
     df  = _rand_int(cap * (t - 0.18), cap * (t + 0.02))
-
-    # SPD: 標準
     spd = _rand_int(cap * (t - 0.10), cap * (t + 0.06))
 
-    # 最低保証（W1序盤で理不尽にならない）
     atk = max(1, atk)
     df  = max(0, df)
     spd = max(1, spd)
 
-    # HP（cap比例、segで少し伸ばす） ※そのまま
     max_hp = int(cap * random.uniform(2.0, 2.8) * (0.92 + 0.03 * seg))
 
-    is_boss, is_midboss = boss_flags(f)
     if is_midboss:
         max_hp = int(max_hp * 1.35)
         atk = int(atk * 1.08)
-        df  = int(df  * 1.06)  # ✅ DEF倍率も少し控えめ
+        df  = int(df  * 1.06)
         spd = int(spd * 1.08)
     elif is_boss:
         max_hp = int(max_hp * 1.65)
         atk = int(atk * 1.12)
-        df  = int(df  * 1.08)  # ✅ DEF倍率控えめ
+        df  = int(df  * 1.08)
         spd = int(spd * 1.12)
-
-    # ✅ 序盤救済（W1の1-20）
-    if int(world) == 1 and seg == 0:
-        atk = int(atk * 0.70)
-        df  = int(df  * 0.75)
-        spd = int(spd * 0.85)
-        max_hp = int(max_hp * 0.80)
-
-        atk = max(1, atk)
-        df  = max(0, df)
-        spd = max(1, spd)
-        max_hp = max(10, max_hp)
 
     name = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
     return {
-        "name": f"{name}（W{int(world)}-F{f}）",
+        "name": f"{name}（W{w}-F{f}）",
         "hp": max_hp,
         "max_hp": max_hp,
         "atk": atk,
@@ -595,6 +596,13 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
         "is_midboss": is_midboss,
         "debuff_zone": bool(debuff_zone),
     }
+
+def _combat_damage(attacker_atk: int, defender_def: int) -> int:
+    atk = max(1, int(attacker_atk))
+    df = max(0, int(defender_def))
+    base = atk - df
+    floor_dmg = max(1, int(atk * 0.10))
+    return max(floor_dmg, base)
 
 def calc_player_max_hp(effect_type: str, effect_value: int) -> int:
     # ✅ 基礎HPは100固定
@@ -7291,10 +7299,9 @@ class DungeonEntryView(discord.ui.View):
 
     @discord.ui.button(label="🏰 ダンジョンに入る", style=discord.ButtonStyle.primary, custom_id="dungeon:enter")
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ まずdefer
-        await interaction.response.defer(ephemeral=True)
-        # ✅ 進行（ここでは送信しない）
-        await start_battle_auto(interaction)
+        # ✅ 個人メッセージを作って、以後それを編集していく
+        await interaction.response.send_message("準備中なのだ…", ephemeral=True)
+        await start_battle_auto(interaction)  # ← この中で edit_original_response する
 
     @discord.ui.button(label="🗡 武器確認", style=discord.ButtonStyle.secondary, custom_id="dungeon:weapon")
     async def weapon_check(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -7443,6 +7450,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
