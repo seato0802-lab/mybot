@@ -3936,101 +3936,121 @@ async def bj_dealer_turn(interaction: discord.Interaction, u: dict):
     await bj_finish(interaction, u, immediate_dealer_bj=False)
 
 async def bj_finish(interaction: discord.Interaction, u: dict, immediate_dealer_bj: bool):
-    session = bj_sessions.get(interaction.user.id)
-    if not session:
-        return await bj_edit(interaction, content="セッションがないのだ", view=None)
+    uid = interaction.user.id
 
-    touch_bj_session(interaction.user.id)
+    # セッション取得はロック内推奨（レース防止）
+    async with get_user_lock(uid):
+        session = bj_sessions.get(uid)
+        if not session:
+            return await bj_edit(interaction, content="セッションがないのだ", view=None)
 
-    dealer_val = hand_value(session["dealer"])
-    dealer_bust = dealer_val > 21
+        touch_bj_session(uid)
 
-    payout_total = 0
-    profit = 0
-    results = []
+        dealer_val = hand_value(session["dealer"])
+        dealer_bust = dealer_val > 21
 
-    for idx, hand in enumerate(session["hands"]):
-        bet = int(session["bets"][idx])
-        v = hand_value(hand)
+        payout_total = 0
+        profit = 0
+        results: list[str] = []
 
-        payout = 0
+        for idx, hand in enumerate(session["hands"]):
+            bet = int(session["bets"][idx])
+            v = hand_value(hand)
 
-        if v > 21:
-            results.append(f"手札{idx+1}：負け（バースト）")
             payout = 0
-        elif immediate_dealer_bj:
-    # ディーラーはブラックジャック（2枚21）
-    # プレイヤーもブラックジャックなら引き分け
-            if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
-                payout = bet
-                results.append(f"手札{idx+1}：引き分け（両者BJ）")
-            else:
-                payout = 0
-                results.append(f"手札{idx+1}：負け（ディーラーBJ）")
 
-        elif dealer_bust:
-            if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
-                payout = (bet * 5) // 2
-                results.append(f"手札{idx+1}：勝ち（BJ 3:2）")
-            else:
-                payout = bet * 2
-                results.append(f"手札{idx+1}：勝ち（ディーラーバースト）")
-        else:
-            if v > dealer_val:
-                if idx < len(session.get("is_natural_bj", [])) and session["is_natural_bj"][idx]:
-                    payout = (bet * 5) // 2
-                    results.append(f"手札{idx+1}：勝ち（BJ 3:2）")
+            # プレイヤーバースト
+            if v > 21:
+                results.append(f"手札{idx+1}：負け（バースト）")
+                payout = 0
+
+            # ディーラー即BJ（初手2枚21）
+            elif immediate_dealer_bj:
+                player_natural = (
+                    idx < len(session.get("is_natural_bj", []))
+                    and bool(session["is_natural_bj"][idx])
+                )
+                if player_natural:
+                    results.append(f"手札{idx+1}：引き分け（両者BJ）")
+                    payout = bet  # 返金
                 else:
-                    payout = bet * 2
-                    results.append(f"手札{idx+1}：勝ち")
-            elif v < dealer_val:
-                payout = 0
-                results.append(f"手札{idx+1}：負け")
+                    results.append(f"手札{idx+1}：負け（ディーラーBJ）")
+                    payout = 0
+
+            # 通常判定
             else:
-                payout = bet
-                results.append(f"手札{idx+1}：引き分け")
+                player_natural = (
+                    idx < len(session.get("is_natural_bj", []))
+                    and bool(session["is_natural_bj"][idx])
+                )
 
-        payout_total += payout
-        profit += (payout - bet)
+                # プレイヤーBJ（2枚21）で、ディーラーがBJじゃないなら 3:2 払い（好みで変更OK）
+                if player_natural and dealer_val != 21:
+                    results.append(f"手札{idx+1}：勝ち（ブラックジャック）")
+                    payout = bet + int(bet * 1.5)
 
-    async with get_user_lock(interaction.user.id):
-        u["coins"] = int(u.get("coins", 0) or 0) + payout_total
-        u["bj_play_count"] = int(u.get("bj_play_count", 0) or 0) + 1
-        u["bj_win_streak"] = int(u.get("bj_win_streak", 0) or 0)
-        u["total_earned"] = int(u.get("total_earned", 0) or 0)
+                # ディーラーバースト
+                elif dealer_bust:
+                    results.append(f"手札{idx+1}：勝ち（ディーラーバースト）")
+                    payout = bet * 2
 
+                # 数値比較
+                else:
+                    if v > dealer_val:
+                        results.append(f"手札{idx+1}：勝ち")
+                        payout = bet * 2
+                    elif v == dealer_val:
+                        results.append(f"手札{idx+1}：引き分け")
+                        payout = bet
+                    else:
+                        results.append(f"手札{idx+1}：負け")
+                        payout = 0
+
+            payout_total += payout
+            profit += (payout - bet)
+
+        # 払戻し反映
+        u_local = store.get_user(uid)
+        u_local["coins"] = int(u_local.get("coins", 0) or 0) + payout_total
+
+        # 統計（勝ち/連勝などはあなたの設計に合わせて最低限）
         just_events = set()
         if profit > 0:
-            u["bj_win_streak"] += 1
-            u["total_earned"] += profit
+            u_local["bj_win_streak"] = int(u_local.get("bj_win_streak", 0) or 0) + 1
             just_events.add("BJ_WIN_EVENT")
             if profit >= 1000:
                 just_events.add("BJ_BIGWIN_EVENT")
-        elif profit < 0:
-            u["bj_win_streak"] = 0
+        else:
+            # 引き分け/負けで連勝は止める（好みで「引き分けは維持」も可）
+            u_local["bj_win_streak"] = 0
             if profit <= -1000:
                 just_events.add("BJ_BIGLOSE_EVENT")
-        else:
-            u["bj_win_streak"] = 0
 
-        await sheets_upsert_async(u)
+        u_local["bj_play_count"] = int(u_local.get("bj_play_count", 0) or 0) + 1
 
-    msg = (
-        "🎴 結果なのだ\n\n"
-        f"ディーラー：{fmt_cards(session['dealer'])}（{dealer_val}）\n"
+        await sheets_upsert_async(u_local)
+
+        # セッション終了
+        bj_sessions.pop(uid, None)
+
+    # 表示（ロック外）
+    sign = "+" if profit > 0 else ""
+    text = (
+        "🎴 **結果なのだ！**\n\n"
+        + bj_state_text(session, show_dealer_all=True)
+        + "\n\n"
         + "\n".join(results)
-        + f"\n\n残高：{u['coins']} コインなのだ\n\n次はどうするのだ？"
+        + f"\n\n💰 収支：{sign}{profit}（払戻合計：{payout_total}）なのだ\n"
+        + f"残高：{u_local['coins']} コインなのだ"
     )
 
-    await bj_edit(interaction, content=msg, view=BJEndView(interaction.user.id))
+    await bj_edit(interaction, content=text, view=BJEndView(uid))
 
+    # 称号チェック（通知は獲得時だけ）
     try:
-        await maybe_award_hidden_titles(interaction, u, just_events=just_events)
+        await maybe_award_hidden_titles(interaction, u_local, just_events)
     except Exception:
         traceback.print_exc()
-
-    bj_sessions.pop(interaction.user.id, None)
-
 
 # =========================================================
 # VIP 進行ロジック（追加）
@@ -6623,6 +6643,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
