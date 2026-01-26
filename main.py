@@ -635,12 +635,19 @@ ROLE_AI_FRIEND = 1463389642392080540  # 友達
 ROLE_AI_BFF   = 1463389735748632791  # 親友
 ROLE_AI_FAMILY = 1463389801171521546  # 家族
 
+# ダンジョン称号（直書きID）
+ROLE_DUNGEON_CLEAR = 1465252347742650479  # 🏆 ダンジョン踏破者（W4-100）
+ROLE_DUNGEON_END   = 1465252405791821895  # 🌑 終焉到達者（W5-100）
+
 AWARD_NUMA_CLEAR = "AWARD_NUMA_CLEAR"
 AWARD_NUMA_LEGEND = "AWARD_NUMA_LEGEND"
 
 AWARD_AI_FRIEND = "ai_zunda_friend"
 AWARD_AI_BFF    = "ai_zunda_bff"
 AWARD_AI_FAMILY = "ai_zunda_family"
+
+AWARD_DUNGEON_CLEAR = "AWARD_DUNGEON_CLEAR"  # W4-100
+AWARD_DUNGEON_END   = "AWARD_DUNGEON_END"    # W5-100
 
 SHOP_ITEMS = [
     {"key": "title_1000", "name": "🌱 ずんだ見習い", "price": 1000, "type": "role", "role_name": "ずんだ見習い"},
@@ -1785,7 +1792,24 @@ async def maybe_award_hidden_titles(
             ROLE_AI_FAMILY,
             "🎉✨称号獲得✨\n\n💚 ずんだもんの家族なのだ！\nを獲得したのだ！",
         )
-        
+
+# =========================================================
+# ダンジョン
+# =========================================================
+    if "DUNGEON_CLEAR" in just_events:
+        await award_once(
+            AWARD_DUNGEON_CLEAR,
+            ROLE_DUNGEON_CLEAR,
+            "🎉🎉🎉\n✨【ダンジョン踏破】✨\n\nワールド4のフロア100を突破したのだ！\n🏆「ダンジョン踏破者」\nを獲得したのだよ！\n🎉🎉🎉",
+        )
+
+    if "DUNGEON_END" in just_events:
+        await award_once(
+            AWARD_DUNGEON_END,
+            ROLE_DUNGEON_END,
+            "🎉🎉🎉\n✨【終焉到達】✨\n\nワールド5のフロア100を突破したのだ…！\n🌑「終焉到達者」\nを獲得したのだよ！\n🎉🎉🎉",
+        )
+    
 # =========================================================
 # 入口メッセージ（ショップ・BJ）
 # =========================================================
@@ -7403,5 +7427,6 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
