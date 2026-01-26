@@ -7327,10 +7327,9 @@ class DungeonEntryView(discord.ui.View):
 
     @discord.ui.button(label="🏰 ダンジョンに入る", style=discord.ButtonStyle.primary, custom_id="dungeon:enter")
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ まずdefer（これが最重要）
+        # ✅ まずdefer
         await interaction.response.defer(ephemeral=True)
-
-        # ✅ 進行（ここでは“送信”しない）
+        # ✅ 進行（ここでは送信しない）
         await start_battle_auto(interaction)
 
     @discord.ui.button(label="🗡 武器確認", style=discord.ButtonStyle.secondary, custom_id="dungeon:weapon")
@@ -7353,32 +7352,32 @@ class DungeonEntryView(discord.ui.View):
             content="何連ガチャを引くのだ？",
             view=GachaCountView(interaction.user.id),
         )
+        
+@bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
+async def setup_dungeon_cmd(interaction: discord.Interaction):
+    if not is_admin_user(interaction):
+        await safe_send(interaction, "管理者だけ使えるのだ。", ephemeral=True)
+        return
 
-    @bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
-    async def setup_dungeon_cmd(interaction: discord.Interaction):
-        if not is_admin_user(interaction):
-            await safe_send(interaction, "管理者だけ使えるのだ。", ephemeral=True)
-            return
+    # ✅ チャンネル制限をしてないなら、このチェック自体いらない
+    # もし DUNGEON_CHANNEL_ID=None 運用なら is_in_channel は True 返す実装にするか、ここを外す
+    if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
+        await safe_send(interaction, "設定したチャンネルで実行するのだ。", ephemeral=True)
+        return
 
-        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
-            await safe_send(interaction, "設定したチャンネルで実行するのだ。", ephemeral=True)
-            return
+    await safe_defer(interaction, ephemeral=True)
 
-        await safe_defer(interaction, ephemeral=True)
+    embed = discord.Embed(
+        title="🏰 ダンジョン",
+        description="入る/次に進むで戦闘が始まるのだ。\nガチャで武器を更新できるのだ。",
+    )
+    msg = await interaction.channel.send(embed=embed, view=DungeonEntryView())
 
-        embed = discord.Embed(
-            title="🏰 ダンジョン",
-            description="入る/次に進むで戦闘が始まるのだ。\nガチャで武器を更新できるのだ。",
-        )
-        msg = await interaction.channel.send(embed=embed, view=DungeonEntryView())
-
-    # 設定シートに保存（1回だけでなく上書きしてOKなら save_config_once を _save_config_kv に替える）
-    # ここは「既存に合わせて一度だけ」方式にしている
+    # ✅ ここが「関数の中」なので await OK
     await sheets_save_config_once_async(DUNGEON_CHANNEL_ID_KEY, str(interaction.channel_id))
     await sheets_save_config_once_async(DUNGEON_MESSAGE_ID_KEY, str(msg.id))
 
     await safe_send(interaction, "設置したのだ。", ephemeral=True)
-
 
 # =========================================================
 # 起動イベント
@@ -7480,6 +7479,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
