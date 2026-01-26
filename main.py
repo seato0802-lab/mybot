@@ -7270,9 +7270,8 @@ class GachaConfirmView(discord.ui.View):
         return interaction.user.id == self.uid
 
     @discord.ui.button(label="✅ 確定", style=discord.ButtonStyle.success)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ 3秒超え対策：先にdefer
-        await interaction.response.defer(ephemeral=True)
+    async def confirm(self, interaction, button):
+        await interaction.response.defer(ephemeral=True)  # ← ここ“だけ”でOK
         await self.on_confirm(interaction, self.chosen_weapon)
 
     @discord.ui.button(label="↩ 戻る", style=discord.ButtonStyle.secondary)
@@ -7289,11 +7288,12 @@ async def do_gacha(interaction: discord.Interaction, n: int):
     async with get_user_lock(uid):
         state = await dungeon_load_user_async(uid)
         weapons = [roll_weapon(state["world"], state["floor"]) for _ in range(n)]
-        embed = build_gacha_embed(interaction.user, weapons, state["world"], state["floor"], is_11=(n == 11))
+        embed = build_gacha_embed(
+            interaction.user, weapons, state["world"], state["floor"], is_11=(n == 11)
+        )
 
         async def apply_weapon(i: discord.Interaction, w: dict | None):
-            # ✅ 応答が遅れると失敗するので、先にdeferする
-            await i.response.defer(ephemeral=True)
+            # ✅ defer は「確定ボタン側」でやってるので、ここでは絶対にしない
 
             if w is None:
                 await i.edit_original_response(content="変更しなかったのだ。", embed=None, view=None)
@@ -7309,7 +7309,6 @@ async def do_gacha(interaction: discord.Interaction, n: int):
 
             await i.edit_original_response(content=f"✅ **{w['name']}** に変更したのだ！", embed=None, view=None)
 
-    # ✅ ここが超重要：今開いてる“個人メッセージ”を編集して結果を表示
     await interaction.edit_original_response(
         content=None,
         embed=embed,
@@ -7477,6 +7476,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
