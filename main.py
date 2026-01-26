@@ -7015,6 +7015,18 @@ def _build_battle_text(sess: dict) -> str:
 
     effect = _fmt_effect(sess.get("effect_type", "NONE"), int(sess.get("effect_value", 0) or 0))
 
+    # ✅ 序盤救済（W1の1-20は理不尽になりやすいので弱体）
+    if int(world) == 1 and seg == 0:
+        atk = int(atk * 0.70)
+        df  = int(df  * 0.75)
+        spd = int(spd * 0.85)
+        max_hp = int(max_hp * 0.80)
+
+        atk = max(1, atk)
+        df  = max(0, df)
+        spd = max(1, spd)
+        max_hp = max(10, max_hp)
+
     return (
         "🗺 ダンジョン\n"
         f"現在のフロア：{world}-{floor}\n"
@@ -7184,29 +7196,25 @@ def build_gacha_embed(user: discord.User, weapons: list[dict], world: int, floor
 
 class GachaCountView(discord.ui.View):
     def __init__(self, uid: int):
-        super().__init__(timeout=30)
+        super().__init__(timeout=60)
         self.uid = uid
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # 押せるのは本人だけ
         return interaction.user.id == self.uid
 
     @discord.ui.button(label="🎲 1回", style=discord.ButtonStyle.primary)
     async def one(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await safe_defer(interaction, ephemeral=False)
+        await interaction.response.defer(ephemeral=True)
         await do_gacha(interaction, 1)
 
     @discord.ui.button(label="🎲 11連", style=discord.ButtonStyle.success)
     async def eleven(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await safe_defer(interaction, ephemeral=False)
+        await interaction.response.defer(ephemeral=True)
         await do_gacha(interaction, 11)
 
     @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(
-            content="ガチャをキャンセルしたのだ。",
-            view=None
-        )
+        await interaction.response.edit_message(content="ガチャをキャンセルしたのだ。", view=None)
 
 class GachaConfirmView(discord.ui.View):
     def __init__(self, *, uid: int, chosen_weapon: dict | None, on_confirm):
@@ -7344,8 +7352,11 @@ class DungeonEntryView(discord.ui.View):
 
     @discord.ui.button(label="🎲 ガチャ", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha")
     async def gacha(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ここは前に作った「1回/11連選択メッセージ」方式でOK
-        await interaction.response.send_message("何連ガチャを引くのだ？", view=GachaCountView(interaction.user.id), ephemeral=True)
+        await interaction.response.send_message(
+            "何連ガチャを引くのだ？",
+            view=GachaCountView(interaction.user.id),
+            ephemeral=True
+        )
 
 @bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
 async def setup_dungeon_cmd(interaction: discord.Interaction):
@@ -7473,6 +7484,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
