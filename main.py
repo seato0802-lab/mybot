@@ -533,7 +533,7 @@ def boss_flags(floor: int) -> tuple[bool, bool]:
     return is_boss, is_midboss
 
 
-ddef generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
+def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
     cap = WORLD_CAP.get(int(world), 50)
     f = max(1, min(100, int(floor)))
     seg = (f - 1) // 20
@@ -7473,6 +7473,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
