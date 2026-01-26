@@ -6995,31 +6995,30 @@ async def _finish_battle(uid: int, result: str, interaction: discord.Interaction
             await safe_send(interaction, msg, ephemeral=False)
 
 
-def _build_battle_embed(sess: dict) -> discord.Embed:
+def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
-    e = discord.Embed(title="⚔️ ダンジョンバトル")
-    e.add_field(
-        name="あなた",
-        value=(
-            f"HP: **{sess['player_hp']} / {sess['max_hp']}**\n"
-            f"SHIELD: **{sess['shield_now']}**\n"
-            f"ATK **{sess['atk']}** / DEF **{sess['def']}** / SPD **{sess['spd']}**\n"
-            f"効果：{_fmt_effect(sess['effect_type'], sess['effect_value'])}"
-        ),
-        inline=False,
-    )
-    e.add_field(
-        name="敵",
-        value=(
-            f"{enemy['name']}\n"
-            f"HP: **{enemy['hp']} / {enemy['max_hp']}**\n"
-            f"ATK **{enemy['atk']}** / DEF **{enemy['def']}** / SPD **{enemy['spd']}**"
-        ),
-        inline=False,
-    )
-    e.set_footer(text="攻撃を押すと進行するのだ。戦闘終了時にだけ保存されるのだ。")
-    return e
+    world = int(sess.get("world", 1))
+    floor = int(sess.get("floor", 1))
 
+    logs = sess.get("logs", [])
+    log_text = "\n".join(logs[-8:]) if logs else "（まだログはないのだ）"
+
+    effect = _fmt_effect(sess.get("effect_type", "NONE"), int(sess.get("effect_value", 0) or 0))
+
+    return (
+        "🗺 ダンジョン\n"
+        f"現在のフロア：{world}-{floor}\n"
+        f"敵：{enemy.get('name','敵')}\n"
+        f"HP：{int(enemy.get('hp',0))} / {int(enemy.get('max_hp',0))}\n"
+        f"攻撃力：{int(enemy.get('atk',0))}\n"
+        "\n"
+        "――――――――――\n"
+        f"{log_text}\n"
+        "――――――――――\n"
+        f"あなた  HP：{int(sess.get('player_hp',0))} / {int(sess.get('max_hp',0))}\n"
+        f"攻撃力：{int(sess.get('atk',0))}  防御力：{int(sess.get('def',0))}  素早さ：{int(sess.get('spd',0))}\n"
+        f"特殊効果：{effect}\n"
+    )
 
 class DungeonBattleView(discord.ui.View):
     def __init__(self, uid: int):
@@ -7039,69 +7038,81 @@ class DungeonBattleView(discord.ui.View):
                 return
 
             enemy = sess["enemy"]
+            logs: list[str] = sess.setdefault("logs", [])
 
             # 行動順
             player_first = _speed_first(sess["spd"], enemy["spd"])
-            log = []
+            turn_log = []
 
             def apply_damage_to_player(dmg: int):
-                # シールド優先（保存しない：メモリ）
-                s = sess["shield_now"]
+                s = int(sess.get("shield_now", 0))
                 use = min(s, dmg)
-                sess["shield_now"] -= use
+                sess["shield_now"] = s - use
                 dmg -= use
                 if dmg > 0:
-                    sess["player_hp"] = max(0, sess["player_hp"] - dmg)
+                    sess["player_hp"] = max(0, int(sess["player_hp"]) - dmg)
 
             def apply_damage_to_enemy(dmg: int):
-                enemy["hp"] = max(0, enemy["hp"] - dmg)
+                enemy["hp"] = max(0, int(enemy["hp"]) - dmg)
 
             # 1ターン
             if player_first:
                 dmg = _combat_damage(sess["atk"], enemy["def"])
                 apply_damage_to_enemy(dmg)
-                log.append(f"あなたの攻撃！ 敵に **{dmg}** ダメージ。")
+                turn_log.append(f"あなたの攻撃！ 敵に **{dmg}** ダメージ。")
+
                 if enemy["hp"] <= 0:
-                    # 勝利：回復/即死などは後で拡張（最小実装）
-                    await interaction.response.edit_message(embed=_build_battle_embed(sess), view=None, content="\n".join(log) + "\n\n✅ 勝利！")
+                    logs.extend(turn_log)
+                    logs.append("✅ 勝利！")
+                    await interaction.response.edit_message(content=_build_battle_text(sess), view=None)
                     await _finish_battle(uid, "win")
                     return
 
                 dmg2 = _combat_damage(enemy["atk"], sess["def"])
                 apply_damage_to_player(dmg2)
-                log.append(f"敵の攻撃！ あなたに **{dmg2}** ダメージ。")
+                turn_log.append(f"敵の攻撃！ あなたに **{dmg2}** ダメージ。")
+
             else:
                 dmg2 = _combat_damage(enemy["atk"], sess["def"])
                 apply_damage_to_player(dmg2)
-                log.append(f"敵の攻撃！ あなたに **{dmg2}** ダメージ。")
+                turn_log.append(f"敵の攻撃！ あなたに **{dmg2}** ダメージ。")
+
                 if sess["player_hp"] <= 0:
-                    await interaction.response.edit_message(embed=_build_battle_embed(sess), view=None, content="\n".join(log) + "\n\n💀 敗北…")
+                    logs.extend(turn_log)
+                    logs.append("💀 敗北…")
+                    await interaction.response.edit_message(content=_build_battle_text(sess), view=None)
                     await _finish_battle(uid, "lose")
                     return
 
                 dmg = _combat_damage(sess["atk"], enemy["def"])
                 apply_damage_to_enemy(dmg)
-                log.append(f"あなたの攻撃！ 敵に **{dmg}** ダメージ。")
+                turn_log.append(f"あなたの攻撃！ 敵に **{dmg}** ダメージ。")
 
             # 判定
             if enemy["hp"] <= 0:
-                await interaction.response.edit_message(embed=_build_battle_embed(sess), view=None, content="\n".join(log) + "\n\n✅ 勝利！")
+                logs.extend(turn_log)
+                logs.append("✅ 勝利！")
+                await interaction.response.edit_message(content=_build_battle_text(sess), view=None)
                 await _finish_battle(uid, "win")
                 return
+
             if sess["player_hp"] <= 0:
-                await interaction.response.edit_message(embed=_build_battle_embed(sess), view=None, content="\n".join(log) + "\n\n💀 敗北…")
+                logs.extend(turn_log)
+                logs.append("💀 敗北…")
+                await interaction.response.edit_message(content=_build_battle_text(sess), view=None)
                 await _finish_battle(uid, "lose")
                 return
 
-            await interaction.response.edit_message(embed=_build_battle_embed(sess), view=self, content="\n".join(log))
+            # 継続：同じメッセージを編集して更新
+            logs.extend(turn_log)
+            await interaction.response.edit_message(content=_build_battle_text(sess), view=self)
 
-    @discord.ui.button(label="🏃 逃げる", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🚪 ダンジョンを出る", style=discord.ButtonStyle.secondary)
     async def flee(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
         async with get_user_lock(uid):
             dungeon_sessions.pop(uid, None)
-        await interaction.response.edit_message(content="逃げたのだ。", embed=None, view=None)
-
+        await interaction.response.edit_message(content="ダンジョンから出たのだ。", view=None)
 
 async def start_battle(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -7133,20 +7144,21 @@ async def start_battle(interaction: discord.Interaction):
             "effect_value": int(state["effect_value"]),
             "effect_lv": int(state.get("effect_lv", 0) or 0),
             "enemy": enemy,
+            "logs": ["戦闘開始なのだ！"],
         }
 
-        embed = _build_battle_embed(dungeon_sessions[uid])
+        text = _build_battle_text(dungeon_sessions[uid])
         view = DungeonBattleView(uid)
 
+        # ✅ 個人表示（ephemeral）で送って、以後は edit_message で更新
         try:
             if interaction.response.is_done():
-                await interaction.followup.send(content=None, embed=embed, view=view, ephemeral=False)
+                await interaction.followup.send(content=text, view=view, ephemeral=True)
             else:
-                await interaction.response.send_message(content=None, embed=embed, view=view, ephemeral=False)
+                await interaction.response.send_message(content=text, view=view, ephemeral=True)
         except Exception:
-            # 最後の保険（たまにresponseが競合する）
             try:
-                await interaction.followup.send(content=None, embed=embed, view=view, ephemeral=False)
+                await interaction.followup.send(content=text, view=view, ephemeral=True)
             except Exception:
                 pass
 
@@ -7448,6 +7460,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
