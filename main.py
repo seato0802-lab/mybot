@@ -393,6 +393,198 @@ def has_numa_setup_role(member: discord.abc.User) -> bool:
         return False
     return any(r.id == NUMA_SETUP_ROLE_ID for r in member.roles)
 
+# -----------------------------
+# ダンジョン設定（チャンネル制限なし版）
+# -----------------------------
+DUNGEON_SHEET_NAME = os.getenv("GS_DUNGEON_SHEET_NAME", "dungeon")
+
+# ✅ チャンネル設定なし：どこでも使える
+DUNGEON_CHANNEL_ID = None
+
+# ※入口メッセージを「/setup_dungeon で設置してIDを保存する」方式を使うなら残してOK
+DUNGEON_MESSAGE_ID_KEY = "dungeon_entry_message_id"
+DUNGEON_CHANNEL_ID_KEY = "dungeon_entry_channel_id"
+
+# ワールド上限
+WORLD_CAP = {1: 50, 2: 100, 3: 150, 4: 200}
+T_CENTER_BY_SEG = [0.55, 0.65, 0.75, 0.85, 0.93]  # 20区切り
+
+# 特殊効果（確定仕様）
+EFFECT_TYPES = ["NONE", "HP_UP", "HEAL_ON_KILL", "INSTAKILL", "SHIELD", "DEBUFF_RESIST"]
+
+HP_UP_TABLE         = [20, 40, 60, 80, 100]
+HEAL_ON_KILL_TABLE  = [10, 20, 30, 40, 50]      # %
+INSTAKILL_TABLE     = [1, 7, 13, 19, 25]        # %
+SHIELD_TABLE        = [10, 20, 30, 40, 50]      # 毎バトル全回復（shield_nowは保存しない）
+DEBUFF_RESIST_TABLE = [20, 40, 60, 80, 100]     # %
+
+DUNGEON_HEADERS = [
+    "user_id",
+    "world",
+    "floor",
+    "hp",
+    "weapon_name",
+    "weapon_atk",
+    "weapon_def",
+    "weapon_spd",
+    "effect_type",
+    "effect_lv",
+    "effect_value",
+    "debuff_zone",      # 0/1（必要なら運用）
+    "current_debuffs",  # 文字列（必要なら運用）
+]
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return lo if x < lo else hi if x > hi else x
+
+
+def _rand_int(a: float, b: float) -> int:
+    lo = int(min(a, b))
+    hi = int(max(a, b))
+    if hi < lo:
+        hi = lo
+    return random.randint(lo, hi)
+
+
+def _fmt_effect(effect_type: str, effect_value: int) -> str:
+    if effect_type == "NONE":
+        return "なし"
+    if effect_type == "HP_UP":
+        return f"最大HP +{effect_value}"
+    if effect_type == "HEAL_ON_KILL":
+        return f"撃破時回復 {effect_value}%"
+    if effect_type == "INSTAKILL":
+        return f"即死 {effect_value}%"
+    if effect_type == "SHIELD":
+        return f"シールド {effect_value}（毎バトル全回復）"
+    if effect_type == "DEBUFF_RESIST":
+        return f"状態異常耐性 {effect_value}%"
+    return "なし"
+
+
+def _effect_lv_unlock(world: int) -> int:
+    # W1=Lv1のみ / W2=Lv1-2 / ... / W5+=Lv1-5
+    if world >= 5:
+        return 5
+    return max(1, min(5, int(world)))
+
+
+def _pick_effect(world: int) -> tuple[str, int, int]:
+    # 6択同率（効果なし含む）
+    etype = random.choice(EFFECT_TYPES)
+    if etype == "NONE":
+        return "NONE", 0, 0
+
+    max_lv = _effect_lv_unlock(world)
+    lv = random.randint(1, max_lv)  # 11連保証なし／Lv重み付け無し
+
+    if etype == "HP_UP":
+        return etype, lv, HP_UP_TABLE[lv - 1]
+    if etype == "HEAL_ON_KILL":
+        return etype, lv, HEAL_ON_KILL_TABLE[lv - 1]
+    if etype == "INSTAKILL":
+        return etype, lv, INSTAKILL_TABLE[lv - 1]
+    if etype == "SHIELD":
+        return etype, lv, SHIELD_TABLE[lv - 1]
+    if etype == "DEBUFF_RESIST":
+        return etype, lv, DEBUFF_RESIST_TABLE[lv - 1]
+
+    return "NONE", 0, 0
+
+
+def _weapon_t(world: int, floor: int) -> float:
+    # cap基準 + 20内微上振れ
+    f = max(1, min(100, int(floor)))
+    seg = (f - 1) // 20
+    in_seg = (f - 1) % 20
+    t_center = T_CENTER_BY_SEG[seg]
+    micro = (in_seg / 19.0) * 0.03
+    t = _clamp(random.uniform(t_center - 0.06, t_center + 0.06) + micro, 0.40, 0.98)
+    return t
+
+
+def roll_weapon(world: int, floor: int) -> dict:
+    cap = WORLD_CAP.get(int(world), 50)
+    t = _weapon_t(world, floor)
+
+    atk = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    df  = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    spd = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+
+    etype, elv, eval_ = _pick_effect(world)
+
+    name = f"W{world}の武器"  # 後で命名ロジック差し替えOK
+
+    return {
+        "name": name,
+        "atk": max(0, atk),
+        "def": max(0, df),
+        "spd": max(1, spd),
+        "effect_type": etype,
+        "effect_lv": elv,
+        "effect_value": eval_,
+    }
+
+
+def boss_flags(floor: int) -> tuple[bool, bool]:
+    # 5=中ボス, 10=ボス, 15=中ボス...
+    is_boss = (floor % 10 == 0)
+    is_midboss = (floor % 10 == 5)
+    return is_boss, is_midboss
+
+
+def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
+    cap = WORLD_CAP.get(int(world), 50)
+    f = max(1, min(100, int(floor)))
+    seg = (f - 1) // 20
+
+    t_center = T_CENTER_BY_SEG[seg]
+    t = _clamp(random.uniform(t_center - 0.06, t_center + 0.06), 0.40, 0.98)
+
+    atk = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    df  = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    spd = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+
+    # HP（cap比例、segで少し伸ばす）
+    max_hp = int(cap * random.uniform(2.2, 3.2) * (0.90 + 0.04 * seg))
+
+    is_boss, is_midboss = boss_flags(f)
+    if is_midboss:
+        max_hp = int(max_hp * 1.35)
+        atk = int(atk * 1.08)
+        df  = int(df  * 1.08)
+        spd = int(spd * 1.08)
+    elif is_boss:
+        max_hp = int(max_hp * 1.65)
+        atk = int(atk * 1.12)
+        df  = int(df  * 1.12)
+        spd = int(spd * 1.12)
+
+    name = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
+    return {
+        "name": f"{name}（W{world}-F{f}）",
+        "hp": max_hp,
+        "max_hp": max_hp,
+        "atk": max(1, atk),
+        "def": max(0, df),
+        "spd": max(1, spd),
+        "is_boss": is_boss,
+        "is_midboss": is_midboss,
+        "debuff_zone": bool(debuff_zone),
+    }
+
+
+def calc_player_max_hp(effect_type: str, effect_value: int) -> int:
+    # 基礎HPは100固定
+    hp_up = effect_value if effect_type == "HP_UP" else 0
+    return 100 + int(hp_up)
+
+
+def get_player_shield_max(effect_type: str, effect_value: int) -> int:
+    # shield_nowは保存しない：戦闘開始時にこれを満タンで使う
+    return int(effect_value) if effect_type == "SHIELD" else 0
+
 # =========================================================
 # Google Sheets 永続ストア
 # =========================================================
@@ -7212,3 +7404,4 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
