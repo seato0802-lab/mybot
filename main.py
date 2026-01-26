@@ -7011,21 +7011,9 @@ def _build_battle_text(sess: dict) -> str:
     floor = int(sess.get("floor", 1))
 
     logs = sess.get("logs", [])
-    log_text = "\n".join(logs[-12:]) if logs else "（ログなし）"
+    log_text = "\n".join(logs[-5:]) if logs else "（ログなし）"
 
     effect = _fmt_effect(sess.get("effect_type", "NONE"), int(sess.get("effect_value", 0) or 0))
-
-    # ✅ 序盤救済（W1の1-20は理不尽になりやすいので弱体）
-    if int(world) == 1 and seg == 0:
-        atk = int(atk * 0.70)
-        df  = int(df  * 0.75)
-        spd = int(spd * 0.85)
-        max_hp = int(max_hp * 0.80)
-
-        atk = max(1, atk)
-        df  = max(0, df)
-        spd = max(1, spd)
-        max_hp = max(10, max_hp)
 
     return (
         "🗺 ダンジョン\n"
@@ -7099,6 +7087,18 @@ async def start_battle_auto(interaction: discord.Interaction):
             "logs": ["戦闘開始なのだ！"],
         }
         dungeon_sessions[uid] = sess
+
+    # ✅ 序盤救済（W1の1-20）
+    if int(world) == 1 and seg == 0:
+        atk = int(atk * 0.70)
+        df  = int(df  * 0.75)
+        spd = int(spd * 0.85)
+        max_hp = int(max_hp * 0.80)
+
+        atk = max(1, atk)
+        df  = max(0, df)
+        spd = max(1, spd)
+        max_hp = max(10, max_hp)
 
     # ── ロック外：オート戦闘 ──
     result = _auto_battle_step(uid)
@@ -7479,6 +7479,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
