@@ -7235,6 +7235,8 @@ class GachaSelectView(discord.ui.View):
         return interaction.user.id == self.uid
 
     async def _on_select(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
         v = interaction.data.get("values", ["keep"])[0]
 
         if v == "keep":
@@ -7252,44 +7254,44 @@ class GachaSelectView(discord.ui.View):
         async def on_confirm(i: discord.Interaction, w: dict | None):
             await self.on_apply_weapon(i, w)
 
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             content=msg,
             embed=None,
             view=GachaConfirmView(uid=self.uid, chosen_weapon=chosen, on_confirm=on_confirm),
         )
 
-
 async def do_gacha(interaction: discord.Interaction, n: int):
     uid = interaction.user.id
     async with get_user_lock(uid):
-        # 状態読み込み（world/floor基準）
         state = await dungeon_load_user_async(uid)
-
         weapons = [roll_weapon(state["world"], state["floor"]) for _ in range(n)]
         embed = build_gacha_embed(interaction.user, weapons, state["world"], state["floor"], is_11=(n == 11))
 
         async def apply_weapon(i: discord.Interaction, w: dict | None):
+            # ✅ 応答が遅れると失敗するので、先にdeferする
+            await i.response.defer(ephemeral=True)
+
             if w is None:
-                await i.response.edit_message(content="変更しなかったのだ。", embed=None, view=None)
+                await i.edit_original_response(content="変更しなかったのだ。", embed=None, view=None)
                 return
 
-            # 武器保存（列分割）
             await dungeon_save_weapon_async(uid, w)
 
-            # HP_UPが変わる場合、現在HPが最大HPを超えないように丸め（必要なら）
             st = await dungeon_load_user_async(uid)
             new_max = calc_player_max_hp(st["effect_type"], st["effect_value"])
             new_hp = min(int(st["hp"]), int(new_max))
             if new_hp != int(st["hp"]):
                 await dungeon_save_after_battle_async(uid, st["world"], st["floor"], new_hp)
 
-            await i.response.edit_message(content=f"✅ **{w['name']}** に変更したのだ！", embed=None, view=None)
+            await i.edit_original_response(content=f"✅ **{w['name']}** に変更したのだ！", embed=None, view=None)
 
+    # ✅ ここが超重要：今開いてる“個人メッセージ”を編集して結果を表示
     await interaction.edit_original_response(
         content=None,
         embed=embed,
         view=GachaSelectView(uid=uid, weapons=weapons, on_apply_weapon=apply_weapon),
     )
+
 # -----------------------------
 # エントリーUI（永続）
 # -----------------------------
@@ -7318,10 +7320,11 @@ class DungeonEntryView(discord.ui.View):
 
     @discord.ui.button(label="🎲 ガチャ", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha")
     async def gacha(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        await interaction.edit_original_response(
-            content="何連ガチャを引くのだ？",
+        # ✅ 公開メッセージは触らない。個人メッセージを作る
+        await interaction.response.send_message(
+            "何連ガチャを引くのだ？",
             view=GachaCountView(interaction.user.id),
+            ephemeral=True,
         )
         
 @bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
@@ -7450,6 +7453,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
