@@ -2310,8 +2310,6 @@ class LotteryJoinView(discord.ui.View):
 # =========================================================
 @bot.tree.command(name="setup_shop", description="ショップ入口メッセージを設置するのだ（最初の1回のみ）")
 async def setup_shop_cmd(interaction: discord.Interaction):
-    if not is_admin_user(interaction):
-        return await interaction.response.send_message("権限がないのだ", ephemeral=True)
     if SHOP_CHANNEL_ID and interaction.channel_id != SHOP_CHANNEL_ID:
         return await interaction.response.send_message(
             "指定のショップチャンネルで実行するのだ",
@@ -2680,12 +2678,6 @@ async def setup_numa_cmd(interaction: discord.Interaction):
     if not isinstance(interaction.user, discord.Member):
         return await interaction.response.send_message(
             "サーバー内でのみ使えるのだ",
-            ephemeral=True,
-        )
-
-    if not has_numa_setup_role(interaction.user):
-        return await interaction.response.send_message(
-            "このコマンドを使う権限がないのだ",
             ephemeral=True,
         )
 
@@ -5266,8 +5258,6 @@ async def bjvip_finish(interaction: discord.Interaction, u: dict):
 # ---------------------------------------------------------
 @bot.tree.command(name="setup_bj", description="ブラックジャック入口メッセージを設置するのだ（最初の1回のみ）")
 async def setup_bj_cmd(interaction: discord.Interaction):
-    if not is_admin_user(interaction):
-        return await interaction.response.send_message("権限がないのだ", ephemeral=True)
     if BJ_CHANNEL_ID and interaction.channel_id != BJ_CHANNEL_ID:
         return await interaction.response.send_message(
             "指定のブラックジャックチャンネルで実行するのだ",
@@ -7001,7 +6991,7 @@ def _build_battle_text(sess: dict) -> str:
     floor = int(sess.get("floor", 1))
 
     logs = sess.get("logs", [])
-    log_text = "\n".join(logs[-8:]) if logs else "（まだログはないのだ）"
+    log_text = "\n".join(logs[-12:]) if logs else "（ログなし）"
 
     effect = _fmt_effect(sess.get("effect_type", "NONE"), int(sess.get("effect_value", 0) or 0))
 
@@ -7011,7 +7001,6 @@ def _build_battle_text(sess: dict) -> str:
         f"敵：{enemy.get('name','敵')}\n"
         f"HP：{int(enemy.get('hp',0))} / {int(enemy.get('max_hp',0))}\n"
         f"攻撃力：{int(enemy.get('atk',0))}\n"
-        "\n"
         "――――――――――\n"
         f"{log_text}\n"
         "――――――――――\n"
@@ -7020,7 +7009,7 @@ def _build_battle_text(sess: dict) -> str:
         f"特殊効果：{effect}\n"
     )
 
-class DungeonBattleView(discord.ui.View):
+class DungeonAfterView(discord.ui.View):
     def __init__(self, uid: int):
         super().__init__(timeout=180)
         self.uid = uid
@@ -7028,98 +7017,25 @@ class DungeonBattleView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return interaction.user.id == self.uid
 
-    @discord.ui.button(label="⚔️ 攻撃", style=discord.ButtonStyle.danger)
-    async def attack(self, interaction: discord.Interaction, button: discord.ui.Button):
-        uid = interaction.user.id
-        async with get_user_lock(uid):
-            sess = dungeon_sessions.get(uid)
-            if not sess:
-                await safe_send(interaction, "セッションが見つからないのだ（再度「入る」からやるのだ）", ephemeral=True)
-                return
+    @discord.ui.button(label="➡️ 次に進む", style=discord.ButtonStyle.success)
+    async def next_floor(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await start_battle_auto(interaction)  # 次の戦闘（オート）
 
-            enemy = sess["enemy"]
-            logs: list[str] = sess.setdefault("logs", [])
-
-            # 行動順
-            player_first = _speed_first(sess["spd"], enemy["spd"])
-            turn_log = []
-
-            def apply_damage_to_player(dmg: int):
-                s = int(sess.get("shield_now", 0))
-                use = min(s, dmg)
-                sess["shield_now"] = s - use
-                dmg -= use
-                if dmg > 0:
-                    sess["player_hp"] = max(0, int(sess["player_hp"]) - dmg)
-
-            def apply_damage_to_enemy(dmg: int):
-                enemy["hp"] = max(0, int(enemy["hp"]) - dmg)
-
-            # 1ターン
-            if player_first:
-                dmg = _combat_damage(sess["atk"], enemy["def"])
-                apply_damage_to_enemy(dmg)
-                turn_log.append(f"あなたの攻撃！ 敵に **{dmg}** ダメージ。")
-
-                if enemy["hp"] <= 0:
-                    logs.extend(turn_log)
-                    logs.append("✅ 勝利！")
-                    await interaction.response.edit_message(content=_build_battle_text(sess), view=None)
-                    await _finish_battle(uid, "win")
-                    return
-
-                dmg2 = _combat_damage(enemy["atk"], sess["def"])
-                apply_damage_to_player(dmg2)
-                turn_log.append(f"敵の攻撃！ あなたに **{dmg2}** ダメージ。")
-
-            else:
-                dmg2 = _combat_damage(enemy["atk"], sess["def"])
-                apply_damage_to_player(dmg2)
-                turn_log.append(f"敵の攻撃！ あなたに **{dmg2}** ダメージ。")
-
-                if sess["player_hp"] <= 0:
-                    logs.extend(turn_log)
-                    logs.append("💀 敗北…")
-                    await interaction.response.edit_message(content=_build_battle_text(sess), view=None)
-                    await _finish_battle(uid, "lose")
-                    return
-
-                dmg = _combat_damage(sess["atk"], enemy["def"])
-                apply_damage_to_enemy(dmg)
-                turn_log.append(f"あなたの攻撃！ 敵に **{dmg}** ダメージ。")
-
-            # 判定
-            if enemy["hp"] <= 0:
-                logs.extend(turn_log)
-                logs.append("✅ 勝利！")
-                await interaction.response.edit_message(content=_build_battle_text(sess), view=None)
-                await _finish_battle(uid, "win")
-                return
-
-            if sess["player_hp"] <= 0:
-                logs.extend(turn_log)
-                logs.append("💀 敗北…")
-                await interaction.response.edit_message(content=_build_battle_text(sess), view=None)
-                await _finish_battle(uid, "lose")
-                return
-
-            # 継続：同じメッセージを編集して更新
-            logs.extend(turn_log)
-            await interaction.response.edit_message(content=_build_battle_text(sess), view=self)
-
-    @discord.ui.button(label="🚪 ダンジョンを出る", style=discord.ButtonStyle.secondary)
-    async def flee(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
+    async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
         async with get_user_lock(uid):
             dungeon_sessions.pop(uid, None)
-        await interaction.response.edit_message(content="ダンジョンから出たのだ。", view=None)
+        await interaction.response.edit_message(content="ダンジョンを終了したのだ。", view=None)
 
-async def start_battle(interaction: discord.Interaction):
+async def start_battle_auto(interaction: discord.Interaction):
     uid = interaction.user.id
+
     async with get_user_lock(uid):
         state = await dungeon_load_user_async(uid)
 
-        # 現在状態から最大HP算出＆現在HP丸め
+        # 最大HPと現在HP
         max_hp = calc_player_max_hp(state["effect_type"], state["effect_value"])
         hp = min(int(state["hp"]), max_hp)
 
@@ -7130,8 +7046,8 @@ async def start_battle(interaction: discord.Interaction):
         # 敵生成
         enemy = generate_enemy(state["world"], state["floor"], debuff_zone=bool(state.get("debuff_zone", 0)))
 
-        # セッション作成（戦闘中はここだけ更新）
-        dungeon_sessions[uid] = {
+        # セッション（この戦闘中だけ使う）
+        sess = {
             "world": int(state["world"]),
             "floor": int(state["floor"]),
             "player_hp": int(hp),
@@ -7146,21 +7062,88 @@ async def start_battle(interaction: discord.Interaction):
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
         }
+        dungeon_sessions[uid] = sess
 
-        text = _build_battle_text(dungeon_sessions[uid])
-        view = DungeonBattleView(uid)
+    # ✅ ここからオート戦闘（ロック外でOK：I/O無し）
+    result = _auto_battle_step(uid)
 
-        # ✅ 個人表示（ephemeral）で送って、以後は edit_message で更新
+    # ✅ 戦闘終了：ここでだけ保存（あなたの方針）
+    await _finish_battle(uid, result, interaction=None)
+
+    # ✅ 表示は「この1件」だけに統一（ephemeral & edit）
+    # ※ この関数は「ボタン押下」から呼ばれるので edit_message が安全
+    text = _build_battle_text(dungeon_sessions.get(uid, sess))
+    view = DungeonAfterView(uid)
+
+    # response済みなら edit_message は使えない場合があるので分岐
+    try:
+        if interaction.response.is_done():
+            await interaction.edit_original_response(content=text, view=view)
+        else:
+            await interaction.response.send_message(content=text, view=view, ephemeral=True)
+    except Exception:
         try:
-            if interaction.response.is_done():
-                await interaction.followup.send(content=text, view=view, ephemeral=True)
-            else:
-                await interaction.response.send_message(content=text, view=view, ephemeral=True)
+            await interaction.followup.send(content=text, view=view, ephemeral=True)
         except Exception:
-            try:
-                await interaction.followup.send(content=text, view=view, ephemeral=True)
-            except Exception:
-                pass
+            pass
+
+
+def _auto_battle_step(uid: int) -> str:
+    sess = dungeon_sessions.get(uid)
+    if not sess:
+        return "lose"
+    enemy = sess["enemy"]
+    logs: list[str] = sess.setdefault("logs", [])
+
+    def apply_damage_to_player(dmg: int):
+        s = int(sess.get("shield_now", 0))
+        use = min(s, dmg)
+        sess["shield_now"] = s - use
+        dmg -= use
+        if dmg > 0:
+            sess["player_hp"] = max(0, int(sess["player_hp"]) - dmg)
+
+    def apply_damage_to_enemy(dmg: int):
+        enemy["hp"] = max(0, int(enemy["hp"]) - dmg)
+
+    # 無限防止（最大50ターン）
+    for _ in range(50):
+        if enemy["hp"] <= 0:
+            logs.append("✅ 勝利！")
+            return "win"
+        if sess["player_hp"] <= 0:
+            logs.append("💀 敗北…")
+            return "lose"
+
+        player_first = _speed_first(sess["spd"], enemy["spd"])
+
+        if player_first:
+            dmg = _combat_damage(sess["atk"], enemy["def"])
+            apply_damage_to_enemy(dmg)
+            logs.append(f"あなたの攻撃！ 敵に {dmg} ダメージ。")
+            if enemy["hp"] <= 0:
+                logs.append("✅ 勝利！")
+                return "win"
+
+            dmg2 = _combat_damage(enemy["atk"], sess["def"])
+            apply_damage_to_player(dmg2)
+            logs.append(f"敵の攻撃！ あなたに {dmg2} ダメージ。")
+
+        else:
+            dmg2 = _combat_damage(enemy["atk"], sess["def"])
+            apply_damage_to_player(dmg2)
+            logs.append(f"敵の攻撃！ あなたに {dmg2} ダメージ。")
+            if sess["player_hp"] <= 0:
+                logs.append("💀 敗北…")
+                return "lose"
+
+            dmg = _combat_damage(sess["atk"], enemy["def"])
+            apply_damage_to_enemy(dmg)
+            logs.append(f"あなたの攻撃！ 敵に {dmg} ダメージ。")
+
+    # 50ターン超えたら引き分け扱いで負け（安全側）
+    logs.append("⏳ 戦闘が長引いたのだ…（敗北扱い）")
+    return "lose"
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -7322,17 +7305,27 @@ class DungeonEntryView(discord.ui.View):
 
     @discord.ui.button(label="🏰 ダンジョンに入る", style=discord.ButtonStyle.primary, custom_id="dungeon:enter")
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await safe_defer(interaction, ephemeral=False)
-        await start_battle(interaction)
+        # ✅ 個人表示で開始（これだけ出る）
+        await interaction.response.send_message("準備中なのだ…", ephemeral=True)
+        await start_battle_auto(interaction)
+
+    @discord.ui.button(label="🗡 武器確認", style=discord.ButtonStyle.secondary, custom_id="dungeon:weapon")
+    async def weapon_check(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        state = await dungeon_load_user_async(uid)
+        effect = _fmt_effect(state["effect_type"], int(state["effect_value"] or 0))
+        msg = (
+            f"🗡 **現在の武器**\n"
+            f"名前：{state['weapon_name']}\n"
+            f"ATK {state['weapon_atk']} / DEF {state['weapon_def']} / SPD {state['weapon_spd']}\n"
+            f"特殊効果：{effect}\n"
+        )
+        await interaction.response.send_message(msg, ephemeral=True)
 
     @discord.ui.button(label="🎲 ガチャ", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha")
     async def gacha(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ここでは defer しない（すぐ返す）
-        await interaction.response.send_message(
-            "何連ガチャを引くのだ？",
-            view=GachaCountView(interaction.user.id),
-            ephemeral=False
-        )
+        # ここは前に作った「1回/11連選択メッセージ」方式でOK
+        await interaction.response.send_message("何連ガチャを引くのだ？", view=GachaCountView(interaction.user.id), ephemeral=True)
 
 @bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
 async def setup_dungeon_cmd(interaction: discord.Interaction):
@@ -7460,6 +7453,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
