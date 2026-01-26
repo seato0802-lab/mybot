@@ -7055,22 +7055,18 @@ async def start_battle_auto(interaction: discord.Interaction):
     async with get_user_lock(uid):
         state = await dungeon_load_user_async(uid)
 
-        # 最大HPと現在HP
         max_hp = calc_player_max_hp(state["effect_type"], state["effect_value"])
         hp = min(int(state["hp"]), max_hp)
 
-        # シールドは戦闘開始で満タン（メモリのみ）
         shield_max = get_player_shield_max(state["effect_type"], state["effect_value"])
         shield_now = shield_max
 
-        # 敵生成
         enemy = generate_enemy(
             state["world"],
             state["floor"],
             debuff_zone=bool(state.get("debuff_zone", 0)),
         )
 
-        # セッション（戦闘中のみ）
         sess = {
             "world": int(state["world"]),
             "floor": int(state["floor"]),
@@ -7088,28 +7084,11 @@ async def start_battle_auto(interaction: discord.Interaction):
         }
         dungeon_sessions[uid] = sess
 
-    # ✅ 序盤救済（W1の1-20）
-    if int(world) == 1 and seg == 0:
-        atk = int(atk * 0.70)
-        df  = int(df  * 0.75)
-        spd = int(spd * 0.85)
-        max_hp = int(max_hp * 0.80)
-
-        atk = max(1, atk)
-        df  = max(0, df)
-        spd = max(1, spd)
-        max_hp = max(10, max_hp)
-
-    # ── ロック外：オート戦闘 ──
     result = _auto_battle_step(uid)
-
-    # 戦闘結果保存（ここだけ書き込み）
     await _finish_battle(uid, result, interaction=None)
 
-    # 表示更新（defer 済み前提）
-    text = _build_battle_text(dungeon_sessions.get(uid, sess))
+    text = _build_battle_text(sess)
     view = DungeonAfterView(uid)
-
     await interaction.edit_original_response(content=text, view=view)
 
 def _auto_battle_step(uid: int) -> str:
@@ -7479,6 +7458,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
