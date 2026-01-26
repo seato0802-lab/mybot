@@ -512,7 +512,6 @@ def roll_weapon(world: int, floor: int) -> dict:
 
     etype, elv, eval_ = _pick_effect(world)
 
-    # 同じ武器が出ない思想なので、名前は最低限でOK（必要なら後で差し替え）
     name = f"W{int(world)}武器_{int(time.time()*1000)%100000}"
 
     return {
@@ -533,6 +532,22 @@ def boss_flags(floor: int) -> tuple[bool, bool]:
     return is_boss, is_midboss
 
 
+# ✅ ボスも段階を踏む：10区切りの段階
+def boss_stage(floor: int) -> int:
+    # 1-10:0 / 11-20:1 / 21-30:2 ...
+    return (max(1, int(floor)) - 1) // 10
+
+
+# ✅ ボス倍率（序盤は弱く、後半で強く）
+BOSS_MULT = [
+    {"hp": 1.15, "atk": 1.05, "def": 1.03, "spd": 1.05},  # 1-10
+    {"hp": 1.25, "atk": 1.07, "def": 1.05, "spd": 1.07},  # 11-20
+    {"hp": 1.40, "atk": 1.10, "def": 1.07, "spd": 1.10},  # 21-30
+    {"hp": 1.55, "atk": 1.12, "def": 1.09, "spd": 1.12},  # 31-40
+    {"hp": 1.70, "atk": 1.15, "def": 1.12, "spd": 1.15},  # 41+
+]
+
+
 def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
     w = int(world)
     f = max(1, min(100, int(floor)))
@@ -541,7 +556,7 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
 
     is_boss, is_midboss = boss_flags(f)
 
-    # ✅ W1の1-20は“チュートリアル帯”として確実に弱くする
+    # ✅ W1の1-20は“チュートリアル帯”として確実に弱くする（雑魚のみ）
     if w == 1 and seg == 0 and not is_boss and not is_midboss:
         atk = random.randint(6, 10)
         df  = random.randint(0, 5)
@@ -559,7 +574,7 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
             "debuff_zone": bool(debuff_zone),
         }
 
-    # ── ここから先は通常生成 ──
+    # ── 通常生成 ──
     t_center = T_CENTER_BY_SEG[seg]
     t = _clamp(random.uniform(t_center - 0.06, t_center + 0.06), 0.40, 0.98)
 
@@ -573,16 +588,26 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
 
     max_hp = int(cap * random.uniform(2.0, 2.8) * (0.92 + 0.03 * seg))
 
+    # ✅ 中ボス倍率（現状維持でOK）
     if is_midboss:
-        max_hp = int(max_hp * 1.35)
-        atk = int(atk * 1.08)
-        df  = int(df  * 1.06)
-        spd = int(spd * 1.08)
+        max_hp = int(max_hp * 1.25)   # 少しだけ緩め
+        atk = int(atk * 1.06)
+        df  = int(df  * 1.04)
+        spd = int(spd * 1.06)
+
+    # ✅ ボス倍率（段階制）
     elif is_boss:
-        max_hp = int(max_hp * 1.65)
-        atk = int(atk * 1.12)
-        df  = int(df  * 1.08)
-        spd = int(spd * 1.12)
+        stage = min(boss_stage(f), len(BOSS_MULT) - 1)
+        mult = BOSS_MULT[stage]
+        max_hp = int(max_hp * mult["hp"])
+        atk    = int(atk    * mult["atk"])
+        df     = int(df     * mult["def"])
+        spd    = int(spd    * mult["spd"])
+
+        # ✅ W1-10はさらに少し優しく（初期壁回避）
+        if w == 1 and f <= 10:
+            df = int(df * 0.90)
+            atk = int(atk * 0.95)
 
     name = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
     return {
@@ -597,21 +622,21 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
         "debuff_zone": bool(debuff_zone),
     }
 
+
 def _combat_damage(attacker_atk: int, defender_def: int) -> int:
     atk = max(1, int(attacker_atk))
     df = max(0, int(defender_def))
     base = atk - df
-    floor_dmg = max(1, int(atk * 0.10))
+    floor_dmg = max(1, int(atk * 0.10))  # ✅ 最低でも攻撃の10%は通る
     return max(floor_dmg, base)
 
+
 def calc_player_max_hp(effect_type: str, effect_value: int) -> int:
-    # ✅ 基礎HPは100固定
     hp_up = int(effect_value) if effect_type == "HP_UP" else 0
     return 100 + hp_up
 
 
 def get_player_shield_max(effect_type: str, effect_value: int) -> int:
-    # shield_nowは保存しない：戦闘開始時にこれを満タンで使う
     return int(effect_value) if effect_type == "SHIELD" else 0
 
 # =========================================================
@@ -7476,6 +7501,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
