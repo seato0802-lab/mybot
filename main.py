@@ -89,6 +89,192 @@ def get_user_lock(uid: int) -> asyncio.Lock:
                 removed += 1
     return lock
 
+# -----------------------------
+# ダンジョン設定
+# -----------------------------
+DUNGEON_SHEET_NAME = os.getenv("GS_DUNGEON_SHEET_NAME", "dungeon")
+DUNGEON_CHANNEL_ID = _env_int("DUNGEON_CHANNEL_ID")  # NoneならどこでもOK
+DUNGEON_MESSAGE_ID_KEY = "dungeon_entry_message_id"
+DUNGEON_CHANNEL_ID_KEY = "dungeon_entry_channel_id"
+
+# ワールド上限
+WORLD_CAP = {1: 50, 2: 100, 3: 150, 4: 200}
+T_CENTER_BY_SEG = [0.55, 0.65, 0.75, 0.85, 0.93]  # 20区切り
+
+# 特殊効果（確定仕様）
+EFFECT_TYPES = ["NONE", "HP_UP", "HEAL_ON_KILL", "INSTAKILL", "SHIELD", "DEBUFF_RESIST"]
+
+HP_UP_TABLE         = [20, 40, 60, 80, 100]
+HEAL_ON_KILL_TABLE  = [10, 20, 30, 40, 50]      # %
+INSTAKILL_TABLE     = [1, 7, 13, 19, 25]        # %
+SHIELD_TABLE        = [10, 20, 30, 40, 50]      # 毎バトル全回復（shield_nowは保存しない）
+DEBUFF_RESIST_TABLE = [20, 40, 60, 80, 100]     # %
+
+DUNGEON_HEADERS = [
+    "user_id",
+    "world",
+    "floor",
+    "hp",
+    "weapon_name",
+    "weapon_atk",
+    "weapon_def",
+    "weapon_spd",
+    "effect_type",
+    "effect_lv",
+    "effect_value",
+    "debuff_zone",         # 0/1（必要なら運用）
+    "current_debuffs",     # 文字列（必要なら運用）
+]
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return lo if x < lo else hi if x > hi else x
+
+
+def _rand_int(a: float, b: float) -> int:
+    lo = int(min(a, b))
+    hi = int(max(a, b))
+    if hi < lo:
+        hi = lo
+    return random.randint(lo, hi)
+
+
+def _fmt_effect(effect_type: str, effect_value: int) -> str:
+    if effect_type == "NONE":
+        return "なし"
+    if effect_type == "HP_UP":
+        return f"最大HP +{effect_value}"
+    if effect_type == "HEAL_ON_KILL":
+        return f"撃破時回復 {effect_value}%"
+    if effect_type == "INSTAKILL":
+        return f"即死 {effect_value}%"
+    if effect_type == "SHIELD":
+        return f"シールド {effect_value}（毎バトル全回復）"
+    if effect_type == "DEBUFF_RESIST":
+        return f"状態異常耐性 {effect_value}%"
+    return "なし"
+
+
+def _effect_lv_unlock(world: int) -> int:
+    # W1=Lv1のみ / W2=Lv1-2 / ... / W5+=Lv1-5
+    if world >= 5:
+        return 5
+    return max(1, min(5, int(world)))
+
+
+def _pick_effect(world: int) -> tuple[str, int, int]:
+    # 6択同率（A）
+    etype = random.choice(EFFECT_TYPES)
+    if etype == "NONE":
+        return "NONE", 0, 0
+
+    max_lv = _effect_lv_unlock(world)
+    lv = random.randint(1, max_lv)  # 11連保証なし／Lv重み付け無し（あなたの確定）
+    if etype == "HP_UP":
+        return etype, lv, HP_UP_TABLE[lv - 1]
+    if etype == "HEAL_ON_KILL":
+        return etype, lv, HEAL_ON_KILL_TABLE[lv - 1]
+    if etype == "INSTAKILL":
+        return etype, lv, INSTAKILL_TABLE[lv - 1]
+    if etype == "SHIELD":
+        return etype, lv, SHIELD_TABLE[lv - 1]
+    if etype == "DEBUFF_RESIST":
+        return etype, lv, DEBUFF_RESIST_TABLE[lv - 1]
+    return "NONE", 0, 0
+
+
+def _weapon_t(world: int, floor: int) -> float:
+    # 敵生成と同じ思想 + 20内微上振れ
+    f = max(1, min(100, int(floor)))
+    seg = (f - 1) // 20
+    in_seg = (f - 1) % 20
+    t_center = T_CENTER_BY_SEG[seg]
+    micro = (in_seg / 19.0) * 0.03
+    t = _clamp(random.uniform(t_center - 0.06, t_center + 0.06) + micro, 0.40, 0.98)
+    return t
+
+
+def roll_weapon(world: int, floor: int) -> dict:
+    cap = WORLD_CAP.get(int(world), 50)
+    t = _weapon_t(world, floor)
+    atk = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    df  = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    spd = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+
+    etype, elv, eval_ = _pick_effect(world)
+
+    # 名前は雑でもOK（後で差し替え）
+    name = f"W{world}の武器"
+
+    return {
+        "name": name,
+        "atk": max(0, atk),
+        "def": max(0, df),
+        "spd": max(1, spd),
+        "effect_type": etype,
+        "effect_lv": elv,
+        "effect_value": eval_,
+    }
+
+
+def boss_flags(floor: int) -> tuple[bool, bool]:
+    # 5=中ボス, 10=ボス, 15=中ボス...
+    is_boss = (floor % 10 == 0)
+    is_midboss = (floor % 10 == 5)
+    return is_boss, is_midboss
+
+
+def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
+    cap = WORLD_CAP.get(int(world), 50)
+    f = max(1, min(100, int(floor)))
+    seg = (f - 1) // 20
+    t_center = T_CENTER_BY_SEG[seg]
+    t = _clamp(random.uniform(t_center - 0.06, t_center + 0.06), 0.40, 0.98)
+
+    atk = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    df  = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    spd = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+
+    # HP（cap比例、segで少し伸ばす）
+    max_hp = int(cap * random.uniform(2.2, 3.2) * (0.90 + 0.04 * seg))
+    hp = max_hp
+
+    is_boss, is_midboss = boss_flags(f)
+    if is_midboss:
+        max_hp = int(max_hp * 1.35)
+        atk = int(atk * 1.08)
+        df  = int(df  * 1.08)
+        spd = int(spd * 1.08)
+    elif is_boss:
+        max_hp = int(max_hp * 1.65)
+        atk = int(atk * 1.12)
+        df  = int(df  * 1.12)
+        spd = int(spd * 1.12)
+
+    hp = max_hp
+
+    name = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
+    return {
+        "name": f"{name}（W{world}-F{f}）",
+        "hp": hp,
+        "max_hp": max_hp,
+        "atk": max(1, atk),
+        "def": max(0, df),
+        "spd": max(1, spd),
+        "is_boss": is_boss,
+        "is_midboss": is_midboss,
+        "debuff_zone": bool(debuff_zone),
+    }
+
+
+def calc_player_max_hp(effect_type: str, effect_value: int) -> int:
+    # 基礎HPは100固定
+    hp_up = effect_value if effect_type == "HP_UP" else 0
+    return 100 + int(hp_up)
+
+
+def get_player_shield_max(effect_type: str, effect_value: int) -> int:
+    return int(effect_value) if effect_type == "SHIELD" else 0
 
 # ---------------------------------------------------------
 # /craft 用（既存のまま）
@@ -952,7 +1138,186 @@ async def sheets_save_config_once_async(key: str, value: str) -> bool:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, lambda: store.save_config_once(key, value))
 
+# -----------------------------
+# DungeonStore（Sheets）
+# -----------------------------
+class DungeonStore:
+    def __init__(self, sheets_store: SheetsStore):
+        self.s = sheets_store
+        self.ws = None
+        self._lock = Lock()
+        self._uid_to_row: dict[int, int] = {}
 
+    def init(self):
+        if not self.s.sh:
+            raise RuntimeError("SheetsStore が init されていないのだ")
+        with self._lock:
+            try:
+                self.ws = self.s.sh.worksheet(DUNGEON_SHEET_NAME)
+            except Exception:
+                self.ws = self.s.sh.add_worksheet(title=DUNGEON_SHEET_NAME, rows=3000, cols=30)
+
+            header = self.ws.row_values(1)
+            if not header:
+                self.ws.update("A1", [DUNGEON_HEADERS])
+                header = DUNGEON_HEADERS
+            else:
+                merged = list(header)
+                for h in DUNGEON_HEADERS:
+                    if h not in merged:
+                        merged.append(h)
+                if merged != header:
+                    self.ws.update("A1", [merged])
+                header = merged
+
+            self._reindex()
+
+    def _reindex(self):
+        values = self.ws.get_all_values()
+        header = values[0] if values else []
+        if not header:
+            return
+        uid_col = header.index("user_id") if "user_id" in header else 0
+        uid_to_row = {}
+        for row_idx, row in enumerate(values[1:], start=2):
+            if not row:
+                continue
+            uid = self.s._to_int_maybe(row[uid_col] if uid_col < len(row) else "")
+            if uid > 0 and uid not in uid_to_row:
+                uid_to_row[uid] = row_idx
+        self._uid_to_row = uid_to_row
+
+    def _ensure_user_row(self, uid: int) -> dict:
+        # 初期状態：W1-F1、HP100、初期武器はガチャで決める運用でもOK
+        # ここでは「最低限動く」ために初期武器を固定で持たせる（後で変更可能）
+        return {
+            "user_id": uid,
+            "world": 1,
+            "floor": 1,
+            "hp": 100,
+            "weapon_name": "初期武器",
+            "weapon_atk": 10,
+            "weapon_def": 10,
+            "weapon_spd": 10,
+            "effect_type": "NONE",
+            "effect_lv": 0,
+            "effect_value": 0,
+            "debuff_zone": 0,
+            "current_debuffs": "",
+        }
+
+    def load_user(self, uid: int) -> dict:
+        with self._lock:
+            header = self.ws.row_values(1)
+            if not header:
+                self.ws.update("A1", [DUNGEON_HEADERS])
+                header = DUNGEON_HEADERS
+
+            row_idx = self._uid_to_row.get(uid)
+            if row_idx is None:
+                u = self._ensure_user_row(uid)
+                values = [u.get(h, "") for h in header]
+                # user_idは文字列でE+対策
+                if "user_id" in header:
+                    values[header.index("user_id")] = str(uid)
+                self.ws.append_row(values)
+                self._reindex()
+                return u
+
+            row = self.ws.row_values(row_idx)
+            r = {h: (row[i] if i < len(row) else "") for i, h in enumerate(header)}
+
+            def gi(k, default=0):
+                try:
+                    return int(self.s._to_int_maybe(r.get(k)) or default)
+                except Exception:
+                    return default
+
+            def gs(k, default=""):
+                v = r.get(k)
+                return str(v).strip() if v is not None else default
+
+            return {
+                "user_id": uid,
+                "world": gi("world", 1),
+                "floor": gi("floor", 1),
+                "hp": gi("hp", 100),
+                "weapon_name": gs("weapon_name", "初期武器"),
+                "weapon_atk": gi("weapon_atk", 10),
+                "weapon_def": gi("weapon_def", 10),
+                "weapon_spd": gi("weapon_spd", 10),
+                "effect_type": gs("effect_type", "NONE").upper() or "NONE",
+                "effect_lv": gi("effect_lv", 0),
+                "effect_value": gi("effect_value", 0),
+                "debuff_zone": gi("debuff_zone", 0),
+                "current_debuffs": gs("current_debuffs", ""),
+            }
+
+    def save_user_fields(self, uid: int, patch: dict):
+        with self._lock:
+            header = self.ws.row_values(1)
+            if not header:
+                self.ws.update("A1", [DUNGEON_HEADERS])
+                header = DUNGEON_HEADERS
+
+            row_idx = self._uid_to_row.get(uid)
+            if row_idx is None:
+                # なければ作ってから更新
+                _ = self.load_user(uid)
+                row_idx = self._uid_to_row.get(uid)
+
+            if row_idx is None:
+                return
+
+            # 1行分の値を取得→上書き→まとめてupdate
+            cur = self.ws.row_values(row_idx)
+            values = [cur[i] if i < len(cur) else "" for i in range(len(header))]
+            for k, v in patch.items():
+                if k not in header:
+                    continue
+                col = header.index(k)
+                if k == "user_id":
+                    values[col] = str(uid)
+                else:
+                    values[col] = str(v)
+
+            start_a1 = rowcol_to_a1(row_idx, 1)
+            end_a1 = rowcol_to_a1(row_idx, len(header))
+            self.ws.update(range_name=f"{start_a1}:{end_a1}", values=[values])
+
+    def save_after_battle(self, uid: int, *, world: int, floor: int, hp: int):
+        self.save_user_fields(uid, {"world": int(world), "floor": int(floor), "hp": int(hp)})
+
+    def save_weapon(self, uid: int, w: dict):
+        patch = {
+            "weapon_name": w["name"],
+            "weapon_atk": int(w["atk"]),
+            "weapon_def": int(w["def"]),
+            "weapon_spd": int(w["spd"]),
+            "effect_type": w["effect_type"],
+            "effect_lv": int(w.get("effect_lv", 0) or 0),
+            "effect_value": int(w.get("effect_value", 0) or 0),
+        }
+        self.save_user_fields(uid, patch)
+
+
+dungeon_store = DungeonStore(store)
+
+async def dungeon_init_async():
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, dungeon_store.init)
+
+async def dungeon_load_user_async(uid: int) -> dict:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: dungeon_store.load_user(uid))
+
+async def dungeon_save_after_battle_async(uid: int, world: int, floor: int, hp: int):
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: dungeon_store.save_after_battle(uid, world=world, floor=floor, hp=hp))
+
+async def dungeon_save_weapon_async(uid: int, w: dict):
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: dungeon_store.save_weapon(uid, w))
 # =========================================================
 # 権限＆チャンネルチェック
 # =========================================================
@@ -6559,6 +6924,381 @@ async def skull_cmd(interaction: discord.Interaction, bet: int, minutes: int):
 
     await interaction.followup.send("募集を作成したのだ", ephemeral=True)
 
+# -----------------------------
+# バトルセッション（メモリ）
+# -----------------------------
+dungeon_sessions: dict[int, dict] = {}  # user_id -> session
+
+
+def _combat_damage(attacker_atk: int, defender_def: int) -> int:
+    # 超シンプル（後で調整可）：攻撃-防御の最低1
+    return max(1, int(attacker_atk) - int(defender_def))
+
+
+def _speed_first(player_spd: int, enemy_spd: int) -> bool:
+    # SPDが高い方が先攻。同値は50%
+    if player_spd > enemy_spd:
+        return True
+    if player_spd < enemy_spd:
+        return False
+    return random.random() < 0.5
+
+
+async def _finish_battle(uid: int, result: str, interaction: discord.Interaction | None = None):
+    # result: "win"/"lose"
+    async with get_user_lock(uid):
+        sess = dungeon_sessions.get(uid)
+        if not sess:
+            return
+
+        world = sess["world"]
+        floor = sess["floor"]
+        hp = max(0, int(sess["player_hp"]))
+
+        if result == "win":
+            # 1-100運用。5-1以降は後で差し替え
+            floor = min(100, floor + 1)
+
+        await dungeon_save_after_battle_async(uid, world, floor, hp)
+        dungeon_sessions.pop(uid, None)
+
+        if interaction:
+            msg = "✅ 勝利したのだ！次のフロアに進めるのだ！" if result == "win" else "💀 負けたのだ…"
+            await safe_send(interaction, msg, ephemeral=False)
+
+
+def _build_battle_embed(sess: dict) -> discord.Embed:
+    enemy = sess["enemy"]
+    e = discord.Embed(title="⚔️ ダンジョンバトル")
+    e.add_field(
+        name="あなた",
+        value=(
+            f"HP: **{sess['player_hp']} / {sess['max_hp']}**\n"
+            f"SHIELD: **{sess['shield_now']}**\n"
+            f"ATK **{sess['atk']}** / DEF **{sess['def']}** / SPD **{sess['spd']}**\n"
+            f"効果：{_fmt_effect(sess['effect_type'], sess['effect_value'])}"
+        ),
+        inline=False,
+    )
+    e.add_field(
+        name="敵",
+        value=(
+            f"{enemy['name']}\n"
+            f"HP: **{enemy['hp']} / {enemy['max_hp']}**\n"
+            f"ATK **{enemy['atk']}** / DEF **{enemy['def']}** / SPD **{enemy['spd']}**"
+        ),
+        inline=False,
+    )
+    e.set_footer(text="攻撃を押すと進行するのだ。戦闘終了時にだけ保存されるのだ。")
+    return e
+
+
+class DungeonBattleView(discord.ui.View):
+    def __init__(self, uid: int):
+        super().__init__(timeout=180)
+        self.uid = uid
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.uid
+
+    @discord.ui.button(label="⚔️ 攻撃", style=discord.ButtonStyle.danger)
+    async def attack(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        async with get_user_lock(uid):
+            sess = dungeon_sessions.get(uid)
+            if not sess:
+                await safe_send(interaction, "セッションが見つからないのだ（再度「入る」からやるのだ）", ephemeral=True)
+                return
+
+            enemy = sess["enemy"]
+
+            # 行動順
+            player_first = _speed_first(sess["spd"], enemy["spd"])
+            log = []
+
+            def apply_damage_to_player(dmg: int):
+                # シールド優先（保存しない：メモリ）
+                s = sess["shield_now"]
+                use = min(s, dmg)
+                sess["shield_now"] -= use
+                dmg -= use
+                if dmg > 0:
+                    sess["player_hp"] = max(0, sess["player_hp"] - dmg)
+
+            def apply_damage_to_enemy(dmg: int):
+                enemy["hp"] = max(0, enemy["hp"] - dmg)
+
+            # 1ターン
+            if player_first:
+                dmg = _combat_damage(sess["atk"], enemy["def"])
+                apply_damage_to_enemy(dmg)
+                log.append(f"あなたの攻撃！ 敵に **{dmg}** ダメージ。")
+                if enemy["hp"] <= 0:
+                    # 勝利：回復/即死などは後で拡張（最小実装）
+                    await interaction.response.edit_message(embed=_build_battle_embed(sess), view=None, content="\n".join(log) + "\n\n✅ 勝利！")
+                    await _finish_battle(uid, "win")
+                    return
+
+                dmg2 = _combat_damage(enemy["atk"], sess["def"])
+                apply_damage_to_player(dmg2)
+                log.append(f"敵の攻撃！ あなたに **{dmg2}** ダメージ。")
+            else:
+                dmg2 = _combat_damage(enemy["atk"], sess["def"])
+                apply_damage_to_player(dmg2)
+                log.append(f"敵の攻撃！ あなたに **{dmg2}** ダメージ。")
+                if sess["player_hp"] <= 0:
+                    await interaction.response.edit_message(embed=_build_battle_embed(sess), view=None, content="\n".join(log) + "\n\n💀 敗北…")
+                    await _finish_battle(uid, "lose")
+                    return
+
+                dmg = _combat_damage(sess["atk"], enemy["def"])
+                apply_damage_to_enemy(dmg)
+                log.append(f"あなたの攻撃！ 敵に **{dmg}** ダメージ。")
+
+            # 判定
+            if enemy["hp"] <= 0:
+                await interaction.response.edit_message(embed=_build_battle_embed(sess), view=None, content="\n".join(log) + "\n\n✅ 勝利！")
+                await _finish_battle(uid, "win")
+                return
+            if sess["player_hp"] <= 0:
+                await interaction.response.edit_message(embed=_build_battle_embed(sess), view=None, content="\n".join(log) + "\n\n💀 敗北…")
+                await _finish_battle(uid, "lose")
+                return
+
+            await interaction.response.edit_message(embed=_build_battle_embed(sess), view=self, content="\n".join(log))
+
+    @discord.ui.button(label="🏃 逃げる", style=discord.ButtonStyle.secondary)
+    async def flee(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        async with get_user_lock(uid):
+            dungeon_sessions.pop(uid, None)
+        await interaction.response.edit_message(content="逃げたのだ。", embed=None, view=None)
+
+
+async def start_battle(interaction: discord.Interaction):
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        state = await dungeon_load_user_async(uid)
+
+        # 現在状態から最大HP算出＆現在HP丸め
+        max_hp = calc_player_max_hp(state["effect_type"], state["effect_value"])
+        hp = min(int(state["hp"]), max_hp)
+
+        # シールドは戦闘開始で満タン（メモリのみ）
+        shield_max = get_player_shield_max(state["effect_type"], state["effect_value"])
+        shield_now = shield_max
+
+        # 敵生成
+        enemy = generate_enemy(state["world"], state["floor"], debuff_zone=bool(state.get("debuff_zone", 0)))
+
+        # セッション作成（戦闘中はここだけ更新）
+        dungeon_sessions[uid] = {
+            "world": int(state["world"]),
+            "floor": int(state["floor"]),
+            "player_hp": int(hp),
+            "max_hp": int(max_hp),
+            "shield_now": int(shield_now),
+            "atk": int(state["weapon_atk"]),
+            "def": int(state["weapon_def"]),
+            "spd": int(state["weapon_spd"]),
+            "effect_type": state["effect_type"],
+            "effect_value": int(state["effect_value"]),
+            "effect_lv": int(state.get("effect_lv", 0) or 0),
+            "enemy": enemy,
+        }
+
+        await safe_send(interaction, content=None, embed=_build_battle_embed(dungeon_sessions[uid]), view=DungeonBattleView(uid), ephemeral=False)
+
+
+# -----------------------------
+# ガチャUI（結果表示→Select→確定）
+# -----------------------------
+def build_gacha_embed(user: discord.User, weapons: list[dict], world: int, floor: int, is_11: bool) -> discord.Embed:
+    title = "🎲 11連ガチャ結果" if is_11 else "🎲 1連ガチャ結果"
+    e = discord.Embed(title=title, description=f"{user.mention} の結果（W{world}-{floor}）")
+    lines = []
+    for i, w in enumerate(weapons, start=1):
+        lines.append(
+            f"**{i}. {w['name']}**\n"
+            f"ATK **{w['atk']}** / DEF **{w['def']}** / SPD **{w['spd']}**\n"
+            f"効果：{_fmt_effect(w['effect_type'], w['effect_value'])}"
+        )
+    e.add_field(name="候補", value="\n\n".join(lines)[:1024], inline=False)
+    e.set_footer(text="下のリストから装備する武器を選ぶのだ（変更しない も選べるのだ）")
+    return e
+
+
+class GachaConfirmView(discord.ui.View):
+    def __init__(self, *, uid: int, chosen_weapon: dict | None, on_confirm):
+        super().__init__(timeout=60)
+        self.uid = uid
+        self.chosen_weapon = chosen_weapon
+        self.on_confirm = on_confirm
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.uid
+
+    @discord.ui.button(label="✅ 確定", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.on_confirm(interaction, self.chosen_weapon)
+        self.stop()
+
+    @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="キャンセルしたのだ。", embed=None, view=None)
+        self.stop()
+
+
+class GachaSelectView(discord.ui.View):
+    def __init__(self, *, uid: int, weapons: list[dict], on_apply_weapon):
+        super().__init__(timeout=120)
+        self.uid = uid
+        self.weapons = weapons
+        self.on_apply_weapon = on_apply_weapon
+
+        options: list[discord.SelectOption] = []
+        for idx, w in enumerate(weapons, start=1):
+            label = f"{idx}. {w['name']}"
+            desc = f"ATK{w['atk']} DEF{w['def']} SPD{w['spd']} / {_fmt_effect(w['effect_type'], w['effect_value'])}"
+            options.append(discord.SelectOption(label=label[:100], description=desc[:100], value=str(idx)))
+
+        options.append(discord.SelectOption(label="変更しない", description="現在の武器のままにする", value="keep"))
+
+        sel = discord.ui.Select(
+            placeholder="装備する武器を選ぶのだ（変更しない も可）",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+        sel.callback = self._on_select
+        self.add_item(sel)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.uid
+
+    async def _on_select(self, interaction: discord.Interaction):
+        v = interaction.data.get("values", ["keep"])[0]
+
+        if v == "keep":
+            chosen = None
+            msg = "変更しない を選んだのだ。確定するのだ？"
+        else:
+            chosen = self.weapons[int(v) - 1]
+            msg = (
+                f"この武器に変更するのだ？\n"
+                f"**{chosen['name']}**\n"
+                f"ATK {chosen['atk']} / DEF {chosen['def']} / SPD {chosen['spd']}\n"
+                f"効果：{_fmt_effect(chosen['effect_type'], chosen['effect_value'])}"
+            )
+
+        async def on_confirm(i: discord.Interaction, w: dict | None):
+            await self.on_apply_weapon(i, w)
+
+        await interaction.response.edit_message(
+            content=msg,
+            embed=None,
+            view=GachaConfirmView(uid=self.uid, chosen_weapon=chosen, on_confirm=on_confirm),
+        )
+
+
+async def do_gacha(interaction: discord.Interaction, n: int):
+    uid = interaction.user.id
+    async with get_user_lock(uid):
+        # 状態読み込み（world/floor基準）
+        state = await dungeon_load_user_async(uid)
+
+        weapons = [roll_weapon(state["world"], state["floor"]) for _ in range(n)]
+        embed = build_gacha_embed(interaction.user, weapons, state["world"], state["floor"], is_11=(n == 11))
+
+        async def apply_weapon(i: discord.Interaction, w: dict | None):
+            if w is None:
+                await i.response.edit_message(content="変更しなかったのだ。", embed=None, view=None)
+                return
+
+            # 武器保存（列分割）
+            await dungeon_save_weapon_async(uid, w)
+
+            # HP_UPが変わる場合、現在HPが最大HPを超えないように丸め（必要なら）
+            st = await dungeon_load_user_async(uid)
+            new_max = calc_player_max_hp(st["effect_type"], st["effect_value"])
+            new_hp = min(int(st["hp"]), int(new_max))
+            if new_hp != int(st["hp"]):
+                await dungeon_save_after_battle_async(uid, st["world"], st["floor"], new_hp)
+
+            await i.response.edit_message(content=f"✅ **{w['name']}** に変更したのだ！", embed=None, view=None)
+
+        await safe_send(
+            interaction,
+            content=None,
+            embed=embed,
+            view=GachaSelectView(uid=uid, weapons=weapons, on_apply_weapon=apply_weapon),
+            ephemeral=False,
+        )
+
+
+# -----------------------------
+# エントリーUI（永続）
+# -----------------------------
+class DungeonEntryView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🏰 ダンジョンに入る", style=discord.ButtonStyle.primary, custom_id="dungeon:enter")
+    async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
+            await safe_send(interaction, "このチャンネルでは使えないのだ。", ephemeral=True)
+            return
+        await start_battle(interaction)
+
+    @discord.ui.button(label="➡️ 次に進む", style=discord.ButtonStyle.success, custom_id="dungeon:next")
+    async def next_floor(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
+            await safe_send(interaction, "このチャンネルでは使えないのだ。", ephemeral=True)
+            return
+        # 「次に進む」= いまの状態を読み込んで次の戦闘を開始（戦闘終了時に保存）
+        await start_battle(interaction)
+
+    @discord.ui.button(label="🎲 ガチャ（1連）", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha1")
+    async def gacha1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
+            await safe_send(interaction, "このチャンネルでは使えないのだ。", ephemeral=True)
+            return
+        await do_gacha(interaction, 1)
+
+    @discord.ui.button(label="🎲 ガチャ（11連）", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha11")
+    async def gacha11(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
+            await safe_send(interaction, "このチャンネルでは使えないのだ。", ephemeral=True)
+            return
+        await do_gacha(interaction, 11)
+
+
+@bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
+async def setup_dungeon_cmd(interaction: discord.Interaction):
+    if not is_admin_user(interaction):
+        await safe_send(interaction, "管理者だけ使えるのだ。", ephemeral=True)
+        return
+
+    if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
+        await safe_send(interaction, "設定したチャンネルで実行するのだ。", ephemeral=True)
+        return
+
+    await safe_defer(interaction, ephemeral=True)
+
+    embed = discord.Embed(
+        title="🏰 ダンジョン",
+        description="入る/次に進むで戦闘が始まるのだ。\nガチャで武器を更新できるのだ。",
+    )
+    msg = await interaction.channel.send(embed=embed, view=DungeonEntryView())
+
+    # 設定シートに保存（1回だけでなく上書きしてOKなら save_config_once を _save_config_kv に替える）
+    # ここは「既存に合わせて一度だけ」方式にしている
+    await sheets_save_config_once_async(DUNGEON_CHANNEL_ID_KEY, str(interaction.channel_id))
+    await sheets_save_config_once_async(DUNGEON_MESSAGE_ID_KEY, str(msg.id))
+
+    await safe_send(interaction, "設置したのだ。", ephemeral=True)
+
+
 # =========================================================
 # 起動イベント
 # =========================================================
@@ -6577,7 +7317,27 @@ async def on_ready():
             try:
                 await bot.close()
             finally:
+                   os._exit(1)
+            try:
+                await dungeon_init_async()
+                print("DungeonStore initialized")
+            except Exception as e:
+                print("DungeonStore init failed:", e)
+                traceback.print_exc()
+
+        except Exception as e:
+            print("SheetsStore init failed:", e)
+            traceback.print_exc()
+            try:
+                await bot.close()
+            finally:
                 os._exit(1)
+    try:
+        await bot.tree.sync()
+    except Exception as e:
+        print("tree sync failed:", e)
+        traceback.print_exc()
+
 
     try:
         await bot.tree.sync()
@@ -6590,6 +7350,7 @@ async def on_ready():
         bot.add_view(ShopEntryView())
         bot.add_view(BjEntryView())
         bot.add_view(NumaEntryView())
+        bot.add_view(DungeonEntryView())
         VIEWS_READY = True
 
     if not check_tasks.is_running():
@@ -6643,6 +7404,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
