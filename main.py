@@ -571,6 +571,18 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
         df  = int(df  * 1.08)  # ✅ DEF倍率控えめ
         spd = int(spd * 1.12)
 
+    # ✅ 序盤救済（W1の1-20）
+    if int(world) == 1 and seg == 0:
+        atk = int(atk * 0.70)
+        df  = int(df  * 0.75)
+        spd = int(spd * 0.85)
+        max_hp = int(max_hp * 0.80)
+
+        atk = max(1, atk)
+        df  = max(0, df)
+        spd = max(1, spd)
+        max_hp = max(10, max_hp)
+
     name = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
     return {
         "name": f"{name}（W{int(world)}-F{f}）",
@@ -7163,7 +7175,7 @@ def build_gacha_embed(user: discord.User, weapons: list[dict], world: int, floor
         )
     e.add_field(name="候補", value="\n\n".join(lines)[:1024], inline=False)
     e.set_footer(text="下のリストから装備する武器を選ぶのだ（変更しない も選べるのだ）")
-    return 
+    return e
 
 class GachaCountView(discord.ui.View):
     def __init__(self, uid: int):
@@ -7186,29 +7198,6 @@ class GachaCountView(discord.ui.View):
     @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="ガチャをキャンセルしたのだ。", view=None)
-
-class GachaCountView(discord.ui.View):
-    def __init__(self, uid: int):
-        super().__init__(timeout=60)
-        self.uid = uid
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return interaction.user.id == self.uid
-
-    @discord.ui.button(label="🎲 1回", style=discord.ButtonStyle.primary)
-    async def one(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        await do_gacha(interaction, 1)
-
-    @discord.ui.button(label="🎲 11連", style=discord.ButtonStyle.success)
-    async def eleven(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        await do_gacha(interaction, 11)
-
-    @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        await interaction.edit_original_response(content="ガチャをキャンセルしたのだ。", view=None)
 
 class GachaSelectView(discord.ui.View):
     def __init__(self, *, uid: int, weapons: list[dict], on_apply_weapon):
@@ -7288,15 +7277,11 @@ async def do_gacha(interaction: discord.Interaction, n: int):
 
             await i.response.edit_message(content=f"✅ **{w['name']}** に変更したのだ！", embed=None, view=None)
 
-        await safe_send(
-            interaction,
-            content=None,
-            embed=embed,
-            view=GachaSelectView(uid=uid, weapons=weapons, on_apply_weapon=apply_weapon),
-            ephemeral=False,
-        )
-
-
+    await interaction.edit_original_response(
+        content=None,
+        embed=embed,
+        view=GachaSelectView(uid=uid, weapons=weapons, on_apply_weapon=apply_weapon),
+    )
 # -----------------------------
 # エントリーUI（永続）
 # -----------------------------
@@ -7458,6 +7443,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
