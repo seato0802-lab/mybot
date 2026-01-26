@@ -7135,8 +7135,20 @@ async def start_battle(interaction: discord.Interaction):
             "enemy": enemy,
         }
 
-        await safe_send(interaction, content=None, embed=_build_battle_embed(dungeon_sessions[uid]), view=DungeonBattleView(uid), ephemeral=False)
+        embed = _build_battle_embed(dungeon_sessions[uid])
+        view = DungeonBattleView(uid)
 
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(content=None, embed=embed, view=view, ephemeral=False)
+            else:
+                await interaction.response.send_message(content=None, embed=embed, view=view, ephemeral=False)
+        except Exception:
+            # 最後の保険（たまにresponseが競合する）
+            try:
+                await interaction.followup.send(content=None, embed=embed, view=view, ephemeral=False)
+            except Exception:
+                pass
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -7436,6 +7448,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
