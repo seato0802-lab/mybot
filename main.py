@@ -533,7 +533,7 @@ def boss_flags(floor: int) -> tuple[bool, bool]:
     return is_boss, is_midboss
 
 
-def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
+ddef generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
     cap = WORLD_CAP.get(int(world), 50)
     f = max(1, min(100, int(floor)))
     seg = (f - 1) // 20
@@ -541,23 +541,34 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
     t_center = T_CENTER_BY_SEG[seg]
     t = _clamp(random.uniform(t_center - 0.06, t_center + 0.06), 0.40, 0.98)
 
-    atk = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
-    df  = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
-    spd = _rand_int(cap * (t - 0.08), cap * (t + 0.08))
+    # ✅ 進行度に応じたレンジ（DEFを抑えるのが重要）
+    # ATK: 標準
+    atk = _rand_int(cap * (t - 0.10), cap * (t + 0.06))
 
-    # HP（cap比例、segで少し伸ばす）
-    max_hp = int(cap * random.uniform(2.2, 3.2) * (0.90 + 0.04 * seg))
+    # DEF: ATKより低め（これで与ダメ1固定をほぼ回避）
+    df  = _rand_int(cap * (t - 0.18), cap * (t + 0.02))
+
+    # SPD: 標準
+    spd = _rand_int(cap * (t - 0.10), cap * (t + 0.06))
+
+    # 最低保証（W1序盤で理不尽にならない）
+    atk = max(1, atk)
+    df  = max(0, df)
+    spd = max(1, spd)
+
+    # HP（cap比例、segで少し伸ばす） ※そのまま
+    max_hp = int(cap * random.uniform(2.0, 2.8) * (0.92 + 0.03 * seg))
 
     is_boss, is_midboss = boss_flags(f)
     if is_midboss:
         max_hp = int(max_hp * 1.35)
         atk = int(atk * 1.08)
-        df  = int(df  * 1.08)
+        df  = int(df  * 1.06)  # ✅ DEF倍率も少し控えめ
         spd = int(spd * 1.08)
     elif is_boss:
         max_hp = int(max_hp * 1.65)
         atk = int(atk * 1.12)
-        df  = int(df  * 1.12)
+        df  = int(df  * 1.08)  # ✅ DEF倍率控えめ
         spd = int(spd * 1.12)
 
     name = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
@@ -565,14 +576,13 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
         "name": f"{name}（W{int(world)}-F{f}）",
         "hp": max_hp,
         "max_hp": max_hp,
-        "atk": max(1, atk),
-        "def": max(0, df),
-        "spd": max(1, spd),
+        "atk": atk,
+        "def": df,
+        "spd": spd,
         "is_boss": is_boss,
         "is_midboss": is_midboss,
         "debuff_zone": bool(debuff_zone),
     }
-
 
 def calc_player_max_hp(effect_type: str, effect_value: int) -> int:
     # ✅ 基礎HPは100固定
@@ -6962,28 +6972,38 @@ def _speed_first(player_spd: int, enemy_spd: int) -> bool:
     return random.random() < 0.5
 
 
+def _checkpoint_floor(floor: int) -> int:
+    f = max(1, min(100, int(floor)))
+    # 1,21,41,61,81 ...
+    return 1 + ((f - 1) // 20) * 20
+
+
 async def _finish_battle(uid: int, result: str, interaction: discord.Interaction | None = None):
-    # result: "win"/"lose"
     async with get_user_lock(uid):
         sess = dungeon_sessions.get(uid)
         if not sess:
             return
 
-        world = sess["world"]
-        floor = sess["floor"]
+        world = int(sess["world"])
+        floor = int(sess["floor"])
         hp = max(0, int(sess["player_hp"]))
 
         if result == "win":
-            # 1-100運用。5-1以降は後で差し替え
             floor = min(100, floor + 1)
+        else:
+            # ✅ 負けたらチェックポイントに戻す（HPは残HP=0のまま保存でもOK）
+            floor = _checkpoint_floor(floor)
 
         await dungeon_save_after_battle_async(uid, world, floor, hp)
         dungeon_sessions.pop(uid, None)
 
         if interaction:
-            msg = "✅ 勝利したのだ！次のフロアに進めるのだ！" if result == "win" else "💀 負けたのだ…"
-            await safe_send(interaction, msg, ephemeral=False)
-
+            msg = (
+                "✅ 勝利したのだ！次のフロアに進めるのだ！"
+                if result == "win"
+                else f"💀 負けたのだ…チェックポイント（{world}-{floor}）に戻るのだ。"
+            )
+            await safe_send(interaction, msg, ephemeral=True)
 
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
@@ -7453,6 +7473,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
