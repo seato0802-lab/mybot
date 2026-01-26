@@ -552,76 +552,70 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
     w = int(world)
     f = max(1, min(100, int(floor)))
     seg = (f - 1) // 20
-    cap = WORLD_CAP.get(w, 50)
-
     is_boss, is_midboss = boss_flags(f)
 
-    # ✅ W1の1-20は“チュートリアル帯”として確実に弱くする（雑魚のみ）
-    if w == 1 and seg == 0 and not is_boss and not is_midboss:
-        atk = random.randint(6, 10)
-        df  = random.randint(0, 5)
-        spd = random.randint(6, 10)
-        max_hp = random.randint(35, 60)
-        return {
-            "name": f"敵（W{w}-F{f}）",
-            "hp": max_hp,
-            "max_hp": max_hp,
-            "atk": atk,
-            "def": df,
-            "spd": spd,
-            "is_boss": False,
-            "is_midboss": False,
-            "debuff_zone": bool(debuff_zone),
-        }
+    ceil = weapon_ceiling(w, f)
+    wmax_atk = int(ceil["atk"])
+    wmax_def = int(ceil["def"])
+    wmax_spd = int(ceil["spd"])
+    cap = int(ceil["cap"])
 
-    # ── 通常生成 ──
-    t_center = T_CENTER_BY_SEG[seg]
-    t = _clamp(random.uniform(t_center - 0.06, t_center + 0.06), 0.40, 0.98)
-
-    atk = _rand_int(cap * (t - 0.10), cap * (t + 0.06))
-    df  = _rand_int(cap * (t - 0.18), cap * (t + 0.02))
-    spd = _rand_int(cap * (t - 0.10), cap * (t + 0.06))
-
-    atk = max(1, atk)
-    df  = max(0, df)
-    spd = max(1, spd)
-
-    max_hp = int(cap * random.uniform(2.0, 2.8) * (0.92 + 0.03 * seg))
-
-    # ✅ 中ボス倍率（現状維持でOK）
+    # -------------------------
+    # 基本方針：
+    # 「その帯の最大武器より少し下」なら勝てる強さ
+    # -------------------------
+    # 雑魚：最大武器の 0.78〜0.88 くらい
+    # 中ボス：0.86〜0.95
+    # ボス：0.92〜1.02（ただしDEFは上げすぎない）
     if is_midboss:
-        max_hp = int(max_hp * 1.25)   # 少しだけ緩め
-        atk = int(atk * 1.06)
-        df  = int(df  * 1.04)
-        spd = int(spd * 1.06)
-
-    # ✅ ボス倍率（段階制）
+        r_lo, r_hi = 0.86, 0.95
+        hp_mul_lo, hp_mul_hi = 0.95, 1.10
     elif is_boss:
-        stage = min(boss_stage(f), len(BOSS_MULT) - 1)
-        mult = BOSS_MULT[stage]
-        max_hp = int(max_hp * mult["hp"])
-        atk    = int(atk    * mult["atk"])
-        df     = int(df     * mult["def"])
-        spd    = int(spd    * mult["spd"])
+        r_lo, r_hi = 0.92, 1.02
+        hp_mul_lo, hp_mul_hi = 1.05, 1.25
+    else:
+        r_lo, r_hi = 0.78, 0.88
+        hp_mul_lo, hp_mul_hi = 0.80, 0.98
 
-        # ✅ W1-10はさらに少し優しく（初期壁回避）
-        if w == 1 and f <= 10:
-            df = int(df * 0.90)
-            atk = int(atk * 0.95)
+    r = random.uniform(r_lo, r_hi)
+
+    # ✅ DEFは「与ダメ1固定」を避けるため、ATKより少し低めにする
+    enemy_atk = max(1, int(wmax_atk * r))
+    enemy_def = max(0, int(wmax_def * (r - 0.08)))  # ここが重要
+    enemy_spd = max(1, int(wmax_spd * (r - 0.02)))
+
+    # HPは cap 基準で管理（上限に縛られないので分かりやすい）
+    # segが上がるほど少しだけ増える
+    base_hp = int(cap * random.uniform(1.6, 2.2) * (0.92 + 0.03 * seg))
+    max_hp = int(base_hp * random.uniform(hp_mul_lo, hp_mul_hi))
+    max_hp = max(10, max_hp)
+
+    # ✅ W1の1-20はさらに安全（ボス含む）
+    if w == 1 and seg == 0:
+        enemy_atk = max(1, int(enemy_atk * 0.85))
+        enemy_def = max(0, int(enemy_def * 0.80))
+        enemy_spd = max(1, int(enemy_spd * 0.90))
+        max_hp = max(10, int(max_hp * (0.85 if not is_boss else 0.92)))
+
+    # ✅ W1の21-40 も「急にキツい」になりやすいので軽く補正
+    if w == 1 and seg == 1:
+        enemy_atk = max(1, int(enemy_atk * 0.90))
+        enemy_def = max(0, int(enemy_def * 0.92))
+        enemy_spd = max(1, int(enemy_spd * 0.95))
+        max_hp = max(10, int(max_hp * 0.92))
 
     name = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
     return {
         "name": f"{name}（W{w}-F{f}）",
         "hp": max_hp,
         "max_hp": max_hp,
-        "atk": atk,
-        "def": df,
-        "spd": spd,
+        "atk": enemy_atk,
+        "def": enemy_def,
+        "spd": enemy_spd,
         "is_boss": is_boss,
         "is_midboss": is_midboss,
         "debuff_zone": bool(debuff_zone),
     }
-
 
 def _combat_damage(attacker_atk: int, defender_def: int) -> int:
     atk = max(1, int(attacker_atk))
@@ -638,6 +632,29 @@ def calc_player_max_hp(effect_type: str, effect_value: int) -> int:
 
 def get_player_shield_max(effect_type: str, effect_value: int) -> int:
     return int(effect_value) if effect_type == "SHIELD" else 0
+
+def weapon_ceiling(world: int, floor: int) -> dict:
+    """
+    そのworld/floorで出うる武器ステータスの「理論最大値（天井）」を返す。
+    roll_weapon() が使う t の上振れ側 + (t+0.08) を使う。
+    """
+    w = int(world)
+    f = max(1, min(100, int(floor)))
+    cap = WORLD_CAP.get(w, 50)
+
+    seg = (f - 1) // 20
+    in_seg = (f - 1) % 20
+    t_center = T_CENTER_BY_SEG[seg]
+    micro = (in_seg / 19.0) * 0.03
+
+    # roll_weapon は uniform(t_center±0.06)+micro を clamp してるので上側を取る
+    t_max = _clamp((t_center + 0.06) + micro, 0.40, 0.98)
+
+    # roll_weapon は cap*(t±0.08) の範囲なので上側を取る
+    stat_max = int(cap * (t_max + 0.08))
+
+    # DEF/SPD/ATK 全部同じレンジで出る仕様なので同値でOK
+    return {"atk": stat_max, "def": stat_max, "spd": stat_max, "cap": cap, "t_max": t_max}
 
 # =========================================================
 # Google Sheets 永続ストア
@@ -7501,6 +7518,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
