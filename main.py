@@ -7076,9 +7076,13 @@ async def start_battle_auto(interaction: discord.Interaction):
         shield_now = shield_max
 
         # 敵生成
-        enemy = generate_enemy(state["world"], state["floor"], debuff_zone=bool(state.get("debuff_zone", 0)))
+        enemy = generate_enemy(
+            state["world"],
+            state["floor"],
+            debuff_zone=bool(state.get("debuff_zone", 0)),
+        )
 
-        # セッション（この戦闘中だけ使う）
+        # セッション（戦闘中のみ）
         sess = {
             "world": int(state["world"]),
             "floor": int(state["floor"]),
@@ -7096,32 +7100,17 @@ async def start_battle_auto(interaction: discord.Interaction):
         }
         dungeon_sessions[uid] = sess
 
-    # ✅ ここからオート戦闘（ロック外でOK：I/O無し）
+    # ── ロック外：オート戦闘 ──
     result = _auto_battle_step(uid)
 
-    # ✅ 戦闘終了：ここでだけ保存（あなたの方針）
+    # 戦闘結果保存（ここだけ書き込み）
     await _finish_battle(uid, result, interaction=None)
 
-    # ✅ 表示は「この1件」だけに統一（ephemeral & edit）
-    # ※ この関数は「ボタン押下」から呼ばれるので edit_message が安全
-        text = _build_battle_text(dungeon_sessions.get(uid, sess))
-        view = DungeonAfterView(uid)
+    # 表示更新（defer 済み前提）
+    text = _build_battle_text(dungeon_sessions.get(uid, sess))
+    view = DungeonAfterView(uid)
 
-        # ✅ defer済みなので「元の応答」を編集する
-        await interaction.edit_original_response(content=text, view=view)
-
-    # response済みなら edit_message は使えない場合があるので分岐
-    try:
-        if interaction.response.is_done():
-            await interaction.edit_original_response(content=text, view=view)
-        else:
-            await interaction.response.send_message(content=text, view=view, ephemeral=True)
-    except Exception:
-        try:
-            await interaction.followup.send(content=text, view=view, ephemeral=True)
-        except Exception:
-            pass
-
+    await interaction.edit_original_response(content=text, view=view)
 
 def _auto_battle_step(uid: int) -> str:
     sess = dungeon_sessions.get(uid)
@@ -7491,6 +7480,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
