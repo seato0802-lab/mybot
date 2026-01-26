@@ -7235,10 +7235,8 @@ class GachaSelectView(discord.ui.View):
         return interaction.user.id == self.uid
 
     async def _on_select(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
         v = interaction.data.get("values", ["keep"])[0]
-
+    
         if v == "keep":
             chosen = None
             msg = "変更しない を選んだのだ。確定するのだ？"
@@ -7254,10 +7252,36 @@ class GachaSelectView(discord.ui.View):
         async def on_confirm(i: discord.Interaction, w: dict | None):
             await self.on_apply_weapon(i, w)
 
-        await interaction.edit_original_response(
+        # ✅ ここで「確認ボタン付きメッセージ」に更新される
+        await interaction.response.edit_message(
             content=msg,
             embed=None,
             view=GachaConfirmView(uid=self.uid, chosen_weapon=chosen, on_confirm=on_confirm),
+        )
+
+class GachaConfirmView(discord.ui.View):
+    def __init__(self, *, uid: int, chosen_weapon: dict | None, on_confirm):
+        super().__init__(timeout=120)
+        self.uid = uid
+        self.chosen_weapon = chosen_weapon
+        self.on_confirm = on_confirm  # async function (interaction, weapon_or_none)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.uid
+
+    @discord.ui.button(label="✅ 確定", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # ✅ 3秒超え対策：先にdefer
+        await interaction.response.defer(ephemeral=True)
+        await self.on_confirm(interaction, self.chosen_weapon)
+
+    @discord.ui.button(label="↩ 戻る", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 「戻る」は、ひとまず閉じる（戻り先を作るなら後で拡張）
+        await interaction.response.edit_message(
+            content="戻ったのだ。もう一度ガチャを引き直すのだ。",
+            embed=None,
+            view=None,
         )
 
 async def do_gacha(interaction: discord.Interaction, n: int):
@@ -7453,6 +7477,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
