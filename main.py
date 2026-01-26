@@ -7104,8 +7104,11 @@ async def start_battle_auto(interaction: discord.Interaction):
 
     # ✅ 表示は「この1件」だけに統一（ephemeral & edit）
     # ※ この関数は「ボタン押下」から呼ばれるので edit_message が安全
-    text = _build_battle_text(dungeon_sessions.get(uid, sess))
-    view = DungeonAfterView(uid)
+        text = _build_battle_text(dungeon_sessions.get(uid, sess))
+        view = DungeonAfterView(uid)
+
+        # ✅ defer済みなので「元の応答」を編集する
+        await interaction.edit_original_response(content=text, view=view)
 
     # response済みなら edit_message は使えない場合があるので分岐
     try:
@@ -7216,26 +7219,28 @@ class GachaCountView(discord.ui.View):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="ガチャをキャンセルしたのだ。", view=None)
 
-class GachaConfirmView(discord.ui.View):
-    def __init__(self, *, uid: int, chosen_weapon: dict | None, on_confirm):
+class GachaCountView(discord.ui.View):
+    def __init__(self, uid: int):
         super().__init__(timeout=60)
         self.uid = uid
-        self.chosen_weapon = chosen_weapon
-        self.on_confirm = on_confirm
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return interaction.user.id == self.uid
 
-    @discord.ui.button(label="✅ 確定", style=discord.ButtonStyle.success)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.on_confirm(interaction, self.chosen_weapon)
-        self.stop()
+    @discord.ui.button(label="🎲 1回", style=discord.ButtonStyle.primary)
+    async def one(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await do_gacha(interaction, 1)
+
+    @discord.ui.button(label="🎲 11連", style=discord.ButtonStyle.success)
+    async def eleven(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await do_gacha(interaction, 11)
 
     @discord.ui.button(label="❌ キャンセル", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="キャンセルしたのだ。", embed=None, view=None)
-        self.stop()
-
+        await interaction.response.defer(ephemeral=True)
+        await interaction.edit_original_response(content="ガチャをキャンセルしたのだ。", view=None)
 
 class GachaSelectView(discord.ui.View):
     def __init__(self, *, uid: int, weapons: list[dict], on_apply_weapon):
@@ -7333,8 +7338,10 @@ class DungeonEntryView(discord.ui.View):
 
     @discord.ui.button(label="🏰 ダンジョンに入る", style=discord.ButtonStyle.primary, custom_id="dungeon:enter")
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ✅ 個人表示で開始（これだけ出る）
-        await interaction.response.send_message("準備中なのだ…", ephemeral=True)
+        # ✅ まずdefer（これが最重要）
+        await interaction.response.defer(ephemeral=True)
+
+        # ✅ 進行（ここでは“送信”しない）
         await start_battle_auto(interaction)
 
     @discord.ui.button(label="🗡 武器確認", style=discord.ButtonStyle.secondary, custom_id="dungeon:weapon")
@@ -7352,29 +7359,29 @@ class DungeonEntryView(discord.ui.View):
 
     @discord.ui.button(label="🎲 ガチャ", style=discord.ButtonStyle.secondary, custom_id="dungeon:gacha")
     async def gacha(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "何連ガチャを引くのだ？",
+        await interaction.response.defer(ephemeral=True)
+        await interaction.edit_original_response(
+            content="何連ガチャを引くのだ？",
             view=GachaCountView(interaction.user.id),
-            ephemeral=True
         )
 
-@bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
-async def setup_dungeon_cmd(interaction: discord.Interaction):
-    if not is_admin_user(interaction):
-        await safe_send(interaction, "管理者だけ使えるのだ。", ephemeral=True)
-        return
+    @bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
+    async def setup_dungeon_cmd(interaction: discord.Interaction):
+        if not is_admin_user(interaction):
+            await safe_send(interaction, "管理者だけ使えるのだ。", ephemeral=True)
+            return
 
-    if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
-        await safe_send(interaction, "設定したチャンネルで実行するのだ。", ephemeral=True)
-        return
+        if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
+            await safe_send(interaction, "設定したチャンネルで実行するのだ。", ephemeral=True)
+            return
 
-    await safe_defer(interaction, ephemeral=True)
+        await safe_defer(interaction, ephemeral=True)
 
-    embed = discord.Embed(
-        title="🏰 ダンジョン",
-        description="入る/次に進むで戦闘が始まるのだ。\nガチャで武器を更新できるのだ。",
-    )
-    msg = await interaction.channel.send(embed=embed, view=DungeonEntryView())
+        embed = discord.Embed(
+            title="🏰 ダンジョン",
+            description="入る/次に進むで戦闘が始まるのだ。\nガチャで武器を更新できるのだ。",
+        )
+        msg = await interaction.channel.send(embed=embed, view=DungeonEntryView())
 
     # 設定シートに保存（1回だけでなく上書きしてOKなら save_config_once を _save_config_kv に替える）
     # ここは「既存に合わせて一度だけ」方式にしている
@@ -7484,6 +7491,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
