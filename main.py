@@ -7218,17 +7218,17 @@ def _battle_one_turn(uid: int) -> str | None:
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
 
-    # まず応答を確保（ボタン押下のタイムアウト回避）
+    # ここで「個人表示メッセージ」を確保する（入口メッセージは編集しない）
+    # 長処理に備えて defer + ephemeral
     try:
         await interaction.response.defer(ephemeral=True)
     except discord.InteractionResponded:
-        # すでに応答済みでも続行OK
         pass
 
     async with get_user_lock(uid):
-        # --- ユーザー状態ロード（キャッシュ関数があれば使う / なければ通常） ---
+        # ---- ユーザー状態ロード（キャッシュ関数があれば使う / なければ通常）----
+        loader = globals().get("dungeon_load_user_cached_async")
         try:
-            loader = globals().get("dungeon_load_user_cached_async")
             if callable(loader):
                 state = await loader(uid)
             else:
@@ -7240,12 +7240,19 @@ async def start_battle_step(interaction: discord.Interaction):
             )
             return
 
-        # --- プレイヤーHP＆シールド計算 ---
+        # ---- ステータス計算 ----
         try:
-            max_hp = calc_player_max_hp(state.get("effect_type", "NONE"), int(state.get("effect_value", 0) or 0))
+            effect_type = state.get("effect_type", "NONE")
+            effect_value = int(state.get("effect_value", 0) or 0)
+
+            max_hp = calc_player_max_hp(effect_type, effect_value)
             hp = min(int(state.get("hp", 0) or 0), int(max_hp))
 
-            shield_max = get_player_shield_max(state.get("effect_type", "NONE"), int(state.get("effect_value", 0) or 0))
+            shield_max = get_player_shield_max(effect_type, effect_value)
+
+            world = int(state.get("world", 1) or 1)
+            floor = int(state.get("floor", 1) or 1)
+            debuff_zone = bool(state.get("debuff_zone", 0))
         except Exception as e:
             await interaction.edit_original_response(
                 content=f"❌ ステータス計算で失敗したのだ…\n```{type(e).__name__}: {e}```",
@@ -7253,13 +7260,9 @@ async def start_battle_step(interaction: discord.Interaction):
             )
             return
 
-        # --- 敵生成 ---
+        # ---- 敵生成 ----
         try:
-            enemy = generate_enemy(
-                int(state.get("world", 1)),
-                int(state.get("floor", 1)),
-                debuff_zone=bool(state.get("debuff_zone", 0)),
-            )
+            enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
         except Exception as e:
             await interaction.edit_original_response(
                 content=f"❌ 敵の生成に失敗したのだ…\n```{type(e).__name__}: {e}```",
@@ -7267,30 +7270,29 @@ async def start_battle_step(interaction: discord.Interaction):
             )
             return
 
-        # --- セッション作成 ---
+        # ---- セッション作成 ----
         sess = {
-            "world": int(state.get("world", 1)),
-            "floor": int(state.get("floor", 1)),
+            "world": world,
+            "floor": floor,
             "player_hp": int(hp),
             "max_hp": int(max_hp),
             "shield_now": int(shield_max),
 
-            # 武器ステータス（stateに無いと落ちるので get + 0）
             "atk": int(state.get("weapon_atk", 0) or 0),
             "def": int(state.get("weapon_def", 0) or 0),
             "spd": int(state.get("weapon_spd", 0) or 0),
 
-            "effect_type": state.get("effect_type", "NONE"),
-            "effect_value": int(state.get("effect_value", 0) or 0),
+            "effect_type": effect_type,
+            "effect_value": effect_value,
             "effect_lv": int(state.get("effect_lv", 0) or 0),
 
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
         }
-
         dungeon_sessions[uid] = sess
 
-    # 画面表示（ここで終了：ターン処理は View のボタン側で行う想定）
+    # ✅ ここで編集するのは「個人表示(ephemeral)の original_response」
+    #    Setupの入口メッセージは一切編集されない
     await interaction.edit_original_response(
         content=_build_battle_text(dungeon_sessions[uid]),
         view=DungeonTurnView(uid),
@@ -7602,6 +7604,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
