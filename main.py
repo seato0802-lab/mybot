@@ -907,13 +907,16 @@ class SheetsStore:
     # -----------------------------
     # init
     # -----------------------------
-    def init(self):
-        if not GS_SERVICE_ACCOUNT_JSON or not GS_SPREADSHEET_ID:
-            raise RuntimeError("GS_SERVICE_ACCOUNT_JSON / GS_SPREADSHEET_ID が未設定です")
+   def init(self):
+        if not GS_SPREADSHEET_ID:
+            raise RuntimeError("GS_SPREADSHEET_ID が未設定です")
 
-        info = json.loads(GS_SERVICE_ACCOUNT_JSON)
-        creds = Credentials.from_service_account_info(
-            info, scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        if not os.path.exists("gs_service_account.json"):
+            raise RuntimeError("gs_service_account.json が見つかりません（~/bot に置いてください）")
+
+        creds = Credentials.from_service_account_file(
+            "gs_service_account.json",
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
         self.gc = gspread.authorize(creds)
 
@@ -921,6 +924,7 @@ class SheetsStore:
         if not sid:
             raise RuntimeError("GS_SPREADSHEET_ID が空なのだ（IDかURLを設定するのだ）")
         self.sh = self.gc.open_by_key(sid)
+
 
         # 管理
         try:
@@ -7603,6 +7607,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
