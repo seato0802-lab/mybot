@@ -13,13 +13,17 @@ from datetime import datetime, timedelta, timezone, date
 from threading import Thread, Lock
 from collections import OrderedDict
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
 import aiohttp
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from flask import Flask
 from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.environ["OPENAI_API_KEY"]
+)
 
 # Google Sheets
 import gspread
@@ -7597,5 +7601,6 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
