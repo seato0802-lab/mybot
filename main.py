@@ -768,6 +768,25 @@ def weapon_ceiling(world: int, floor: int) -> dict:
     # DEF/SPD/ATK 全部同じレンジで出る仕様なので同値でOK
     return {"atk": stat_max, "def": stat_max, "spd": stat_max, "cap": cap, "t_max": t_max}
 
+# -----------------------------
+# ダンジョン報酬（コイン）
+# -----------------------------
+DUNGEON_COIN_REWARD = {
+    "mob":      (3, 8),      # 雑魚：数コイン
+    "midboss":  (25, 60),    # 中ボス：数十コイン
+    "boss":     (150, 350),  # ボス：数百コイン
+}
+
+def _calc_dungeon_coin_reward(enemy: dict) -> int:
+    if enemy.get("is_boss"):
+        lo, hi = DUNGEON_COIN_REWARD["boss"]
+    elif enemy.get("is_midboss"):
+        lo, hi = DUNGEON_COIN_REWARD["midboss"]
+    else:
+        lo, hi = DUNGEON_COIN_REWARD["mob"]
+
+    return random.randint(lo, hi)
+
 # =========================================================
 # Google Sheets 永続ストア
 # =========================================================
@@ -7156,23 +7175,54 @@ def _checkpoint_floor(floor: int) -> int:
 
 
 async def _finish_battle(uid: int, result: str, interaction=None):
+    """
+    戦闘終了処理
+    - 勝利時：コイン付与
+    - 進行度保存
+    ※ セッションは pop しない（次のフロア対応）
+    """
     sess = dungeon_sessions.get(uid)
     if not sess:
         return
 
-    # 勝敗フラグだけ保存
-    sess["battle_result"] = result
-    sess["finished"] = True
+    # ユーザーデータ取得（既存の方法に合わせる）
+    u = store.get_user(uid)
+    if not u:
+        return
 
-    # ここでDB保存・報酬付与など
+    # -----------------------------
+    # 勝利時：コイン報酬
+    # -----------------------------
     if result == "win":
-        # フロアクリア処理など
-        pass
-    else:
-        # 敗北処理
-        pass
+        enemy = sess.get("enemy", {})
+        reward = _calc_dungeon_coin_reward(enemy)
 
-    # ❌ dungeon_sessions.pop(uid) ← これは絶対にやらない
+        # コイン加算
+        u["coins"] = int(u.get("coins", 0)) + reward
+
+        # ログに表示（最大5件制限あり）
+        _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
+
+    # -----------------------------
+    # ダンジョン進行保存
+    # -----------------------------
+    try:
+        await dungeon_save_after_battle_async(
+            uid=uid,
+            world=int(sess.get("world", 1)),
+            floor=int(sess.get("floor", 1)),
+            hp=int(sess.get("player_hp", 0)),
+        )
+    except Exception as e:
+        print("[DUNGEON SAVE ERROR]", e)
+
+    # -----------------------------
+    # ユーザーデータ保存（コイン反映）
+    # -----------------------------
+    try:
+        store.save_user(u)
+    except Exception as e:
+        print("[USER SAVE ERROR]", e)
 
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
@@ -7853,6 +7903,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
