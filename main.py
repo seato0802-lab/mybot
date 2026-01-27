@@ -676,7 +676,6 @@ def _env_int(name: str, default=None):
     except Exception:
         return default
 
-GS_SERVICE_ACCOUNT_JSON = os.getenv("GS_SERVICE_ACCOUNT_JSON", "")
 GS_SPREADSHEET_ID = os.getenv("GS_SPREADSHEET_ID", "")
 GS_SHEET_NAME = os.getenv("GS_SHEET_NAME", "管理")
 GS_COINS_SHEET_NAME = os.getenv("GS_COINS_SHEET_NAME", "読み取り用")
@@ -7604,6 +7603,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
