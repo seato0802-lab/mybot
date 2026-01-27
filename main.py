@@ -7217,89 +7217,84 @@ def _battle_one_turn(uid: int) -> str | None:
 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
-    await interaction.response.defer(ephemeral=True)
+
+    # まず応答を確保（ボタン押下のタイムアウト回避）
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except discord.InteractionResponded:
+        # すでに応答済みでも続行OK
+        pass
 
     async with get_user_lock(uid):
-        state = await dungeon_load_user_cached_async(uid)  # 429対策でキャッシュ推奨
+        # --- ユーザー状態ロード（キャッシュ関数があれば使う / なければ通常） ---
+        try:
+            loader = globals().get("dungeon_load_user_cached_async")
+            if callable(loader):
+                state = await loader(uid)
+            else:
+                state = await dungeon_load_user_async(uid)
+        except Exception as e:
+            await interaction.edit_original_response(
+                content=f"❌ ダンジョン状態の読み込みに失敗したのだ…\n```{type(e).__name__}: {e}```",
+                view=None,
+            )
+            return
 
-        max_hp = calc_player_max_hp(state["effect_type"], state["effect_value"])
-        hp = min(int(state["hp"]), max_hp)
+        # --- プレイヤーHP＆シールド計算 ---
+        try:
+            max_hp = calc_player_max_hp(state.get("effect_type", "NONE"), int(state.get("effect_value", 0) or 0))
+            hp = min(int(state.get("hp", 0) or 0), int(max_hp))
 
-        shield_max = get_player_shield_max(state["effect_type"], state["effect_value"])
-        enemy = generate_enemy(state["world"], state["floor"], debuff_zone=bool(state.get("debuff_zone", 0)))
+            shield_max = get_player_shield_max(state.get("effect_type", "NONE"), int(state.get("effect_value", 0) or 0))
+        except Exception as e:
+            await interaction.edit_original_response(
+                content=f"❌ ステータス計算で失敗したのだ…\n```{type(e).__name__}: {e}```",
+                view=None,
+            )
+            return
 
+        # --- 敵生成 ---
+        try:
+            enemy = generate_enemy(
+                int(state.get("world", 1)),
+                int(state.get("floor", 1)),
+                debuff_zone=bool(state.get("debuff_zone", 0)),
+            )
+        except Exception as e:
+            await interaction.edit_original_response(
+                content=f"❌ 敵の生成に失敗したのだ…\n```{type(e).__name__}: {e}```",
+                view=None,
+            )
+            return
+
+        # --- セッション作成 ---
         sess = {
-            "world": int(state["world"]),
-            "floor": int(state["floor"]),
+            "world": int(state.get("world", 1)),
+            "floor": int(state.get("floor", 1)),
             "player_hp": int(hp),
             "max_hp": int(max_hp),
             "shield_now": int(shield_max),
-            "atk": int(state["weapon_atk"]),
-            "def": int(state["weapon_def"]),
-            "spd": int(state["weapon_spd"]),
-            "effect_type": state["effect_type"],
-            "effect_value": int(state["effect_value"]),
+
+            # 武器ステータス（stateに無いと落ちるので get + 0）
+            "atk": int(state.get("weapon_atk", 0) or 0),
+            "def": int(state.get("weapon_def", 0) or 0),
+            "spd": int(state.get("weapon_spd", 0) or 0),
+
+            "effect_type": state.get("effect_type", "NONE"),
+            "effect_value": int(state.get("effect_value", 0) or 0),
             "effect_lv": int(state.get("effect_lv", 0) or 0),
+
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
         }
+
         dungeon_sessions[uid] = sess
 
+    # 画面表示（ここで終了：ターン処理は View のボタン側で行う想定）
     await interaction.edit_original_response(
-        content=_build_battle_text(sess),
+        content=_build_battle_text(dungeon_sessions[uid]),
         view=DungeonTurnView(uid),
     )
-
-
-    def apply_damage_to_player(dmg: int):
-        s = int(sess.get("shield_now", 0))
-        use = min(s, dmg)
-        sess["shield_now"] = s - use
-        dmg -= use
-        if dmg > 0:
-            sess["player_hp"] = max(0, int(sess["player_hp"]) - dmg)
-
-    def apply_damage_to_enemy(dmg: int):
-        enemy["hp"] = max(0, int(enemy["hp"]) - dmg)
-
-    # 無限防止（最大50ターン）
-    for _ in range(50):
-        if enemy["hp"] <= 0:
-            logs.append("✅ 勝利！")
-            return "win"
-        if sess["player_hp"] <= 0:
-            logs.append("💀 敗北…")
-            return "lose"
-
-        player_first = _speed_first(sess["spd"], enemy["spd"])
-
-        if player_first:
-            dmg = _combat_damage(sess["atk"], enemy["def"])
-            apply_damage_to_enemy(dmg)
-            logs.append(f"あなたの攻撃！ 敵に {dmg} ダメージ。")
-            if enemy["hp"] <= 0:
-                logs.append("✅ 勝利！")
-                return "win"
-
-            dmg2 = _combat_damage(enemy["atk"], sess["def"])
-            apply_damage_to_player(dmg2)
-            logs.append(f"敵の攻撃！ あなたに {dmg2} ダメージ。")
-
-        else:
-            dmg2 = _combat_damage(enemy["atk"], sess["def"])
-            apply_damage_to_player(dmg2)
-            logs.append(f"敵の攻撃！ あなたに {dmg2} ダメージ。")
-            if sess["player_hp"] <= 0:
-                logs.append("💀 敗北…")
-                return "lose"
-
-            dmg = _combat_damage(sess["atk"], enemy["def"])
-            apply_damage_to_enemy(dmg)
-            logs.append(f"あなたの攻撃！ 敵に {dmg} ダメージ。")
-
-    # 50ターン超えたら引き分け扱いで負け（安全側）
-    logs.append("⏳ 戦闘が長引いたのだ…（敗北扱い）")
-    return "lose"
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -7607,6 +7602,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
