@@ -7218,8 +7218,13 @@ def _battle_one_turn(uid: int) -> str | None:
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
 
-    # ✅ 入口メッセージに対して response を使わない
-    #    個人表示メッセージを followup で新規作成する
+    # ① まず初回応答を確定（followup webhook を有効にする）
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except discord.InteractionResponded:
+        pass
+
+    # ② 個人表示メッセージを新規作成（入口メッセージは絶対に編集しない）
     msg = await interaction.followup.send(
         content="準備中なのだ…",
         ephemeral=True,
@@ -7274,7 +7279,7 @@ async def start_battle_step(interaction: discord.Interaction):
             )
             return
 
-        # --- セッション作成（✅ 個人メッセージIDを保存） ---
+        # --- セッション作成（個人メッセIDを保存） ---
         sess = {
             "world": world,
             "floor": floor,
@@ -7292,18 +7297,17 @@ async def start_battle_step(interaction: discord.Interaction):
 
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
-
-            # ✅ これが重要：編集対象を固定する
             "battle_message_id": msg.id,
         }
         dungeon_sessions[uid] = sess
 
-    # ✅ 個人メッセージだけ編集
+    # ③ 個人メッセージだけ編集
     await interaction.followup.edit_message(
         msg.id,
         content=_build_battle_text(dungeon_sessions[uid]),
         view=DungeonTurnView(uid),
     )
+
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -7611,6 +7615,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
