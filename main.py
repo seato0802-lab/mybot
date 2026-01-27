@@ -7101,7 +7101,21 @@ def _build_battle_text(sess: dict) -> str:
         f"攻撃力：{int(sess.get('atk',0))}  防御力：{int(sess.get('def',0))}  素早さ：{int(sess.get('spd',0))}\n"
         f"特殊効果：{effect}\n"
     )
-class DungeonTurnView(discord.ui.View):
+LOG_KEEP = 5
+AUTO_TICK_SEC = 0.8  # ログが流れる速度（好みで調整）
+dungeon_auto_tasks: dict[int, asyncio.Task] = {}
+
+
+def _push_log(sess: dict, text: str):
+    logs: list[str] = sess.setdefault("logs", [])
+    logs.append(text)
+    if len(logs) > LOG_KEEP:
+        del logs[:-LOG_KEEP]
+
+
+class DungeonAfterView(discord.ui.View):
+    """戦闘終了後だけ出す：次フロア / やめる"""
+
     def __init__(self, uid: int):
         super().__init__(timeout=180)
         self.uid = uid
@@ -7109,46 +7123,72 @@ class DungeonTurnView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return interaction.user.id == self.uid
 
-    @discord.ui.button(label="➡️ 次のターン", style=discord.ButtonStyle.primary)
-    async def next_turn(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="➡️ 次のフロアへ", style=discord.ButtonStyle.primary)
+    async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.InteractionResponded:
+            pass
 
         async with get_user_lock(uid):
             sess = dungeon_sessions.get(uid)
             if not sess:
-                await interaction.edit_original_response(content="セッションが見つからないのだ。", view=None)
+                await interaction.followup.send("セッションが見つからないのだ。", ephemeral=True)
                 return
+            msg_id = int(sess.get("battle_message_id", 0) or 0)
 
-            result = _battle_one_turn(uid)
+            # 次フロアへ（上限などはあなたの既存仕様に合わせてここで調整）
+            sess["floor"] = int(sess.get("floor", 1)) + 1
 
-            # 継続
-            if result is None:
-                await interaction.edit_original_response(
-                    content=_build_battle_text(sess),
-                    view=self,
-                )
-                return
+            world = int(sess.get("world", 1))
+            floor = int(sess.get("floor", 1))
+            debuff_zone = bool(sess.get("debuff_zone", 0))
 
-        # ここからはロック外（保存I/Oがあるので分離してもOK）
-        # 勝敗確定：保存してAfterViewへ
-        await _finish_battle(uid, result, interaction=None)
+            # 新しい敵
+            sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
 
-        # _finish_battle が pop するので、表示用には「最後のsess」を保持したい
-        # → pop前に保持しておくのが理想。簡易にするならpopしない設計にする。
-        # ここは安全策として、resultメッセージだけ出す。
-        await interaction.edit_original_response(
-            content="戦闘が終わったのだ。下のボタンで進むのだ。",
-            view=DungeonAfterView(uid),
+            # ログ初期化（5件制限）
+            sess["logs"] = ["次のフロアなのだ！"]
+
+        # 戦闘中表示（ボタン無し）
+        await interaction.followup.edit_message(
+            msg_id,
+            content=_build_battle_text(dungeon_sessions[uid]),
+            view=None,
         )
+
+        # オート再開
+        old = dungeon_auto_tasks.pop(uid, None)
+        if old and not old.done():
+            old.cancel()
+        dungeon_auto_tasks[uid] = asyncio.create_task(_auto_battle_loop(interaction, uid, msg_id))
 
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.InteractionResponded:
+            pass
+
         async with get_user_lock(uid):
-            dungeon_sessions.pop(uid, None)
-        await interaction.edit_original_response(content="ダンジョンを終了したのだ。", view=None)
+            t = dungeon_auto_tasks.pop(uid, None)
+            if t and not t.done():
+                t.cancel()
+
+            sess = dungeon_sessions.pop(uid, None)
+            msg_id = int(sess.get("battle_message_id", 0) or 0) if sess else 0
+
+        if msg_id:
+            await interaction.followup.edit_message(
+                msg_id,
+                content="ダンジョンを終了したのだ。",
+                view=None,
+            )
+        else:
+            await interaction.followup.send("ダンジョンを終了したのだ。", ephemeral=True)
+
 
 def _battle_one_turn(uid: int) -> str | None:
     """
@@ -7160,7 +7200,6 @@ def _battle_one_turn(uid: int) -> str | None:
         return "lose"
 
     enemy = sess["enemy"]
-    logs: list[str] = sess.setdefault("logs", [])
 
     def apply_damage_to_player(dmg: int):
         s = int(sess.get("shield_now", 0))
@@ -7174,46 +7213,91 @@ def _battle_one_turn(uid: int) -> str | None:
         enemy["hp"] = max(0, int(enemy["hp"]) - dmg)
 
     # すでに終わってる
-    if enemy["hp"] <= 0:
-        logs.append("✅ 勝利！")
+    if int(enemy["hp"]) <= 0:
+        _push_log(sess, "✅ 勝利！")
         return "win"
     if int(sess["player_hp"]) <= 0:
-        logs.append("💀 敗北…")
+        _push_log(sess, "💀 敗北…")
         return "lose"
 
     # 1ターン
-    player_first = _speed_first(sess["spd"], enemy["spd"])
+    player_first = _speed_first(int(sess["spd"]), int(enemy["spd"]))
 
     if player_first:
-        dmg = _combat_damage(sess["atk"], enemy["def"])
+        dmg = _combat_damage(int(sess["atk"]), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
-        logs.append(f"あなたの攻撃！ 敵に {dmg} ダメージ。")
-        if enemy["hp"] <= 0:
-            logs.append("✅ 勝利！")
+        _push_log(sess, f"あなたの攻撃！ 敵に {dmg} ダメージ。")
+        if int(enemy["hp"]) <= 0:
+            _push_log(sess, "✅ 勝利！")
             return "win"
 
-        dmg2 = _combat_damage(enemy["atk"], sess["def"])
+        dmg2 = _combat_damage(int(enemy["atk"]), int(sess["def"]))
         apply_damage_to_player(dmg2)
-        logs.append(f"敵の攻撃！ あなたに {dmg2} ダメージ。")
+        _push_log(sess, f"敵の攻撃！ あなたに {dmg2} ダメージ。")
         if int(sess["player_hp"]) <= 0:
-            logs.append("💀 敗北…")
+            _push_log(sess, "💀 敗北…")
             return "lose"
     else:
-        dmg2 = _combat_damage(enemy["atk"], sess["def"])
+        dmg2 = _combat_damage(int(enemy["atk"]), int(sess["def"]))
         apply_damage_to_player(dmg2)
-        logs.append(f"敵の攻撃！ あなたに {dmg2} ダメージ。")
+        _push_log(sess, f"敵の攻撃！ あなたに {dmg2} ダメージ。")
         if int(sess["player_hp"]) <= 0:
-            logs.append("💀 敗北…")
+            _push_log(sess, "💀 敗北…")
             return "lose"
 
-        dmg = _combat_damage(sess["atk"], enemy["def"])
+        dmg = _combat_damage(int(sess["atk"]), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
-        logs.append(f"あなたの攻撃！ 敵に {dmg} ダメージ。")
-        if enemy["hp"] <= 0:
-            logs.append("✅ 勝利！")
+        _push_log(sess, f"あなたの攻撃！ 敵に {dmg} ダメージ。")
+        if int(enemy["hp"]) <= 0:
+            _push_log(sess, "✅ 勝利！")
             return "win"
 
     return None
+
+
+async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: int):
+    """オート進行：1ターン→表示更新→sleep。決着後にAfterViewを出す。"""
+    try:
+        while True:
+            async with get_user_lock(uid):
+                sess = dungeon_sessions.get(uid)
+                if not sess:
+                    return
+
+                result = _battle_one_turn(uid)
+
+                # 戦闘中はボタン無しで更新（入口は絶対触らない）
+                try:
+                    await interaction.followup.edit_message(
+                        msg_id,
+                        content=_build_battle_text(sess),
+                        view=None,
+                    )
+                except discord.NotFound:
+                    return
+                except discord.HTTPException:
+                    pass
+
+            if result in ("win", "lose"):
+                # 保存処理（あなたの既存）
+                await _finish_battle(uid, result, interaction=None)
+
+                # 終了後だけ2ボタンを表示
+                try:
+                    await interaction.followup.edit_message(
+                        msg_id,
+                        content="戦闘が終わったのだ。次にどうするのだ？",
+                        view=DungeonAfterView(uid),
+                    )
+                except Exception:
+                    pass
+                return
+
+            await asyncio.sleep(AUTO_TICK_SEC)
+
+    except asyncio.CancelledError:
+        return
+
 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -7298,16 +7382,23 @@ async def start_battle_step(interaction: discord.Interaction):
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
             "battle_message_id": msg.id,
+            # ※ debuff_zone をセッションでも参照するなら保持
+            "debuff_zone": int(debuff_zone),
         }
         dungeon_sessions[uid] = sess
 
-    # ③ 個人メッセージだけ編集
+    # ③ 最初の表示（戦闘中はボタン無し）
     await interaction.followup.edit_message(
         msg.id,
         content=_build_battle_text(dungeon_sessions[uid]),
-        view=DungeonTurnView(uid),
+        view=None,
     )
 
+    # ④ オート開始（既に走ってたら止める）
+    old = dungeon_auto_tasks.pop(uid, None)
+    if old and not old.done():
+        old.cancel()
+    dungeon_auto_tasks[uid] = asyncio.create_task(_auto_battle_loop(interaction, uid, msg.id))
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -7615,6 +7706,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
