@@ -637,6 +637,110 @@ def calc_player_max_hp(effect_type: str, effect_value: int) -> int:
     hp_up = int(effect_value) if effect_type == "HP_UP" else 0
     return 100 + hp_up
 
+def _apply_heal_on_kill(sess: dict):
+    """特殊効果：撃破時回復（HEAL_ON_KILL）"""
+    if sess.get("effect_type") != "HEAL_ON_KILL":
+        return
+    pct = int(sess.get("effect_value", 0) or 0)
+    if pct <= 0:
+        return
+
+    max_hp = int(sess.get("max_hp", 100) or 100)
+    now_hp = int(sess.get("player_hp", 0) or 0)
+    heal = int(max_hp * (pct / 100.0))
+    if heal <= 0:
+        return
+
+    new_hp = min(max_hp, now_hp + heal)
+    real = new_hp - now_hp
+    if real > 0:
+        sess["player_hp"] = new_hp
+        _push_log(sess, f"✨ 特殊効果：撃破時回復でHPが {real} 回復したのだ。")
+
+
+def _roll_instakill(sess: dict) -> bool:
+    """特殊効果：即死（INSTAKILL）判定。成功なら True。"""
+    if sess.get("effect_type") != "INSTAKILL":
+        return False
+    p = int(sess.get("effect_value", 0) or 0)
+    if p <= 0:
+        return False
+    # 1〜100 で判定
+    return random.randint(1, 100) <= p
+
+
+def _debuff_resist_pct(sess: dict) -> int:
+    """特殊効果：状態異常耐性%（DEBUFF_RESIST）"""
+    if sess.get("effect_type") != "DEBUFF_RESIST":
+        return 0
+    return max(0, min(100, int(sess.get("effect_value", 0) or 0)))
+
+
+def _try_apply_debuff(sess: dict, debuff: str, base_chance_pct: int) -> bool:
+    """
+    デバフ付与（デバフゾーン等で使用）
+    - base_chance_pct: 0〜100
+    - DEBUFF_RESIST がある場合、付与確率を (1 - resist) 倍する
+    """
+    base = max(0, min(100, int(base_chance_pct)))
+    resist = _debuff_resist_pct(sess)
+    # 実効確率
+    eff = int(base * (1.0 - resist / 100.0))
+
+    if eff <= 0:
+        _push_log(sess, "🛡 状態異常耐性でデバフを無効化したのだ。")
+        return False
+
+    if random.randint(1, 100) <= eff:
+        cur = sess.setdefault("current_debuffs", [])
+        if debuff not in cur:
+            cur.append(debuff)
+        _push_log(sess, f"⚠️ デバフ付与：{debuff}（{eff}%判定）")
+        return True
+
+    # 失敗（ログ出すと騒がしいので通常は出さない）
+    return False
+
+
+def _apply_debuffs_start_of_turn(sess: dict) -> tuple[int, int, int]:
+    """
+    ターン開始時デバフ効果を反映して「一時的な atk/def/spd」を返す。
+    例：weak=攻撃低下、slow=速度低下、poison=割合ダメ
+    """
+    atk = int(sess.get("atk", 0) or 0)
+    df  = int(sess.get("def", 0) or 0)
+    spd = int(sess.get("spd", 0) or 0)
+
+    debuffs = sess.get("current_debuffs") or []
+
+    # 攻撃低下
+    if "weak" in debuffs:
+        atk = max(0, int(atk * 0.85))
+
+    # 速度低下
+    if "slow" in debuffs:
+        spd = max(1, int(spd * 0.85))
+
+    # 毒（最大HPの5%）
+    if "poison" in debuffs:
+        max_hp = int(sess.get("max_hp", 100) or 100)
+        now_hp = int(sess.get("player_hp", 0) or 0)
+        dmg = max(1, int(max_hp * 0.05))
+        sess["player_hp"] = max(0, now_hp - dmg)
+        _push_log(sess, f"☠️ 毒で {dmg} ダメージを受けたのだ。")
+
+    return atk, df, spd
+
+
+def _reset_shield_for_battle(sess: dict):
+    """SHIELDは毎バトル全回復：battle開始・次フロア開始で必ずここを通す"""
+    # sess に shield_max が無い場合は effect から復元できる
+    shield_max = int(sess.get("shield_max", 0) or 0)
+    if shield_max <= 0:
+        shield_max = get_player_shield_max(sess.get("effect_type", "NONE"), int(sess.get("effect_value", 0) or 0))
+        sess["shield_max"] = int(shield_max)
+
+    sess["shield_now"] = int(shield_max)
 
 def get_player_shield_max(effect_type: str, effect_value: int) -> int:
     return int(effect_value) if effect_type == "SHIELD" else 0
@@ -7208,8 +7312,11 @@ def _battle_one_turn(uid: int) -> str | None:
 
     enemy = sess["enemy"]
 
+    # ✅ デバフのターン開始効果（毒など）＋一時ステ補正
+    atk_tmp, def_tmp, spd_tmp = _apply_debuffs_start_of_turn(sess)
+
     def apply_damage_to_player(dmg: int):
-        s = int(sess.get("shield_now", 0))
+        s = int(sess.get("shield_now", 0) or 0)
         use = min(s, dmg)
         sess["shield_now"] = s - use
         dmg -= use
@@ -7219,7 +7326,7 @@ def _battle_one_turn(uid: int) -> str | None:
     def apply_damage_to_enemy(dmg: int):
         enemy["hp"] = max(0, int(enemy["hp"]) - dmg)
 
-    # すでに終わってる
+    # すでに終わってる（ここで回復などはしない：二重発動防止）
     if int(enemy["hp"]) <= 0:
         _push_log(sess, "✅ 勝利！")
         return "win"
@@ -7228,39 +7335,74 @@ def _battle_one_turn(uid: int) -> str | None:
         return "lose"
 
     # 1ターン
-    player_first = _speed_first(int(sess["spd"]), int(enemy["spd"]))
+    player_first = _speed_first(int(spd_tmp), int(enemy["spd"]))
+
+    # デバフゾーンなら、敵攻撃時にデバフ付与チャンス（例）
+    # ※デバフゾーン仕様に合わせて確率や種類は調整してOK
+    def maybe_enemy_apply_debuff():
+        if not bool(sess.get("debuff_zone", 0)):
+            return
+        # 例：20%で毒、15%で弱体、15%で鈍足（耐性で軽減）
+        r = random.random()
+        if r < 0.20:
+            _try_apply_debuff(sess, "poison", 20)
+        elif r < 0.35:
+            _try_apply_debuff(sess, "weak", 15)
+        elif r < 0.50:
+            _try_apply_debuff(sess, "slow", 15)
 
     if player_first:
-        dmg = _combat_damage(int(sess["atk"]), int(enemy["def"]))
-        apply_damage_to_enemy(dmg)
-        _push_log(sess, f"あなたの攻撃！ 敵に {dmg} ダメージ。")
-        if int(enemy["hp"]) <= 0:
+        # ✅ INSTAKILL：プレイヤー攻撃の直前に判定
+        if _roll_instakill(sess):
+            enemy["hp"] = 0
+            _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
+            _apply_heal_on_kill(sess)  # ✅ 撃破扱いで回復も発動
             _push_log(sess, "✅ 勝利！")
             return "win"
 
-        dmg2 = _combat_damage(int(enemy["atk"]), int(sess["def"]))
+        dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
+        apply_damage_to_enemy(dmg)
+        _push_log(sess, f"あなたの攻撃！ 敵に {dmg} ダメージ。")
+        if int(enemy["hp"]) <= 0:
+            _apply_heal_on_kill(sess)  # ✅ 撃破時回復
+            _push_log(sess, "✅ 勝利！")
+            return "win"
+
+        dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
         apply_damage_to_player(dmg2)
         _push_log(sess, f"敵の攻撃！ あなたに {dmg2} ダメージ。")
+        maybe_enemy_apply_debuff()
+
         if int(sess["player_hp"]) <= 0:
             _push_log(sess, "💀 敗北…")
             return "lose"
     else:
-        dmg2 = _combat_damage(int(enemy["atk"]), int(sess["def"]))
+        dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
         apply_damage_to_player(dmg2)
         _push_log(sess, f"敵の攻撃！ あなたに {dmg2} ダメージ。")
+        maybe_enemy_apply_debuff()
+
         if int(sess["player_hp"]) <= 0:
             _push_log(sess, "💀 敗北…")
             return "lose"
 
-        dmg = _combat_damage(int(sess["atk"]), int(enemy["def"]))
+        # ✅ INSTAKILL：プレイヤー攻撃の直前に判定
+        if _roll_instakill(sess):
+            enemy["hp"] = 0
+            _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
+            _apply_heal_on_kill(sess)  # ✅ 撃破扱いで回復も発動
+            _push_log(sess, "✅ 勝利！")
+            return "win"
+
+        dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
         _push_log(sess, f"あなたの攻撃！ 敵に {dmg} ダメージ。")
         if int(enemy["hp"]) <= 0:
+            _apply_heal_on_kill(sess)  # ✅ 撃破時回復
             _push_log(sess, "✅ 勝利！")
             return "win"
 
     return None
-
 
 async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: int):
     """オート進行：1ターン→表示更新→sleep。決着後にAfterViewを出す。"""
@@ -7711,6 +7853,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
