@@ -7121,9 +7121,11 @@ class DungeonAfterView(discord.ui.View):
         except discord.InteractionResponded:
             pass
 
+        # ロック内で状態更新・必要値確保
         async with get_user_lock(uid):
             sess = dungeon_sessions.get(uid)
             if not sess:
+                # セッションが無いなら個別に返す（ボタン押下元を編集しない）
                 await interaction.followup.send("セッションが見つからないのだ。", ephemeral=True)
                 return
 
@@ -7136,18 +7138,21 @@ class DungeonAfterView(discord.ui.View):
             sess["finished"] = False
             sess.pop("battle_result", None)
 
-            sess["floor"] = int(sess.get("floor", 1)) + 1
-            world = int(sess.get("world", 1))
-            floor = int(sess.get("floor", 1))
+            sess["floor"] = int(sess.get("floor", 1) or 1) + 1
+            world = int(sess.get("world", 1) or 1)
+            floor = int(sess.get("floor", 1) or 1)
             debuff_zone = bool(sess.get("debuff_zone", 0))
 
             sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
             _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
 
-        # 戦闘中表示（ボタン無し）
+            # 表示用にローカル保持（安全）
+            render_sess = sess
+
+        # 戦闘中表示（ログはそのまま、ボタン無し）
         await interaction.followup.edit_message(
             msg_id,
-            content=_build_battle_text(dungeon_sessions[uid]),
+            content=_build_battle_text(render_sess),
             view=None,
         )
 
@@ -7165,7 +7170,9 @@ class DungeonAfterView(discord.ui.View):
         except discord.InteractionResponded:
             pass
 
-        # ✅ まず msg_id を確保（pop 前に取る）
+        msg_id = 0
+        last_sess = None
+
         async with get_user_lock(uid):
             # オート停止
             t = dungeon_auto_tasks.pop(uid, None)
@@ -7173,20 +7180,21 @@ class DungeonAfterView(discord.ui.View):
                 t.cancel()
 
             sess = dungeon_sessions.get(uid)
-            msg_id = int(sess.get("battle_message_id", 0) or 0) if sess else 0
+            if sess:
+                msg_id = int(sess.get("battle_message_id", 0) or 0)
+                _push_log(sess, "🚪 ダンジョンを終了したのだ。")
+                last_sess = sess  # pop後に表示するため保持
 
-            # セッション削除
             dungeon_sessions.pop(uid, None)
 
-        # ✅ 「その戦闘メッセージ」を編集して終了表示（ボタンも消す）
-        if msg_id:
+        # ログを残したまま、ボタンだけ消す（＝view=None）
+        if msg_id and last_sess:
             await interaction.followup.edit_message(
                 msg_id,
-                content="ダンジョンを終了したのだ。",
+                content=_build_battle_text(last_sess),
                 view=None,
             )
         else:
-            # 念のため：メッセIDが取れない場合は個別に送る
             await interaction.followup.send("ダンジョンを終了したのだ。", ephemeral=True)
 
 def _battle_one_turn(uid: int) -> str | None:
@@ -7265,12 +7273,12 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
 
                 result = _battle_one_turn(uid)
 
-                # 戦闘中はボタン無しで更新（入口は絶対触らない）
+                # まずログ表示を更新（勝敗ログもここに反映される）
                 try:
                     await interaction.followup.edit_message(
                         msg_id,
                         content=_build_battle_text(sess),
-                        view=None,
+                        view=None,  # 戦闘中はボタン無し
                     )
                 except discord.NotFound:
                     return
@@ -7278,14 +7286,13 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
                     pass
 
             if result in ("win", "lose"):
-                # 保存処理（あなたの既存）
+                # 保存処理（※popしない設計にしておくのが前提）
                 await _finish_battle(uid, result, interaction=None)
 
-                # 終了後だけ2ボタンを表示
+                # ✅ content は触らず、view だけ付けて「ログの下にボタン」を出す
                 try:
                     await interaction.followup.edit_message(
                         msg_id,
-                        content="戦闘が終わったのだ。次にどうするのだ？",
                         view=DungeonAfterView(uid),
                     )
                 except Exception:
@@ -7296,7 +7303,6 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
 
     except asyncio.CancelledError:
         return
-
 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -7705,6 +7711,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
