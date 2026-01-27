@@ -45,7 +45,6 @@ intents.message_content = True
 intents.members = True  # /setup_shop の初期配布などで members を触るのでON推奨
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-client = OpenAI()
 
 tasks_data: dict[str, dict] = {}
 join_tasks: dict[int, dict] = {}
@@ -7605,6 +7604,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
