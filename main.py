@@ -907,7 +907,7 @@ class SheetsStore:
     # -----------------------------
     # init
     # -----------------------------
-   def init(self):
+    def init(self):
         if not GS_SPREADSHEET_ID:
             raise RuntimeError("GS_SPREADSHEET_ID が未設定です")
 
@@ -7607,6 +7607,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
