@@ -7586,36 +7586,29 @@ def keep_alive():
 # =========================================================
 # Bot 起動（✅ bot.run に一本化）
 # =========================================================
-if __name__ == "__main__":
-    init_ai_memory_db()
-    keep_alive()
-
-    token = os.getenv("DISCORD_TOKEN")
+async def _run_bot_with_backoff():
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
     if not token:
         print("DISCORD_TOKEN not set!")
         raise SystemExit(1)
 
-    bot.run(token)
+    backoff = 15
+    while True:
+        try:
+            await bot.start(token, reconnect=True)
+            return
+        except discord.errors.HTTPException as e:
+            print("LOGIN HTTPException:", repr(e))
+        except Exception as e:
+            print("LOGIN ERROR:", repr(e))
+
+        sleep_sec = min(600, backoff) + random.randint(0, 5)
+        print(f"Retrying login in {sleep_sec}s...")
+        await asyncio.sleep(sleep_sec)
+        backoff = min(600, int(backoff * 1.6))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+if __name__ == "__main__":
+    init_ai_memory_db()
+    keep_alive()
+    asyncio.run(_run_bot_with_backoff())
