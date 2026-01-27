@@ -1,4 +1,15 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# .env を確実に読む
+load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
+
+from openai import OpenAI
+
+# OpenAIクライアント（★ここが重要）
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
 import io
 import re
 import csv
@@ -12,24 +23,17 @@ import traceback
 from datetime import datetime, timedelta, timezone, date
 from threading import Thread, Lock
 from collections import OrderedDict
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
+
 import aiohttp
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from flask import Flask
-from openai import OpenAI
-
-client = OpenAI(
-    api_key=os.environ["OPENAI_API_KEY"]
-)
 
 # Google Sheets
 import gspread
 from gspread.utils import rowcol_to_a1
 from google.oauth2.service_account import Credentials
-
 
 # =========================================================
 # 設定
@@ -7601,6 +7605,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
