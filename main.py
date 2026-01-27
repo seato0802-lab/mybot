@@ -7218,15 +7218,16 @@ def _battle_one_turn(uid: int) -> str | None:
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
 
-    # ここで「個人表示メッセージ」を確保する（入口メッセージは編集しない）
-    # 長処理に備えて defer + ephemeral
-    try:
-        await interaction.response.defer(ephemeral=True)
-    except discord.InteractionResponded:
-        pass
+    # ✅ 入口メッセージに対して response を使わない
+    #    個人表示メッセージを followup で新規作成する
+    msg = await interaction.followup.send(
+        content="準備中なのだ…",
+        ephemeral=True,
+        wait=True,
+    )
 
     async with get_user_lock(uid):
-        # ---- ユーザー状態ロード（キャッシュ関数があれば使う / なければ通常）----
+        # --- ユーザー状態ロード（キャッシュがあれば使う） ---
         loader = globals().get("dungeon_load_user_cached_async")
         try:
             if callable(loader):
@@ -7234,13 +7235,14 @@ async def start_battle_step(interaction: discord.Interaction):
             else:
                 state = await dungeon_load_user_async(uid)
         except Exception as e:
-            await interaction.edit_original_response(
+            await interaction.followup.edit_message(
+                msg.id,
                 content=f"❌ ダンジョン状態の読み込みに失敗したのだ…\n```{type(e).__name__}: {e}```",
                 view=None,
             )
             return
 
-        # ---- ステータス計算 ----
+        # --- ステータス計算 ---
         try:
             effect_type = state.get("effect_type", "NONE")
             effect_value = int(state.get("effect_value", 0) or 0)
@@ -7254,23 +7256,25 @@ async def start_battle_step(interaction: discord.Interaction):
             floor = int(state.get("floor", 1) or 1)
             debuff_zone = bool(state.get("debuff_zone", 0))
         except Exception as e:
-            await interaction.edit_original_response(
+            await interaction.followup.edit_message(
+                msg.id,
                 content=f"❌ ステータス計算で失敗したのだ…\n```{type(e).__name__}: {e}```",
                 view=None,
             )
             return
 
-        # ---- 敵生成 ----
+        # --- 敵生成 ---
         try:
             enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
         except Exception as e:
-            await interaction.edit_original_response(
+            await interaction.followup.edit_message(
+                msg.id,
                 content=f"❌ 敵の生成に失敗したのだ…\n```{type(e).__name__}: {e}```",
                 view=None,
             )
             return
 
-        # ---- セッション作成 ----
+        # --- セッション作成（✅ 個人メッセージIDを保存） ---
         sess = {
             "world": world,
             "floor": floor,
@@ -7288,12 +7292,15 @@ async def start_battle_step(interaction: discord.Interaction):
 
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
+
+            # ✅ これが重要：編集対象を固定する
+            "battle_message_id": msg.id,
         }
         dungeon_sessions[uid] = sess
 
-    # ✅ ここで編集するのは「個人表示(ephemeral)の original_response」
-    #    Setupの入口メッセージは一切編集されない
-    await interaction.edit_original_response(
+    # ✅ 個人メッセージだけ編集
+    await interaction.followup.edit_message(
+        msg.id,
         content=_build_battle_text(dungeon_sessions[uid]),
         view=DungeonTurnView(uid),
     )
@@ -7604,6 +7611,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
