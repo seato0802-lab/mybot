@@ -12,7 +12,8 @@ import traceback
 from datetime import datetime, timedelta, timezone, date
 from threading import Thread, Lock
 from collections import OrderedDict
-
+from dotenv import load_dotenv
+load_dotenv()
 import aiohttp
 import discord
 from discord.ext import commands, tasks
@@ -7596,4 +7597,5 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
