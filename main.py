@@ -569,12 +569,8 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
     cap = int(ceil["cap"])
 
     # -------------------------
-    # 基本方針：
-    # 「その帯の最大武器より少し下」なら勝てる強さ
+    # 強さレンジ
     # -------------------------
-    # 雑魚：最大武器の 0.78〜0.88 くらい
-    # 中ボス：0.86〜0.95
-    # ボス：0.92〜1.02（ただしDEFは上げすぎない）
     if is_midboss:
         r_lo, r_hi = 0.86, 0.95
         hp_mul_lo, hp_mul_hi = 0.95, 1.10
@@ -587,39 +583,50 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
 
     r = random.uniform(r_lo, r_hi)
 
-    # ✅ DEFは「与ダメ1固定」を避けるため、ATKより少し低めにする
     enemy_atk = max(1, int(wmax_atk * r))
-    enemy_def = max(0, int(wmax_def * (r - 0.08)))  # ここが重要
+    enemy_def = max(0, int(wmax_def * (r - 0.08)))
     enemy_spd = max(1, int(wmax_spd * (r - 0.02)))
 
-    # HPは cap 基準で管理（上限に縛られないので分かりやすい）
-    # segが上がるほど少しだけ増える
     base_hp = int(cap * random.uniform(1.6, 2.2) * (0.92 + 0.03 * seg))
     max_hp = int(base_hp * random.uniform(hp_mul_lo, hp_mul_hi))
     max_hp = max(10, max_hp)
 
-    # ✅ W1の1-20はさらに安全（ボス含む）
+    # ✅ W1序盤補正
     if w == 1 and seg == 0:
         enemy_atk = max(1, int(enemy_atk * 0.85))
         enemy_def = max(0, int(enemy_def * 0.80))
         enemy_spd = max(1, int(enemy_spd * 0.90))
         max_hp = max(10, int(max_hp * (0.85 if not is_boss else 0.92)))
 
-    # ✅ W1の21-40 も「急にキツい」になりやすいので軽く補正
     if w == 1 and seg == 1:
         enemy_atk = max(1, int(enemy_atk * 0.90))
         enemy_def = max(0, int(enemy_def * 0.92))
         enemy_spd = max(1, int(enemy_spd * 0.95))
         max_hp = max(10, int(max_hp * 0.92))
 
-    name = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
+    # -------------------------
+    # ✅ ここから「名前＆画像」差し込み
+    # -------------------------
+    kind = "boss" if is_boss else "midboss" if is_midboss else "mob"
+    base_name, image_url = _pick_enemy_visual(w, kind)
+
+    prefix = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
+    display_name = f"{prefix}：{base_name}"
+
     return {
-        "name": f"{name}（W{w}-F{f}）",
+        # 表示用
+        "name": display_name,          # 例: "中ボス：怒ったずんだもん"
+        "base_name": base_name,        # 例: "怒ったずんだもん"
+        "image_url": image_url,        # サムネ用URL（無ければNone）
+
+        # ステータス
         "hp": max_hp,
         "max_hp": max_hp,
         "atk": enemy_atk,
         "def": enemy_def,
         "spd": enemy_spd,
+
+        # フラグ
         "is_boss": is_boss,
         "is_midboss": is_midboss,
         "debuff_zone": bool(debuff_zone),
@@ -796,6 +803,79 @@ def _calc_dungeon_coin_reward(enemy: dict) -> int:
         lo, hi = DUNGEON_COIN_REWARD["mob"]
 
     return random.randint(lo, hi)
+
+# -----------------------------
+# 敵プール（W1〜W4は個別、W5は全混ぜ）
+# kind: "mob" / "midboss" / "boss"
+# url: GoogleDriveの直リンク推奨（ https://drive.google.com/uc?id=FILE_ID ）
+# -----------------------------
+ENEMY_POOLS: dict[int, dict[str, list[dict[str, str]]]] = {
+    1: {
+        "mob": [
+            {"name": "ずんだもん", "url": "https://drive.google.com/uc?id=1U7bZD4pBtj0peuLWwz_zCVitMFWGc7mw"},
+        ],
+        "midboss": [
+            {"name": "怒ったずんだもん", "url": "https://drive.google.com/uc?id=1YtKq-eQV0IvhPJ8MxEkO3jS2OPdc0nu5"},
+        ],
+        "boss": [
+            {"name": "強いずんだもん", "url": "https://drive.google.com/uc?id=1Tnpc5uEXcz6-FIbr8HzLMDK87AOTTZEt"},
+        ],
+    },
+    2: {
+        "mob": [
+            {"name": "すらいむっぽい", "url": "https://drive.google.com/uc?id=1zKScQi03ZnEhoJZHqjH5bDt2Yn4qr-Q9"},
+        ],
+        "midboss": [
+            {"name": "めたるっぽい", "url": "https://drive.google.com/uc?id=1mn9cBans3KMQ2lLb40p4ib-aRnMY1YzO"},
+        ],
+        "boss": [
+            {"name": "きんぐっぽい", "url": "https://drive.google.com/uc?id=1HPR7Lra32Z9xhop7OA3hR0MhHjBFmEIN"},
+        ],
+    },
+    3: {
+        "mob": [
+            {"name": "サンドンズ", "url": "https://drive.google.com/uc?id=1uzwhFGOKjcm5Twx_by-R6iRCpA3vr4n6"},
+        ],
+        "midboss": [
+            {"name": "スタッカート吉中", "url": "https://drive.google.com/uc?id=1RPSwhfSy6MbYDHOeKU8YBb7e53mknIv4"},
+        ],
+        "boss": [
+            {"name": "アンダッシュ高田", "url": "https://drive.google.com/uc?id=1v-ugvqIdIgMHX0pzaXN0mHKB5cAD1_Ix"},
+        ],
+    },
+    4: {
+        "mob": [
+            {"name": "フランクリン・クリントン", "url": "https://drive.google.com/uc?id=13bcdB3_luils1oXzQUrEupO0w2baz4v_"},
+        ],
+        "midboss": [
+            {"name": "マイケル・デ・サンタ", "url": "https://drive.google.com/uc?id=1l_rbjyYMdKdWcbxnOslCMjKUTzd6ZIz7"},
+        ],
+        "boss": [
+            {"name": "シ・ミズー", "url": "https://drive.google.com/uc?id=117v4LldiWXsr_NURJT09kj7L3yUIgoKy"},
+        ],
+    },
+}
+
+def _pick_enemy_visual(world: int, kind: str) -> tuple[str, str | None]:
+    """
+    W1〜W4: そのワールドのプールから抽選
+    W5: W1〜W4の同kindを全混ぜして抽選
+    """
+    w = int(world)
+
+    if w == 5:
+        mixed: list[dict[str, str]] = []
+        for ww in (1, 2, 3, 4):
+            mixed.extend(ENEMY_POOLS.get(ww, {}).get(kind, []) or [])
+        arr = mixed
+    else:
+        arr = ENEMY_POOLS.get(w, {}).get(kind, []) or []
+
+    if not arr:
+        return "敵", None
+
+    pick = random.choice(arr)
+    return pick.get("name", "敵"), pick.get("url")
 
 # =========================================================
 # Google Sheets 永続ストア
@@ -7253,7 +7333,7 @@ def _build_battle_text(sess: dict) -> str:
         "――――――――――\n"
         f"{log_text}\n"
         "――――――――――\n"
-        f"あなた  HP：{int(sess.get('player_hp',0))} / {int(sess.get('max_hp',0))}\n"
+        f"{pname}  HP：{int(sess.get('player_hp',0))} / {int(sess.get('max_hp',0))}\n"
         f"攻撃力：{int(sess.get('atk',0))}  防御力：{int(sess.get('def',0))}  素早さ：{int(sess.get('spd',0))}\n"
         f"特殊効果：{effect}\n"
     )
@@ -7261,6 +7341,14 @@ LOG_KEEP = 5
 AUTO_TICK_SEC = 0.8  # ログが流れる速度（好みで調整）
 dungeon_auto_tasks: dict[int, asyncio.Task] = {}
 
+def _build_enemy_thumb_embed(sess: dict) -> discord.Embed | None:
+    enemy = sess.get("enemy") or {}
+    url = enemy.get("image_url")
+    if not url:
+        return None
+    em = discord.Embed()        # 余計な説明を入れない＝最小サイズ
+    em.set_thumbnail(url=url)   # 右側に小さめ表示
+    return em
 
 def _push_log(sess: dict, text: str):
     logs: list[str] = sess.setdefault("logs", [])
@@ -7432,6 +7520,10 @@ def _battle_one_turn(uid: int) -> str | None:
 
     enemy = sess["enemy"]
 
+    pname = sess.get("player_name", "あなた")
+    ename = enemy.get("base_name") or enemy.get("name", "敵")
+
+
     # ✅ デバフのターン開始効果（毒など）＋一時ステ補正
     atk_tmp, def_tmp, spd_tmp = _apply_debuffs_start_of_turn(sess)
 
@@ -7482,7 +7574,7 @@ def _battle_one_turn(uid: int) -> str | None:
 
         dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
-        _push_log(sess, f"あなたの攻撃！ 敵に {dmg} ダメージ。")
+        _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。")
         if int(enemy["hp"]) <= 0:
             _apply_heal_on_kill(sess)  # ✅ 撃破時回復
             _push_log(sess, "✅ 勝利！")
@@ -7490,7 +7582,7 @@ def _battle_one_turn(uid: int) -> str | None:
 
         dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
         apply_damage_to_player(dmg2)
-        _push_log(sess, f"敵の攻撃！ あなたに {dmg2} ダメージ。")
+        _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。")
         maybe_enemy_apply_debuff()
 
         if int(sess["player_hp"]) <= 0:
@@ -7499,7 +7591,7 @@ def _battle_one_turn(uid: int) -> str | None:
     else:
         dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
         apply_damage_to_player(dmg2)
-        _push_log(sess, f"敵の攻撃！ あなたに {dmg2} ダメージ。")
+        _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。")
         maybe_enemy_apply_debuff()
 
         if int(sess["player_hp"]) <= 0:
@@ -7516,7 +7608,7 @@ def _battle_one_turn(uid: int) -> str | None:
 
         dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
-        _push_log(sess, f"あなたの攻撃！ 敵に {dmg} ダメージ。")
+        _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。")
         if int(enemy["hp"]) <= 0:
             _apply_heal_on_kill(sess)  # ✅ 撃破時回復
             _push_log(sess, "✅ 勝利！")
@@ -7537,11 +7629,15 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
 
                 # 戦闘中表示更新（ログ反映）
                 try:
+                    embed = _build_enemy_thumb_embed(sess)
+
                     await interaction.followup.edit_message(
                         msg_id,
                         content=_build_battle_text(sess),
+                        embed=embed,
                         view=None,
                     )
+
                 except discord.NotFound:
                     return
                 except discord.HTTPException:
@@ -7680,11 +7776,16 @@ async def start_battle_step(interaction: discord.Interaction):
         dungeon_sessions[uid] = sess
 
     # ③ 最初の表示（戦闘中はボタン無し）
+    sess = dungeon_sessions[uid]
+    embed = _build_enemy_thumb_embed(sess)
+
     await interaction.followup.edit_message(
         msg.id,
-        content=_build_battle_text(dungeon_sessions[uid]),
+        content=_build_battle_text(sess),
+        embed=embed,
         view=None,
     )
+
 
     # ④ オート開始（既に走ってたら止める）
     old = dungeon_auto_tasks.pop(uid, None)
@@ -8031,6 +8132,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
