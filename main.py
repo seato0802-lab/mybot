@@ -7279,40 +7279,30 @@ def _checkpoint_floor(floor: int) -> int:
 
 
 async def _finish_battle(uid: int, result: str, interaction=None):
-    """
-    戦闘終了処理
-    - 勝利時：コイン付与
-    - 進行度保存
-    ※ セッションは pop しない（次のフロア対応）
-    """
     sess = dungeon_sessions.get(uid)
     if not sess:
         return
 
-    # ユーザーデータ取得
     u = store.get_user(uid)
     if not u:
         return
 
-    # -----------------------------
-    # 勝敗ログ＆コイン報酬
-    # -----------------------------
+    reward = 0
+
     if result == "win":
         enemy = sess.get("enemy", {})
         reward = _calc_dungeon_coin_reward(enemy)
 
-        # コイン加算
-        u["coins"] = int(u.get("coins", 0)) + int(reward)
+        before = int(u.get("coins", 0))
+        u["coins"] = before + int(reward)
 
-        # ✅ ここで「最後に必ず表示したいログ」を確定
-        _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
+        # ✅ 勝敗ログ → 最後にコインログ（あなたの希望）
         _push_log(sess, "✅ 勝利！")
+        _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
     else:
         _push_log(sess, "💀 敗北…")
 
-    # -----------------------------
     # ダンジョン進行保存
-    # -----------------------------
     try:
         await dungeon_save_after_battle_async(
             uid=uid,
@@ -7321,15 +7311,17 @@ async def _finish_battle(uid: int, result: str, interaction=None):
             hp=int(sess.get("player_hp", 0)),
         )
     except Exception as e:
-        print("[DUNGEON SAVE ERROR]", e)
+        print("[DUNGEON SAVE ERROR]", type(e).__name__, e)
 
-    # -----------------------------
     # ユーザーデータ保存（coins反映）
-    # -----------------------------
     try:
         await sheets_upsert_async(u)
     except Exception as e:
-        print("[USER SAVE ERROR]", e)
+        print("[USER SAVE ERROR]", type(e).__name__, e)
+    try:
+        await _force_update_user_coins_async(uid, int(u["coins"]))
+    except Exception as e:
+        print("[COINS FORCE SAVE ERROR]", type(e).__name__, e)
 
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
@@ -7515,10 +7507,10 @@ def _battle_one_turn(uid: int) -> str | None:
     # すでに終わってる（ここで回復などはしない：二重発動防止）
     if int(enemy["hp"]) <= 0:
         _push_log(sess, "✅ 勝利！")
-        return "win"
+        return
     if int(sess["player_hp"]) <= 0:
         _push_log(sess, "💀 敗北…")
-        return "lose"
+        return
 
     # 1ターン
     player_first = _speed_first(int(spd_tmp), int(enemy["spd"]))
@@ -7544,7 +7536,7 @@ def _battle_one_turn(uid: int) -> str | None:
             _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
             _apply_heal_on_kill(sess)  # ✅ 撃破扱いで回復も発動
             _push_log(sess, "✅ 勝利！")
-            return "win"
+            return
 
         dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
@@ -7552,7 +7544,7 @@ def _battle_one_turn(uid: int) -> str | None:
         if int(enemy["hp"]) <= 0:
             _apply_heal_on_kill(sess)  # ✅ 撃破時回復
             _push_log(sess, "✅ 勝利！")
-            return "win"
+            return
 
         dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
         apply_damage_to_player(dmg2)
@@ -7561,7 +7553,7 @@ def _battle_one_turn(uid: int) -> str | None:
 
         if int(sess["player_hp"]) <= 0:
             _push_log(sess, "💀 敗北…")
-            return "lose"
+            return 
     else:
         dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
         apply_damage_to_player(dmg2)
@@ -7570,7 +7562,7 @@ def _battle_one_turn(uid: int) -> str | None:
 
         if int(sess["player_hp"]) <= 0:
             _push_log(sess, "💀 敗北…")
-            return "lose"
+            return
 
         # ✅ INSTAKILL：プレイヤー攻撃の直前に判定
         if _roll_instakill(sess):
@@ -7578,7 +7570,7 @@ def _battle_one_turn(uid: int) -> str | None:
             _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
             _apply_heal_on_kill(sess)  # ✅ 撃破扱いで回復も発動
             _push_log(sess, "✅ 勝利！")
-            return "win"
+            return
 
         dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
@@ -7586,7 +7578,7 @@ def _battle_one_turn(uid: int) -> str | None:
         if int(enemy["hp"]) <= 0:
             _apply_heal_on_kill(sess)  # ✅ 撃破時回復
             _push_log(sess, "✅ 勝利！")
-            return "win"
+            return
 
     return None
 
@@ -7764,6 +7756,51 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
 
     except asyncio.CancelledError:
         return
+
+async def _force_update_user_coins_async(uid: int, coins: int):
+    """
+    coins が sheets_upsert_async で反映されない環境向けの保険。
+    ws_users / store.ws_users / store.ws などから users ワークシートを探して coins を更新する。
+    """
+    ws = None
+
+    # ありがちな置き場所を候補で探す
+    for name in ("ws_users", "USERS_WS", "users_ws"):
+        obj = globals().get(name)
+        if obj is not None:
+            ws = obj
+            break
+
+    if ws is None and hasattr(store, "ws_users"):
+        ws = getattr(store, "ws_users")
+    if ws is None and hasattr(store, "ws"):
+        # SheetsStore が ws を users として持っているケース
+        ws = getattr(store, "ws")
+
+    if ws is None:
+        raise RuntimeError("users ワークシート（ws_users 等）が見つからないのだ。")
+
+    def _sync():
+        headers = ws.row_values(1)
+        if "user_id" not in headers or "coins" not in headers:
+            raise RuntimeError(f"usersヘッダに user_id/coins が無い: {headers}")
+
+        col_uid = headers.index("user_id") + 1
+        col_coins = headers.index("coins") + 1
+
+        uid_list = ws.col_values(col_uid)
+        row = None
+        s_uid = str(uid)
+        for i, v in enumerate(uid_list, start=1):
+            if str(v) == s_uid:
+                row = i
+                break
+        if row is None:
+            raise RuntimeError(f"user_id={uid} の行が見つからないのだ。")
+
+        ws.update_cell(row, col_coins, str(int(coins)))
+
+    return await asyncio.to_thread(_sync)
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -8071,6 +8108,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
