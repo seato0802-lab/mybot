@@ -7835,6 +7835,45 @@ async def dungeon_save_progress_async(uid: int, world: int, floor: int, hp: int)
 
     raise RuntimeError("dungeon の保存関数が見つからない/呼べないのだ。保存処理の関数名を確認してほしいのだ。")
 
+async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
+    try:
+        while True:
+            async with get_user_lock(uid):
+                sess = dungeon_sessions.get(uid)
+                if not sess:
+                    return
+
+                result = _battle_one_turn(uid)
+
+                embed = _build_battle_embed(sess)
+
+                try:
+                    await msg.edit(content="", embed=embed, view=None)
+                except discord.NotFound:
+                    return
+                except discord.HTTPException as e:
+                    print("[MSG EDIT ERROR]", type(e).__name__, e)
+                    return
+
+            if result in ("win", "lose"):
+                await _finish_battle(uid, result, interaction=None)
+                async with get_user_lock(uid):
+                    sess = dungeon_sessions.get(uid)
+                    if sess:
+                        sess["battle_result"] = result
+                        sess["finished"] = True
+
+                try:
+                    await msg.edit(view=DungeonAfterView(uid))  # content/embedはそのまま
+                except Exception as e:
+                    print("[AFTER VIEW ERROR]", type(e).__name__, e)
+                return
+
+            await asyncio.sleep(AUTO_TICK_SEC)
+
+    except asyncio.CancelledError:
+        return
+
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
 # -----------------------------
@@ -8141,6 +8180,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
