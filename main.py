@@ -7289,13 +7289,13 @@ async def _finish_battle(uid: int, result: str, interaction=None):
     if not sess:
         return
 
-    # ユーザーデータ取得（既存の方法に合わせる）
+    # ユーザーデータ取得
     u = store.get_user(uid)
     if not u:
         return
 
     # -----------------------------
-    # 勝利時：コイン報酬
+    # 勝敗ログ＆コイン報酬
     # -----------------------------
     if result == "win":
         enemy = sess.get("enemy", {})
@@ -7304,11 +7304,14 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         # コイン加算
         u["coins"] = int(u.get("coins", 0)) + int(reward)
 
-        # ログに表示（最大5件制限あり）
+        # ✅ ここで「最後に必ず表示したいログ」を確定
         _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
+        _push_log(sess, "✅ 勝利！")
+    else:
+        _push_log(sess, "💀 敗北…")
 
     # -----------------------------
-    # ダンジョン進行保存（dungeonシート）
+    # ダンジョン進行保存
     # -----------------------------
     try:
         await dungeon_save_after_battle_async(
@@ -7321,10 +7324,10 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         print("[DUNGEON SAVE ERROR]", e)
 
     # -----------------------------
-    # ユーザーデータ保存（coins反映）※ Sheetsへ保存
+    # ユーザーデータ保存（coins反映）
     # -----------------------------
     try:
-        await sheets_upsert_async(u)  # ✅ users/coins を更新する実装ならここで反映される
+        await sheets_upsert_async(u)
     except Exception as e:
         print("[USER SAVE ERROR]", e)
 
@@ -7707,9 +7710,11 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                     return
 
                 result = _battle_one_turn(uid)
+
+                # 戦闘中はログが増えるので毎回Embed更新
                 embed = _build_battle_embed(sess)
 
-            # 🔑 毎回「original response」を編集
+            # ロック外で編集
             try:
                 await interaction.edit_original_response(
                     content="",
@@ -7721,20 +7726,38 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                 return
 
             if result in ("win", "lose"):
+                # ✅ ここで「報酬処理（コイン付与＋ログ追加＋保存）」を実行
                 await _finish_battle(uid, result, interaction=None)
+
+                # ✅ 戦闘終了フラグを付ける
                 async with get_user_lock(uid):
                     sess = dungeon_sessions.get(uid)
-                    if sess:
-                        sess["battle_result"] = result
-                        sess["finished"] = True
+                    if not sess:
+                        return
+                    sess["battle_result"] = result
+                    sess["finished"] = True
 
-                # 🔑 本文は触らず、view だけ付ける
+                    # ✅ _finish_battleで増えた「コインログ込み」の最終表示を作る
+                    final_embed = _build_battle_embed(sess)
+
+                # ✅ まず「最終結果（コイン獲得含む）」を表示
+                try:
+                    await interaction.edit_original_response(
+                        content="",
+                        embed=final_embed,
+                        view=None,  # いったんボタン無しで確定表示
+                    )
+                except Exception:
+                    pass
+
+                # ✅ 次に view だけ付けて「ログの下にボタン」
                 try:
                     await interaction.edit_original_response(
                         view=DungeonAfterView(uid)
                     )
                 except Exception as e:
                     print("[AFTER VIEW ERROR]", type(e).__name__, e)
+
                 return
 
             await asyncio.sleep(AUTO_TICK_SEC)
@@ -8048,6 +8071,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
