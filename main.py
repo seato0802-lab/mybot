@@ -7348,22 +7348,21 @@ LOG_KEEP = 5
 AUTO_TICK_SEC = 0.8  # ログが流れる速度（好みで調整）
 dungeon_auto_tasks: dict[int, asyncio.Task] = {}
 
-def _build_enemy_thumb_embed(sess: dict) -> discord.Embed | None:
+def _build_battle_embed(sess: dict) -> discord.Embed:
     enemy = sess.get("enemy") or {}
-    url = enemy.get("image_url") or enemy.get("url")  # どっちでも拾う
-    if not url:
-        return None
+    url = enemy.get("image_url") or enemy.get("url")
 
-    e = discord.Embed()
-    e.set_thumbnail(url=url)   # ✅ これが「右上サムネ」
+    # タイトルは任意（無くてもOK）
+    e = discord.Embed(
+        title="🗺 ダンジョン",
+        description=_build_battle_text(sess),
+    )
+
+    # ✅ これが「右上サムネ」
+    if url:
+        e.set_thumbnail(url=url)
+
     return e
-
-def _push_log(sess: dict, text: str):
-    logs: list[str] = sess.setdefault("logs", [])
-    logs.append(text)
-    if len(logs) > LOG_KEEP:
-        del logs[:-LOG_KEEP]
-
 
 class DungeonAfterView(discord.ui.View):
     def __init__(self, uid: int):
@@ -7788,12 +7787,12 @@ async def start_battle_step(interaction: discord.Interaction):
 
     # ③ 最初の表示（戦闘中はボタン無し）
     sess = dungeon_sessions[uid]
-    embed = _build_enemy_thumb_embed(sess)
+    embed = _build_battle_embed(sess)
 
     await interaction.followup.edit_message(
         msg.id,
-        content=_build_battle_text(sess),
-        embed=embed,
+        content="",          # ✅ ここを空にする（本文に書かない）
+        embed=embed,         # ✅ Embedの右上にサムネが来る
         view=None,
     )
 
@@ -8142,6 +8141,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
