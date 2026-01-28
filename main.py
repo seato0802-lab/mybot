@@ -7304,6 +7304,9 @@ class DungeonAfterView(discord.ui.View):
                 await interaction.followup.send("表示メッセージが見つからないのだ。", ephemeral=True)
                 return
 
+            effect_type = sess.get("effect_type", "NONE")
+            effect_value = int(sess.get("effect_value", 0) or 0)
+
             # ✅ 勝利している場合だけ次のフロアへ
             if sess.get("battle_result") == "win":
                 can_next = True
@@ -7316,8 +7319,15 @@ class DungeonAfterView(discord.ui.View):
                 floor = int(sess.get("floor", 1) or 1)
                 debuff_zone = bool(sess.get("debuff_zone", 0))
 
+                # 新しい敵（=新バトル開始）
                 sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
+
+                # ✅ 新バトル開始なのでシールドを満タンに張り直す
+                sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
+
                 _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
+                if sess["shield_now"] > 0:
+                    _push_log(sess, "🛡 シールドが全回復したのだ。")
 
                 render_sess = sess
 
@@ -7332,15 +7342,26 @@ class DungeonAfterView(discord.ui.View):
                 if checkpoint != cur_floor:
                     sess["floor"] = checkpoint
 
-                # 敵も作り直す（戻り先の敵）
                 world = int(sess.get("world", 1) or 1)
                 debuff_zone = bool(sess.get("debuff_zone", 0))
+
+                # 戻り先の敵（=新バトル開始扱い）
                 sess["enemy"] = generate_enemy(world, checkpoint, debuff_zone=debuff_zone)
 
                 sess["finished"] = False
                 sess.pop("battle_result", None)
 
+                # ✅ 敗北時は全回復（あなた指定）
+                sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
+
+                # ✅ 新バトル開始なのでシールドを満タンに張り直す
+                sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
+
                 _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
+                _push_log(sess, "✨ HPを全回復したのだ。")
+                if sess["shield_now"] > 0:
+                    _push_log(sess, "🛡 シールドが全回復したのだ。")
+
                 render_sess = sess
 
         # -------------------------
@@ -7349,7 +7370,7 @@ class DungeonAfterView(discord.ui.View):
         await interaction.followup.edit_message(
             msg_id,
             content=_build_battle_text(render_sess),
-            view=None if can_next else self,  # ✅敗北時はボタンを残す（やめるは押せる）
+            view=None if can_next else self,  # 敗北時はボタン維持（やめる可）
         )
 
         # -------------------------
@@ -7527,29 +7548,68 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
                     pass
 
             if result in ("win", "lose"):
-                # 保存処理（セッションは pop しない）
+                # まず既存の後処理（コイン等）を実行
                 await _finish_battle(uid, result, interaction=None)
+
+                # ロック内でセッション更新（表示/次処理用）
+                save_world = None
+                save_floor = None
+                save_hp = None
 
                 async with get_user_lock(uid):
                     sess = dungeon_sessions.get(uid)
-                    if sess:
-                        sess["battle_result"] = result
-                        sess["finished"] = True
+                    if not sess:
+                        return
 
-                        # 敗北時はチェックポイントを記録
-                        if result == "lose":
-                            cur_floor = int(sess.get("floor", 1) or 1)
-                            sess["checkpoint_floor"] = get_checkpoint_floor(cur_floor)
-                        if result == "lose":
-                            # ✅ チェックポイント記録
-                            cur_floor = int(sess.get("floor", 1) or 1)
-                            sess["checkpoint_floor"] = get_checkpoint_floor(cur_floor)
+                    sess["battle_result"] = result
+                    sess["finished"] = True
 
-                            # ✅ 敗北時：全回復（表示用）
-                            sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
-                            _push_log(sess, "✨ 敗北したのでHPを全回復したのだ。")
+                    if result == "lose":
+                        # ✅ チェックポイントへ戻す（セッション上）
+                        cur_floor = int(sess.get("floor", 1) or 1)
+                        checkpoint = get_checkpoint_floor(cur_floor)
+                        sess["floor"] = checkpoint
+                        sess["checkpoint_floor"] = checkpoint
 
-                # ログはそのまま、下にボタンだけ表示
+                        # ✅ 敗北時：全回復
+                        max_hp = int(sess.get("max_hp", 100) or 100)
+                        sess["player_hp"] = max_hp
+
+                        # ✅ 新バトル開始扱い：シールド張り直し
+                        et = sess.get("effect_type", "NONE")
+                        ev = int(sess.get("effect_value", 0) or 0)
+                        sess["shield_now"] = int(get_player_shield_max(et, ev))
+
+                        _push_log(sess, "💀 敗北…")
+                        _push_log(sess, "✨ 敗北したのでHPを全回復したのだ。")
+                        _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
+                        if sess["shield_now"] > 0:
+                            _push_log(sess, "🛡 シールドが全回復したのだ。")
+
+                        save_world = int(sess.get("world", 1) or 1)
+                        save_floor = checkpoint
+                        save_hp = max_hp
+
+                # ✅ ロック外：スプレッドシートへ永続保存（ここが最重要）
+                if result == "lose" and save_world is not None:
+                    try:
+                        await dungeon_save_progress_async(uid, save_world, save_floor, save_hp)
+                    except Exception as e:
+                        # 保存失敗は致命的なのでログに出す（見えるように）
+                        async with get_user_lock(uid):
+                            sess = dungeon_sessions.get(uid)
+                            if sess:
+                                _push_log(sess, f"❌ 保存に失敗したのだ… {type(e).__name__}: {e}")
+                        try:
+                            await interaction.followup.edit_message(
+                                msg_id,
+                                content=_build_battle_text(dungeon_sessions.get(uid, {})),
+                                view=None,
+                            )
+                        except Exception:
+                            pass
+
+                # ログは触らず、下にボタンだけ表示
                 try:
                     await interaction.followup.edit_message(
                         msg_id,
@@ -7664,6 +7724,39 @@ async def start_battle_step(interaction: discord.Interaction):
     if old and not old.done():
         old.cancel()
     dungeon_auto_tasks[uid] = asyncio.create_task(_auto_battle_loop(interaction, uid, msg.id))
+
+async def dungeon_save_progress_async(uid: int, world: int, floor: int, hp: int):
+    """
+    スプレッドシートに world/floor/hp を保存する。
+    既存の保存関数名が環境によって違っても動くように候補呼び出し。
+    """
+    # よくある候補名（あなたの全体コード側に合わせて追加/変更OK）
+    candidates = [
+        "dungeon_save_user_async",
+        "dungeon_update_user_async",
+        "dungeon_upsert_user_async",
+        "dungeon_set_user_async",
+    ]
+
+    payload = {"world": int(world), "floor": int(floor), "hp": int(hp)}
+
+    for name in candidates:
+        fn = globals().get(name)
+        if callable(fn):
+            # 形が (uid, payload) / (uid, world, floor, hp) とか色々ありえるので吸収
+            try:
+                await fn(uid, payload)
+                return
+            except TypeError:
+                try:
+                    await fn(uid, int(world), int(floor), int(hp))
+                    return
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+    raise RuntimeError("dungeon の保存関数が見つからない/呼べないのだ。保存処理の関数名を確認してほしいのだ。")
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -7971,6 +8064,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
