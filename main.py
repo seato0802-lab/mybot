@@ -7350,12 +7350,13 @@ dungeon_auto_tasks: dict[int, asyncio.Task] = {}
 
 def _build_enemy_thumb_embed(sess: dict) -> discord.Embed | None:
     enemy = sess.get("enemy") or {}
-    url = enemy.get("image_url")
+    url = enemy.get("image_url") or enemy.get("url")  # どっちでも拾う
     if not url:
         return None
-    em = discord.Embed()        # 余計な説明を入れない＝最小サイズ
-    em.set_thumbnail(url=url)   # 右側に小さめ表示
-    return em
+
+    e = discord.Embed()
+    e.set_thumbnail(url=url)   # ✅ これが「右上サムネ」
+    return e
 
 def _push_log(sess: dict, text: str):
     logs: list[str] = sess.setdefault("logs", [])
@@ -8141,6 +8142,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
