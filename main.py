@@ -7319,10 +7319,16 @@ def _build_battle_text(sess: dict) -> str:
     world = int(sess.get("world", 1))
     floor = int(sess.get("floor", 1))
 
+    # ✅ ここを必ず追加
+    pname = sess.get("player_name", "あなた")
+
     logs = sess.get("logs", [])
     log_text = "\n".join(logs[-5:]) if logs else "（ログなし）"
 
-    effect = _fmt_effect(sess.get("effect_type", "NONE"), int(sess.get("effect_value", 0) or 0))
+    effect = _fmt_effect(
+        sess.get("effect_type", "NONE"),
+        int(sess.get("effect_value", 0) or 0),
+    )
 
     return (
         "🗺 ダンジョン\n"
@@ -7337,6 +7343,7 @@ def _build_battle_text(sess: dict) -> str:
         f"攻撃力：{int(sess.get('atk',0))}  防御力：{int(sess.get('def',0))}  素早さ：{int(sess.get('spd',0))}\n"
         f"特殊効果：{effect}\n"
     )
+
 LOG_KEEP = 5
 AUTO_TICK_SEC = 0.8  # ログが流れる速度（好みで調整）
 dungeon_auto_tasks: dict[int, asyncio.Task] = {}
@@ -7689,6 +7696,7 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
+    "player_name": interaction.user.display_name,
 
     # ① まず初回応答を確定（followup webhook を有効にする）
     try:
@@ -8132,6 +8140,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
