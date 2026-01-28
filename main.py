@@ -7696,7 +7696,6 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
-    "player_name": interaction.user.display_name,
 
     # ① まず初回応答を確定（followup webhook を有効にする）
     try:
@@ -7763,6 +7762,10 @@ async def start_battle_step(interaction: discord.Interaction):
         sess = {
             "world": world,
             "floor": floor,
+
+            # ✅ ここが正しい位置（dictの中）
+            "player_name": interaction.user.display_name,
+
             "player_hp": int(hp),
             "max_hp": int(max_hp),
             "shield_now": int(shield_max),
@@ -7778,7 +7781,6 @@ async def start_battle_step(interaction: discord.Interaction):
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
             "battle_message_id": msg.id,
-            # ※ debuff_zone をセッションでも参照するなら保持
             "debuff_zone": int(debuff_zone),
         }
         dungeon_sessions[uid] = sess
@@ -7793,7 +7795,6 @@ async def start_battle_step(interaction: discord.Interaction):
         embed=embed,
         view=None,
     )
-
 
     # ④ オート開始（既に走ってたら止める）
     old = dungeon_auto_tasks.pop(uid, None)
@@ -8140,6 +8141,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
