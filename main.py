@@ -520,9 +520,11 @@ def roll_weapon(world: int, floor: int) -> dict:
 
     etype, elv, eval_ = _pick_effect(world)
 
-    name = f"W{int(world)}武器_{int(time.time()*1000)%100000}"
+    weapon_id = f"W{int(world)}_{int(time.time()*1000)}_{random.randint(100,999)}"
+    name = _pretty_weapon_name(world)
 
     return {
+        "id": weapon_id,          # ✅内部用（保存しなくてもOK）
         "name": name,
         "atk": max(0, atk),
         "def": max(0, df),
@@ -784,6 +786,33 @@ def get_checkpoint_floor(floor: int) -> int:
     """
     f = max(1, int(floor))
     return ((f - 1) // 20) * 20 + 1
+
+WEAPON_PREFIX_BY_WORLD = {
+    1: ["木製", "初心者", "訓練用", "旅人の", "見習いの"],
+    2: ["鉄の", "堅牢な", "戦士の", "鋼の", "獣狩りの"],
+    3: ["紅蓮の", "黒鉄の", "雷鳴の", "影の", "蒼天の"],
+    4: ["神威の", "覇王の", "星喰いの", "冥府の", "天翔ける"],
+    5: ["混沌の", "終焉の", "無限の", "原初の", "禁忌の"],
+}
+
+WEAPON_BASE_NAMES = [
+    "剣", "大剣", "短剣", "槍", "斧", "弓", "杖", "槌", "鎌", "双剣"
+]
+
+WEAPON_SUFFIX = [
+    "・改", "・真打", "・零式", "・極", "・試作", "・二号", "・特注"
+]
+
+def _pretty_weapon_name(world: int) -> str:
+    w = int(world)
+    prefix = random.choice(WEAPON_PREFIX_BY_WORLD.get(w, ["謎の"]))
+    base = random.choice(WEAPON_BASE_NAMES)
+
+    # 40%でサフィックスを付ける
+    name = f"{prefix}{base}"
+    if random.random() < 0.40:
+        name += random.choice(WEAPON_SUFFIX)
+    return name
 
 # -----------------------------
 # ダンジョン報酬（コイン）
@@ -8060,6 +8089,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
