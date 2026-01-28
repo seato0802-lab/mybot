@@ -7581,7 +7581,7 @@ def _battle_one_turn(uid: int) -> str | None:
 
         dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
-        _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。")
+        _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。")
         if int(enemy["hp"]) <= 0:
             _apply_heal_on_kill(sess)  # ✅ 撃破時回復
             _push_log(sess, "✅ 勝利！")
@@ -7800,8 +7800,8 @@ async def start_battle_step(interaction: discord.Interaction):
     old = dungeon_auto_tasks.pop(uid, None)
     if old and not old.done():
         old.cancel()
-    dungeon_auto_tasks[uid] = asyncio.create_task(_auto_battle_loop(interaction, uid, msg.id))
-
+    dungeon_auto_tasks[uid] = asyncio.create_task(_auto_battle_loop_msg(uid, msg))
+    
 async def dungeon_save_progress_async(uid: int, world: int, floor: int, hp: int):
     """
     スプレッドシートに world/floor/hp を保存する。
@@ -8180,6 +8180,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
