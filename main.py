@@ -7466,7 +7466,7 @@ class DungeonAfterView(discord.ui.View):
                 old.cancel()
 
             dungeon_auto_tasks[uid] = asyncio.create_task(
-                _auto_battle_loop_msg(uid, interaction.message)  # ✅ msg版を使う
+                _auto_battle_loop_interaction(uid, interaction)
             )
 
         # -------------------------
@@ -7694,87 +7694,61 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
 
-    # ① まず初回応答を確定（followup webhook を有効にする）
-    try:
-        await interaction.response.defer(ephemeral=True)
-    except discord.InteractionResponded:
-        pass
-
-    # ② 個人表示メッセージを新規作成（入口メッセージは絶対に編集しない）
-    msg = await interaction.followup.send(
-        content="準備中なのだ…",
-        ephemeral=True,
-        wait=True,
-    )
+    # ✅ followup じゃなく response で “戦闘メッセ” を作る
+    await interaction.response.send_message("準備中なのだ…", ephemeral=True)
+    msg = await interaction.original_response()  # ✅ これが編集対象のメッセージ
 
     async with get_user_lock(uid):
-        # --- ユーザー状態ロード（キャッシュがあれば使う） ---
         loader = globals().get("dungeon_load_user_cached_async")
         try:
-            if callable(loader):
-                state = await loader(uid)
-            else:
-                state = await dungeon_load_user_async(uid)
+            state = await loader(uid) if callable(loader) else await dungeon_load_user_async(uid)
         except Exception as e:
-            await interaction.followup.edit_message(
-                msg.id,
+            await interaction.edit_original_response(
                 content=f"❌ ダンジョン状態の読み込みに失敗したのだ…\n```{type(e).__name__}: {e}```",
-                view=None,
+                embed=None, view=None
             )
             return
 
-        # --- ステータス計算 ---
         try:
             effect_type = state.get("effect_type", "NONE")
             effect_value = int(state.get("effect_value", 0) or 0)
 
             max_hp = calc_player_max_hp(effect_type, effect_value)
             hp = min(int(state.get("hp", 0) or 0), int(max_hp))
-
             shield_max = get_player_shield_max(effect_type, effect_value)
 
             world = int(state.get("world", 1) or 1)
             floor = int(state.get("floor", 1) or 1)
             debuff_zone = bool(state.get("debuff_zone", 0))
         except Exception as e:
-            await interaction.followup.edit_message(
-                msg.id,
+            await interaction.edit_original_response(
                 content=f"❌ ステータス計算で失敗したのだ…\n```{type(e).__name__}: {e}```",
-                view=None,
+                embed=None, view=None
             )
             return
 
-        # --- 敵生成 ---
         try:
             enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
         except Exception as e:
-            await interaction.followup.edit_message(
-                msg.id,
+            await interaction.edit_original_response(
                 content=f"❌ 敵の生成に失敗したのだ…\n```{type(e).__name__}: {e}```",
-                view=None,
+                embed=None, view=None
             )
             return
 
-        # --- セッション作成（個人メッセIDを保存） ---
         sess = {
             "world": world,
             "floor": floor,
-
-            # ✅ ここが正しい位置（dictの中）
             "player_name": interaction.user.display_name,
-
             "player_hp": int(hp),
             "max_hp": int(max_hp),
             "shield_now": int(shield_max),
-
             "atk": int(state.get("weapon_atk", 0) or 0),
             "def": int(state.get("weapon_def", 0) or 0),
             "spd": int(state.get("weapon_spd", 0) or 0),
-
             "effect_type": effect_type,
             "effect_value": effect_value,
             "effect_lv": int(state.get("effect_lv", 0) or 0),
-
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
             "battle_message_id": msg.id,
@@ -7782,22 +7756,15 @@ async def start_battle_step(interaction: discord.Interaction):
         }
         dungeon_sessions[uid] = sess
 
-    # ③ 最初の表示（戦闘中はボタン無し）
-    sess = dungeon_sessions[uid]
-    embed = _build_battle_embed(sess)
+    # ✅ ここも original_response を編集
+    embed = _build_battle_embed(dungeon_sessions[uid])
+    await interaction.edit_original_response(content="", embed=embed, view=None)
 
-    await interaction.followup.edit_message(
-        msg.id,
-        content="",          # ✅ ここを空にする（本文に書かない）
-        embed=embed,         # ✅ Embedの右上にサムネが来る
-        view=None,
-    )
-
-    # ④ オート開始（既に走ってたら止める）
-    old = dungeon_auto_tasks.pop(uid, None)
+    # ✅ オート開始：interaction を渡す（msg は渡さない）
+    dungeon_auto_tasks[uid] = asyncio.create_task(
     if old and not old.done():
-        old.cancel()
-    dungeon_auto_tasks[uid] = asyncio.create_task(_auto_battle_loop_msg(uid, msg))
+        _auto_battle_loop_interaction(uid, interaction)
+    )
     
 async def dungeon_save_progress_async(uid: int, world: int, floor: int, hp: int):
     """
@@ -7832,7 +7799,7 @@ async def dungeon_save_progress_async(uid: int, world: int, floor: int, hp: int)
 
     raise RuntimeError("dungeon の保存関数が見つからない/呼べないのだ。保存処理の関数名を確認してほしいのだ。")
 
-async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
+async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interaction):
     try:
         while True:
             async with get_user_lock(uid):
@@ -7841,16 +7808,18 @@ async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
                     return
 
                 result = _battle_one_turn(uid)
-
                 embed = _build_battle_embed(sess)
 
-                try:
-                    await msg.edit(content="", embed=embed, view=None)
-                except discord.NotFound:
-                    return
-                except discord.HTTPException as e:
-                    print("[MSG EDIT ERROR]", type(e).__name__, e)
-                    return
+            # 🔑 毎回「original response」を編集
+            try:
+                await interaction.edit_original_response(
+                    content="",
+                    embed=embed,
+                    view=None,
+                )
+            except discord.HTTPException as e:
+                print("[AUTO EDIT ERROR]", type(e).__name__, e)
+                return
 
             if result in ("win", "lose"):
                 await _finish_battle(uid, result, interaction=None)
@@ -7860,8 +7829,11 @@ async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
                         sess["battle_result"] = result
                         sess["finished"] = True
 
+                # 🔑 本文は触らず、view だけ付ける
                 try:
-                    await msg.edit(view=DungeonAfterView(uid))  # content/embedはそのまま
+                    await interaction.edit_original_response(
+                        view=DungeonAfterView(uid)
+                    )
                 except Exception as e:
                     print("[AFTER VIEW ERROR]", type(e).__name__, e)
                 return
@@ -8177,6 +8149,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
