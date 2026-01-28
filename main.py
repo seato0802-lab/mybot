@@ -7243,6 +7243,20 @@ async def skull_cmd(interaction: discord.Interaction, bet: int, minutes: int):
 # -----------------------------
 dungeon_sessions: dict[int, dict] = {}  # user_id -> session
 
+def _push_log(sess: dict, text: str):
+    """
+    ダンジョン戦闘ログを追加する
+    - 最大 LOG_KEEP 件まで保持
+    """
+    if not sess:
+        return
+
+    logs = sess.setdefault("logs", [])
+    logs.append(text)
+
+    # ログ上限を超えたら古いものを削除
+    if len(logs) > LOG_KEEP:
+        del logs[:-LOG_KEEP]
 
 def _combat_damage(attacker_atk: int, defender_def: int) -> int:
     # 超シンプル（後で調整可）：攻撃-防御の最低1
@@ -8163,6 +8177,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
