@@ -7390,17 +7390,16 @@ class DungeonAfterView(discord.ui.View):
     @discord.ui.button(label="➡️ 次のフロアへ", style=discord.ButtonStyle.primary)
     async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
-
-        # ✅ 3秒以内にACK（deferでも edit_messageでもOK。今回はdeferしない方式）
-        # ここで “押したボタンの付いてるメッセージ” を更新していくのが正解
-
         can_next = False
-        render_sess = None
 
         async with get_user_lock(uid):
             sess = dungeon_sessions.get(uid)
             if not sess:
-                await interaction.response.edit_message(content="セッションが見つからないのだ。", view=None, embed=None)
+                await interaction.response.edit_message(
+                    content="セッションが見つからないのだ。",
+                    embed=None,
+                    view=None,
+                )
                 return
 
             effect_type = sess.get("effect_type", "NONE")
@@ -7408,58 +7407,47 @@ class DungeonAfterView(discord.ui.View):
 
             if sess.get("battle_result") == "win":
                 can_next = True
-
-                sess["finished"] = False
                 sess.pop("battle_result", None)
+                sess["finished"] = False
 
-                sess["floor"] = int(sess.get("floor", 1) or 1) + 1
-                world = int(sess.get("world", 1) or 1)
-                floor = int(sess.get("floor", 1) or 1)
+                sess["floor"] += 1
+                world = sess["world"]
+                floor = sess["floor"]
                 debuff_zone = bool(sess.get("debuff_zone", 0))
 
                 sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
-                sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
+                sess["shield_now"] = get_player_shield_max(effect_type, effect_value)
 
                 _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
-
-                render_sess = sess
             else:
-                can_next = False
+                checkpoint = _checkpoint_floor(sess["floor"])
+                sess["floor"] = checkpoint
+                sess["player_hp"] = sess["max_hp"]
 
-                cur_floor = int(sess.get("floor", 1) or 1)
-                checkpoint = _checkpoint_floor(cur_floor)  # ✅ あなたの関数名に合わせる
+                sess["enemy"] = generate_enemy(
+                    sess["world"],
+                    checkpoint,
+                    debuff_zone=bool(sess.get("debuff_zone", 0)),
+                )
 
-                if checkpoint != cur_floor:
-                    sess["floor"] = checkpoint
-
-                world = int(sess.get("world", 1) or 1)
-                debuff_zone = bool(sess.get("debuff_zone", 0))
-                sess["enemy"] = generate_enemy(world, checkpoint, debuff_zone=debuff_zone)
-
-                sess["finished"] = False
-                sess.pop("battle_result", None)
-
-                sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
-                sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
+                sess["shield_now"] = get_player_shield_max(effect_type, effect_value)
 
                 _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
                 _push_log(sess, "✨ HPを全回復したのだ。")
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
-                render_sess = sess
-
-        # ✅ ここが超重要：followup.edit_message をやめて「このメッセージ」を編集
-        new_embed = _build_battle_embed(render_sess)
+        # ✅ この interaction のメッセージだけ編集
+        embed = _build_battle_embed(sess)
         await interaction.response.edit_message(
             content="",
-            embed=new_embed,
-            view=None if can_next else self,
+            embed=embed,
+            view=None,
         )
 
-        # ✅ 勝利時のみオート再開：msgオブジェクトで回す
+        # ✅ 勝利時のみオート再開（interaction版のみ）
         if can_next:
             old = dungeon_auto_tasks.pop(uid, None)
             if old and not old.done():
@@ -7467,27 +7455,6 @@ class DungeonAfterView(discord.ui.View):
 
             dungeon_auto_tasks[uid] = asyncio.create_task(
                 _auto_battle_loop_interaction(uid, interaction)
-            )
-
-        # -------------------------
-        # ロック外：表示更新
-        # -------------------------
-        await interaction.followup.edit_message(
-            msg_id,
-            content=_build_battle_text(render_sess),
-            view=None if can_next else self,  # 敗北時はボタン維持（やめる可）
-        )
-
-        # -------------------------
-        # 勝利時のみオート再開
-        # -------------------------
-        if can_next:
-            old = dungeon_auto_tasks.pop(uid, None)
-            if old and not old.done():
-                old.cancel()
-
-            dungeon_auto_tasks[uid] = asyncio.create_task(
-                _auto_battle_loop(interaction, uid, msg_id)
             )
 
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
@@ -7620,77 +7587,6 @@ def _battle_one_turn(uid: int) -> str | None:
 
     return None
 
-async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: int):
-    """オート進行：1ターン→表示更新→sleep。決着後にAfterViewを出す。"""
-    try:
-        while True:
-            async with get_user_lock(uid):
-                sess = dungeon_sessions.get(uid)
-                if not sess:
-                    return
-
-                result = _battle_one_turn(uid)
-
-                # 戦闘中表示更新（ログ反映）
-                try:
-                    embed = _build_enemy_thumb_embed(sess)
-
-                    await interaction.followup.edit_message(
-                        msg_id,
-                        content=_build_battle_text(sess),
-                        embed=embed,
-                        view=None,
-                    )
-
-                except discord.NotFound:
-                    return
-                except discord.HTTPException:
-                    pass
-
-            if result in ("win", "lose"):
-                # ✅ ここで終了処理（勝利ならコインログも sess.logs に追加される）
-                await _finish_battle(uid, result, interaction=None)
-
-                # ✅ battle_result を付ける（AfterViewの判定用）
-                async with get_user_lock(uid):
-                    sess = dungeon_sessions.get(uid)
-                    if not sess:
-                        return
-                    sess["battle_result"] = result
-                    sess["finished"] = True
-
-                # ✅ コイン獲得ログや勝敗ログが入った「最終内容」で一度描画する
-                try:
-                    async with get_user_lock(uid):
-                        sess = dungeon_sessions.get(uid)
-                        if not sess:
-                            return
-                        final_text = _build_battle_text(sess)
-
-                    await interaction.followup.edit_message(
-                        msg_id,
-                        content=final_text,
-                        view=None,  # いったんボタン無しで確定表示
-                    )
-                except Exception:
-                    pass
-
-                # ✅ その後、contentは触らず view だけ付けて「ログの下にボタン」
-                try:
-                    await interaction.followup.edit_message(
-                        msg_id,
-                        view=DungeonAfterView(uid),
-                    )
-                except Exception:
-                    pass
-                return
-
-            await asyncio.sleep(AUTO_TICK_SEC)
-
-    except asyncio.CancelledError:
-        return
-
-
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
 
@@ -7761,11 +7657,14 @@ async def start_battle_step(interaction: discord.Interaction):
     await interaction.edit_original_response(content="", embed=embed, view=None)
 
     # ✅ オート開始：interaction を渡す（msg は渡さない）
-    dungeon_auto_tasks[uid] = asyncio.create_task(
+    old = dungeon_auto_tasks.pop(uid, None)
     if old and not old.done():
+        old.cancel()
+
+    dungeon_auto_tasks[uid] = asyncio.create_task(
         _auto_battle_loop_interaction(uid, interaction)
     )
-    
+
 async def dungeon_save_progress_async(uid: int, world: int, floor: int, hp: int):
     """
     スプレッドシートに world/floor/hp を保存する。
@@ -8149,6 +8048,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
