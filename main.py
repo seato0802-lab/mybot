@@ -7208,13 +7208,13 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         reward = _calc_dungeon_coin_reward(enemy)
 
         # コイン加算
-        u["coins"] = int(u.get("coins", 0)) + reward
+        u["coins"] = int(u.get("coins", 0)) + int(reward)
 
         # ログに表示（最大5件制限あり）
         _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
 
     # -----------------------------
-    # ダンジョン進行保存
+    # ダンジョン進行保存（dungeonシート）
     # -----------------------------
     try:
         await dungeon_save_after_battle_async(
@@ -7227,10 +7227,10 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         print("[DUNGEON SAVE ERROR]", e)
 
     # -----------------------------
-    # ユーザーデータ保存（コイン反映）
+    # ユーザーデータ保存（coins反映）※ Sheetsへ保存
     # -----------------------------
     try:
-        store.save_user(u)
+        await sheets_upsert_async(u)  # ✅ users/coins を更新する実装ならここで反映される
     except Exception as e:
         print("[USER SAVE ERROR]", e)
 
@@ -7548,68 +7548,34 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
                     pass
 
             if result in ("win", "lose"):
-                # まず既存の後処理（コイン等）を実行
+                # ✅ ここで終了処理（勝利ならコインログも sess.logs に追加される）
                 await _finish_battle(uid, result, interaction=None)
 
-                # ロック内でセッション更新（表示/次処理用）
-                save_world = None
-                save_floor = None
-                save_hp = None
-
+                # ✅ battle_result を付ける（AfterViewの判定用）
                 async with get_user_lock(uid):
                     sess = dungeon_sessions.get(uid)
                     if not sess:
                         return
-
                     sess["battle_result"] = result
                     sess["finished"] = True
 
-                    if result == "lose":
-                        # ✅ チェックポイントへ戻す（セッション上）
-                        cur_floor = int(sess.get("floor", 1) or 1)
-                        checkpoint = get_checkpoint_floor(cur_floor)
-                        sess["floor"] = checkpoint
-                        sess["checkpoint_floor"] = checkpoint
+                # ✅ コイン獲得ログや勝敗ログが入った「最終内容」で一度描画する
+                try:
+                    async with get_user_lock(uid):
+                        sess = dungeon_sessions.get(uid)
+                        if not sess:
+                            return
+                        final_text = _build_battle_text(sess)
 
-                        # ✅ 敗北時：全回復
-                        max_hp = int(sess.get("max_hp", 100) or 100)
-                        sess["player_hp"] = max_hp
+                    await interaction.followup.edit_message(
+                        msg_id,
+                        content=final_text,
+                        view=None,  # いったんボタン無しで確定表示
+                    )
+                except Exception:
+                    pass
 
-                        # ✅ 新バトル開始扱い：シールド張り直し
-                        et = sess.get("effect_type", "NONE")
-                        ev = int(sess.get("effect_value", 0) or 0)
-                        sess["shield_now"] = int(get_player_shield_max(et, ev))
-
-                        _push_log(sess, "💀 敗北…")
-                        _push_log(sess, "✨ 敗北したのでHPを全回復したのだ。")
-                        _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
-                        if sess["shield_now"] > 0:
-                            _push_log(sess, "🛡 シールドが全回復したのだ。")
-
-                        save_world = int(sess.get("world", 1) or 1)
-                        save_floor = checkpoint
-                        save_hp = max_hp
-
-                # ✅ ロック外：スプレッドシートへ永続保存（ここが最重要）
-                if result == "lose" and save_world is not None:
-                    try:
-                        await dungeon_save_progress_async(uid, save_world, save_floor, save_hp)
-                    except Exception as e:
-                        # 保存失敗は致命的なのでログに出す（見えるように）
-                        async with get_user_lock(uid):
-                            sess = dungeon_sessions.get(uid)
-                            if sess:
-                                _push_log(sess, f"❌ 保存に失敗したのだ… {type(e).__name__}: {e}")
-                        try:
-                            await interaction.followup.edit_message(
-                                msg_id,
-                                content=_build_battle_text(dungeon_sessions.get(uid, {})),
-                                view=None,
-                            )
-                        except Exception:
-                            pass
-
-                # ログは触らず、下にボタンだけ表示
+                # ✅ その後、contentは触らず view だけ付けて「ログの下にボタン」
                 try:
                     await interaction.followup.edit_message(
                         msg_id,
@@ -7623,6 +7589,7 @@ async def _auto_battle_loop(interaction: discord.Interaction, uid: int, msg_id: 
 
     except asyncio.CancelledError:
         return
+
 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -8064,6 +8031,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
