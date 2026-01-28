@@ -7491,20 +7491,58 @@ class DungeonAfterView(discord.ui.View):
         uid = interaction.user.id
 
         async with get_user_lock(uid):
+            # ✅ オート戦闘停止
             t = dungeon_auto_tasks.pop(uid, None)
             if t and not t.done():
                 t.cancel()
 
-            sess = dungeon_sessions.get(uid)
-            last_embed = _build_battle_embed(sess) if sess else None
+            sess = dungeon_sessions.pop(uid, None)
 
-            dungeon_sessions.pop(uid, None)
+            if sess:
+                _push_log(sess, "🚪 ダンジョンを終了したのだ。")
+                embed = _build_battle_embed(sess)
+            else:
+                embed = None
 
-        if last_embed:
-            await interaction.response.edit_message(content="", embed=last_embed, view=None)
+        # ✅ メッセージを「終了状態」に編集
+        if embed:
+            await interaction.response.edit_message(
+                content="",
+                embed=embed,
+                view=None,  # ← ここ重要
+            )
         else:
-            await interaction.response.edit_message(content="ダンジョンを終了したのだ。", view=None, embed=None)
+            await interaction.response.edit_message(
+                content="ダンジョンを終了したのだ。",
+                embed=None,
+                view=None,
+            )
 
+    async def on_timeout(self):
+        # ✅ オート戦闘タスク停止
+        t = dungeon_auto_tasks.pop(self.uid, None)
+        if t and not t.done():
+            t.cancel()
+
+        # セッション取得
+        sess = dungeon_sessions.pop(self.uid, None)
+
+        if not sess:
+            return
+
+        _push_log(sess, "⌛ 操作が行われなかったため、ダンジョンを終了したのだ。")
+
+        embed = _build_battle_embed(sess)
+
+        try:
+            # ✅ この View が付いていたメッセージを編集
+            await self.message.edit(
+                content="",
+                embed=embed,
+                view=None,  # ← ボタン完全削除
+            )
+        except Exception as e:
+            print("[DUNGEON TIMEOUT EDIT ERROR]", type(e).__name__, e)
 
 def _battle_one_turn(uid: int) -> str | None:
     """
@@ -8089,6 +8127,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
