@@ -7238,25 +7238,26 @@ async def skull_cmd(interaction: discord.Interaction, bet: int, minutes: int):
 
     await interaction.followup.send("募集を作成したのだ", ephemeral=True)
 
-# -----------------------------
-# バトルセッション（メモリ）
-# -----------------------------
+# =============================
+# Dungeon Battle Core (fixed)
+# =============================
+
 dungeon_sessions: dict[int, dict] = {}  # user_id -> session
 
+LOG_KEEP = 5
+AUTO_TICK_SEC = 0.8  # ログが流れる速度（好みで調整）
+dungeon_auto_tasks: dict[int, asyncio.Task] = {}
+
+
 def _push_log(sess: dict, text: str):
-    """
-    ダンジョン戦闘ログを追加する
-    - 最大 LOG_KEEP 件まで保持
-    """
+    """ダンジョン戦闘ログを追加（最大 LOG_KEEP 件）"""
     if not sess:
         return
-
     logs = sess.setdefault("logs", [])
     logs.append(text)
-
-    # ログ上限を超えたら古いものを削除
     if len(logs) > LOG_KEEP:
         del logs[:-LOG_KEEP]
+
 
 def _combat_damage(attacker_atk: int, defender_def: int) -> int:
     # 超シンプル（後で調整可）：攻撃-防御の最低1
@@ -7279,6 +7280,13 @@ def _checkpoint_floor(floor: int) -> int:
 
 
 async def _finish_battle(uid: int, result: str, interaction=None):
+    """
+    戦闘終了処理
+    - 勝利時：コイン付与＆保存
+    - 進行度保存
+    - 勝敗ログはここでだけ入れる（重複防止）
+    - コインログは勝敗ログの一番最後
+    """
     sess = dungeon_sessions.get(uid)
     if not sess:
         return
@@ -7287,8 +7295,6 @@ async def _finish_battle(uid: int, result: str, interaction=None):
     if not u:
         return
 
-    reward = 0
-
     if result == "win":
         enemy = sess.get("enemy", {})
         reward = _calc_dungeon_coin_reward(enemy)
@@ -7296,9 +7302,10 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         before = int(u.get("coins", 0))
         u["coins"] = before + int(reward)
 
-        # ✅ 勝敗ログ → 最後にコインログ（あなたの希望）
+        # ✅ 勝敗 → コイン（最後）
         _push_log(sess, "✅ 勝利！")
         _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
+
     else:
         _push_log(sess, "💀 敗北…")
 
@@ -7318,10 +7325,13 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         await sheets_upsert_async(u)
     except Exception as e:
         print("[USER SAVE ERROR]", type(e).__name__, e)
+
+    # 保険：coins だけ強制更新
     try:
-        await _force_update_user_coins_async(uid, int(u["coins"]))
+        await _force_update_user_coins_async(uid, int(u.get("coins", 0)))
     except Exception as e:
         print("[COINS FORCE SAVE ERROR]", type(e).__name__, e)
+
 
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
@@ -7331,14 +7341,14 @@ def _build_battle_text(sess: dict) -> str:
     pname = sess.get("player_name", "あなた")
 
     logs = sess.get("logs", [])
-    log_text = "\n".join(logs[-5:]) if logs else "（ログなし）"
+    log_text = "\n".join(logs[-LOG_KEEP:]) if logs else "（ログなし）"
 
     effect = _fmt_effect(
         sess.get("effect_type", "NONE"),
         int(sess.get("effect_value", 0) or 0),
     )
 
-    # ✅ 表示名は base_name 優先（無ければ name）
+    # 表示名は base_name 優先（無ければ name）
     ename = enemy.get("base_name") or enemy.get("name", "敵")
 
     return (
@@ -7354,25 +7364,19 @@ def _build_battle_text(sess: dict) -> str:
         f"特殊効果：{effect}\n"
     )
 
-LOG_KEEP = 5
-AUTO_TICK_SEC = 0.8  # ログが流れる速度（好みで調整）
-dungeon_auto_tasks: dict[int, asyncio.Task] = {}
 
 def _build_battle_embed(sess: dict) -> discord.Embed:
     enemy = sess.get("enemy") or {}
     url = enemy.get("image_url") or enemy.get("url")
 
-    # タイトルは任意（無くてもOK）
     e = discord.Embed(
         title="🗺 ダンジョン",
         description=_build_battle_text(sess),
     )
-
-    # ✅ これが「右上サムネ」
     if url:
         e.set_thumbnail(url=url)
-
     return e
+
 
 class DungeonAfterView(discord.ui.View):
     def __init__(self, uid: int):
@@ -7405,36 +7409,37 @@ class DungeonAfterView(discord.ui.View):
                 sess.pop("battle_result", None)
                 sess["finished"] = False
 
-                sess["floor"] += 1
-                world = sess["world"]
-                floor = sess["floor"]
+                sess["floor"] = int(sess.get("floor", 1) or 1) + 1
+                world = int(sess.get("world", 1) or 1)
+                floor = int(sess.get("floor", 1) or 1)
                 debuff_zone = bool(sess.get("debuff_zone", 0))
 
                 sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
-                sess["shield_now"] = get_player_shield_max(effect_type, effect_value)
+                sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
                 _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
+
             else:
-                checkpoint = _checkpoint_floor(sess["floor"])
+                checkpoint = _checkpoint_floor(int(sess.get("floor", 1) or 1))
                 sess["floor"] = checkpoint
-                sess["player_hp"] = sess["max_hp"]
+                sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
 
                 sess["enemy"] = generate_enemy(
-                    sess["world"],
+                    int(sess.get("world", 1) or 1),
                     checkpoint,
                     debuff_zone=bool(sess.get("debuff_zone", 0)),
                 )
 
-                sess["shield_now"] = get_player_shield_max(effect_type, effect_value)
+                sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
                 _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
                 _push_log(sess, "✨ HPを全回復したのだ。")
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
-        # ✅ この interaction のメッセージだけ編集
+        # この interaction のメッセージだけ編集
         embed = _build_battle_embed(sess)
         await interaction.response.edit_message(
             content="",
@@ -7442,7 +7447,7 @@ class DungeonAfterView(discord.ui.View):
             view=None,
         )
 
-        # ✅ 勝利時のみオート再開（interaction版のみ）
+        # 勝利時のみオート再開（interaction版のみ）
         if can_next:
             old = dungeon_auto_tasks.pop(uid, None)
             if old and not old.done():
@@ -7462,11 +7467,7 @@ class DungeonAfterView(discord.ui.View):
                 t.cancel()
 
             sess = dungeon_sessions.get(uid)
-            if sess:
-                _push_log(sess, "🚪 ダンジョンを終了したのだ。")
-                last_embed = _build_battle_embed(sess)
-            else:
-                last_embed = None
+            last_embed = _build_battle_embed(sess) if sess else None
 
             dungeon_sessions.pop(uid, None)
 
@@ -7474,6 +7475,7 @@ class DungeonAfterView(discord.ui.View):
             await interaction.response.edit_message(content="", embed=last_embed, view=None)
         else:
             await interaction.response.edit_message(content="ダンジョンを終了したのだ。", view=None, embed=None)
+
 
 def _battle_one_turn(uid: int) -> str | None:
     """
@@ -7489,8 +7491,7 @@ def _battle_one_turn(uid: int) -> str | None:
     pname = sess.get("player_name", "あなた")
     ename = enemy.get("base_name") or enemy.get("name", "敵")
 
-
-    # ✅ デバフのターン開始効果（毒など）＋一時ステ補正
+    # デバフのターン開始効果（毒など）＋一時ステ補正
     atk_tmp, def_tmp, spd_tmp = _apply_debuffs_start_of_turn(sess)
 
     def apply_damage_to_player(dmg: int):
@@ -7504,23 +7505,17 @@ def _battle_one_turn(uid: int) -> str | None:
     def apply_damage_to_enemy(dmg: int):
         enemy["hp"] = max(0, int(enemy["hp"]) - dmg)
 
-    # すでに終わってる（ここで回復などはしない：二重発動防止）
+    # ✅ すでに終わってる（勝敗ログは出さない / 返り値だけ返す）
     if int(enemy["hp"]) <= 0:
-        _push_log(sess, "✅ 勝利！")
-        return
+        return "win"
     if int(sess["player_hp"]) <= 0:
-        _push_log(sess, "💀 敗北…")
-        return
+        return "lose"
 
-    # 1ターン
     player_first = _speed_first(int(spd_tmp), int(enemy["spd"]))
 
-    # デバフゾーンなら、敵攻撃時にデバフ付与チャンス（例）
-    # ※デバフゾーン仕様に合わせて確率や種類は調整してOK
     def maybe_enemy_apply_debuff():
         if not bool(sess.get("debuff_zone", 0)):
             return
-        # 例：20%で毒、15%で弱体、15%で鈍足（耐性で軽減）
         r = random.random()
         if r < 0.20:
             _try_apply_debuff(sess, "poison", 20)
@@ -7530,21 +7525,20 @@ def _battle_one_turn(uid: int) -> str | None:
             _try_apply_debuff(sess, "slow", 15)
 
     if player_first:
-        # ✅ INSTAKILL：プレイヤー攻撃の直前に判定
+        # INSTAKILL（勝利ログは出さない / 返り値だけ）
         if _roll_instakill(sess):
             enemy["hp"] = 0
             _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
-            _apply_heal_on_kill(sess)  # ✅ 撃破扱いで回復も発動
-            _push_log(sess, "✅ 勝利！")
-            return
+            _apply_heal_on_kill(sess)
+            return "win"
 
         dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
         _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。")
+
         if int(enemy["hp"]) <= 0:
-            _apply_heal_on_kill(sess)  # ✅ 撃破時回復
-            _push_log(sess, "✅ 勝利！")
-            return
+            _apply_heal_on_kill(sess)
+            return "win"
 
         dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
         apply_damage_to_player(dmg2)
@@ -7552,8 +7546,8 @@ def _battle_one_turn(uid: int) -> str | None:
         maybe_enemy_apply_debuff()
 
         if int(sess["player_hp"]) <= 0:
-            _push_log(sess, "💀 敗北…")
-            return 
+            return "lose"
+
     else:
         dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
         apply_damage_to_player(dmg2)
@@ -7561,33 +7555,31 @@ def _battle_one_turn(uid: int) -> str | None:
         maybe_enemy_apply_debuff()
 
         if int(sess["player_hp"]) <= 0:
-            _push_log(sess, "💀 敗北…")
-            return
+            return "lose"
 
-        # ✅ INSTAKILL：プレイヤー攻撃の直前に判定
         if _roll_instakill(sess):
             enemy["hp"] = 0
             _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
-            _apply_heal_on_kill(sess)  # ✅ 撃破扱いで回復も発動
-            _push_log(sess, "✅ 勝利！")
-            return
+            _apply_heal_on_kill(sess)
+            return "win"
 
         dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
         apply_damage_to_enemy(dmg)
         _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。")
+
         if int(enemy["hp"]) <= 0:
-            _apply_heal_on_kill(sess)  # ✅ 撃破時回復
-            _push_log(sess, "✅ 勝利！")
-            return
+            _apply_heal_on_kill(sess)
+            return "win"
 
     return None
+
 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
 
-    # ✅ followup じゃなく response で “戦闘メッセ” を作る
+    # followup じゃなく response で “戦闘メッセ” を作る
     await interaction.response.send_message("準備中なのだ…", ephemeral=True)
-    msg = await interaction.original_response()  # ✅ これが編集対象のメッセージ
+    await interaction.original_response()  # msg を直接使わなくてもOK（edit_original_responseで更新）
 
     async with get_user_lock(uid):
         loader = globals().get("dungeon_load_user_cached_async")
@@ -7596,7 +7588,8 @@ async def start_battle_step(interaction: discord.Interaction):
         except Exception as e:
             await interaction.edit_original_response(
                 content=f"❌ ダンジョン状態の読み込みに失敗したのだ…\n```{type(e).__name__}: {e}```",
-                embed=None, view=None
+                embed=None,
+                view=None,
             )
             return
 
@@ -7614,7 +7607,8 @@ async def start_battle_step(interaction: discord.Interaction):
         except Exception as e:
             await interaction.edit_original_response(
                 content=f"❌ ステータス計算で失敗したのだ…\n```{type(e).__name__}: {e}```",
-                embed=None, view=None
+                embed=None,
+                view=None,
             )
             return
 
@@ -7623,7 +7617,8 @@ async def start_battle_step(interaction: discord.Interaction):
         except Exception as e:
             await interaction.edit_original_response(
                 content=f"❌ 敵の生成に失敗したのだ…\n```{type(e).__name__}: {e}```",
-                embed=None, view=None
+                embed=None,
+                view=None,
             )
             return
 
@@ -7642,16 +7637,13 @@ async def start_battle_step(interaction: discord.Interaction):
             "effect_lv": int(state.get("effect_lv", 0) or 0),
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
-            "battle_message_id": msg.id,
             "debuff_zone": int(debuff_zone),
         }
         dungeon_sessions[uid] = sess
 
-    # ✅ ここも original_response を編集
     embed = _build_battle_embed(dungeon_sessions[uid])
     await interaction.edit_original_response(content="", embed=embed, view=None)
 
-    # ✅ オート開始：interaction を渡す（msg は渡さない）
     old = dungeon_auto_tasks.pop(uid, None)
     if old and not old.done():
         old.cancel()
@@ -7660,38 +7652,6 @@ async def start_battle_step(interaction: discord.Interaction):
         _auto_battle_loop_interaction(uid, interaction)
     )
 
-async def dungeon_save_progress_async(uid: int, world: int, floor: int, hp: int):
-    """
-    スプレッドシートに world/floor/hp を保存する。
-    既存の保存関数名が環境によって違っても動くように候補呼び出し。
-    """
-    # よくある候補名（あなたの全体コード側に合わせて追加/変更OK）
-    candidates = [
-        "dungeon_save_user_async",
-        "dungeon_update_user_async",
-        "dungeon_upsert_user_async",
-        "dungeon_set_user_async",
-    ]
-
-    payload = {"world": int(world), "floor": int(floor), "hp": int(hp)}
-
-    for name in candidates:
-        fn = globals().get(name)
-        if callable(fn):
-            # 形が (uid, payload) / (uid, world, floor, hp) とか色々ありえるので吸収
-            try:
-                await fn(uid, payload)
-                return
-            except TypeError:
-                try:
-                    await fn(uid, int(world), int(floor), int(hp))
-                    return
-                except Exception:
-                    pass
-            except Exception:
-                pass
-
-    raise RuntimeError("dungeon の保存関数が見つからない/呼べないのだ。保存処理の関数名を確認してほしいのだ。")
 
 async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interaction):
     try:
@@ -7702,11 +7662,8 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                     return
 
                 result = _battle_one_turn(uid)
-
-                # 戦闘中はログが増えるので毎回Embed更新
                 embed = _build_battle_embed(sess)
 
-            # ロック外で編集
             try:
                 await interaction.edit_original_response(
                     content="",
@@ -7718,31 +7675,27 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                 return
 
             if result in ("win", "lose"):
-                # ✅ ここで「報酬処理（コイン付与＋ログ追加＋保存）」を実行
                 await _finish_battle(uid, result, interaction=None)
 
-                # ✅ 戦闘終了フラグを付ける
                 async with get_user_lock(uid):
                     sess = dungeon_sessions.get(uid)
                     if not sess:
                         return
                     sess["battle_result"] = result
                     sess["finished"] = True
-
-                    # ✅ _finish_battleで増えた「コインログ込み」の最終表示を作る
                     final_embed = _build_battle_embed(sess)
 
-                # ✅ まず「最終結果（コイン獲得含む）」を表示
+                # 最終結果（コイン獲得含む）を表示
                 try:
                     await interaction.edit_original_response(
                         content="",
                         embed=final_embed,
-                        view=None,  # いったんボタン無しで確定表示
+                        view=None,
                     )
                 except Exception:
                     pass
 
-                # ✅ 次に view だけ付けて「ログの下にボタン」
+                # view だけ付与
                 try:
                     await interaction.edit_original_response(
                         view=DungeonAfterView(uid)
@@ -7757,6 +7710,7 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
     except asyncio.CancelledError:
         return
 
+
 async def _force_update_user_coins_async(uid: int, coins: int):
     """
     coins が sheets_upsert_async で反映されない環境向けの保険。
@@ -7764,7 +7718,6 @@ async def _force_update_user_coins_async(uid: int, coins: int):
     """
     ws = None
 
-    # ありがちな置き場所を候補で探す
     for name in ("ws_users", "USERS_WS", "users_ws"):
         obj = globals().get(name)
         if obj is not None:
@@ -7774,7 +7727,6 @@ async def _force_update_user_coins_async(uid: int, coins: int):
     if ws is None and hasattr(store, "ws_users"):
         ws = getattr(store, "ws_users")
     if ws is None and hasattr(store, "ws"):
-        # SheetsStore が ws を users として持っているケース
         ws = getattr(store, "ws")
 
     if ws is None:
@@ -8108,6 +8060,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
