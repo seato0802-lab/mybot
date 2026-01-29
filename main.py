@@ -7392,29 +7392,23 @@ async def _finish_battle(uid: int, result: str, interaction=None):
     except Exception as e:
         print("[COINS FORCE SAVE ERROR]", type(e).__name__, e)
 
-    # ✅ 武器も保険で強制更新（敗北時のみ）
+    # ✅ 武器は dungeon シートへ強制更新（敗北時のみ）
     if result != "win":
         try:
-            await _force_update_user_weapon_async(
+            await _force_update_dungeon_weapon_async(
                 uid,
                 {
-                    "weapon_name": u.get("weapon_name", "初期武器"),
-                    "weapon_atk": u.get("weapon_atk", 10),
-                    "weapon_def": u.get("weapon_def", 10),
-                    "weapon_spd": u.get("weapon_spd", 10),
-                    "effect_type": u.get("effect_type", "NONE"),
-                    "effect_lv": u.get("effect_lv", 0),
-                    "effect_value": u.get("effect_value", 0),
+                    "weapon_name": sess.get("weapon_name", "初期武器"),
+                    "weapon_atk": int(sess.get("atk", 10)),
+                    "weapon_def": int(sess.get("def", 10)),
+                    "weapon_spd": int(sess.get("spd", 10)),
+                    "effect_type": sess.get("effect_type", "NONE"),
+                    "effect_lv": int(sess.get("effect_lv", 0)),
+                    "effect_value": int(sess.get("effect_value", 0)),
                 },
             )
         except Exception as e:
-            print("[WEAPON FORCE SAVE ERROR]", type(e).__name__, e)
-
-    # ✅ HP も強制保存（勝敗どちらでも必須）
-    try:
-        await _force_update_user_hp_async(uid, int(sess.get("player_hp", 0)))
-    except Exception as e:
-        print("[HP FORCE SAVE ERROR]", type(e).__name__, e)
+            print("[DUNGEON WEAPON FORCE SAVE ERROR]", type(e).__name__, e)
 
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
@@ -7963,34 +7957,31 @@ async def _force_update_user_coins_async(uid: int, coins: int):
 
     return await asyncio.to_thread(_sync)
 
-async def _force_update_user_weapon_async(uid: int, weapon: dict):
+async def _force_update_dungeon_weapon_async(uid: int, weapon: dict):
     """
-    sheets_upsert_async が武器系カラムを更新しない環境向け保険。
-    users ワークシートの weapon/effect 系列を直接更新する。
+    dungeon シートの武器/効果カラムだけ更新する（HPは触らない）
+    ※ガチャで使ってる dungeon シートと同じ ws を使うこと
     """
     ws = None
 
-    # 既存と同じ探し方（あなたの環境に合わせて）
-    for name in ("ws_users", "USERS_WS", "users_ws"):
+    # ここはあなたの環境にある「dungeonシートの変数名」に合わせて候補を置いてます
+    for name in ("ws_dungeon", "DUNGEON_WS", "dungeon_ws"):
         obj = globals().get(name)
         if obj is not None:
             ws = obj
             break
 
-    if ws is None and hasattr(store, "ws_users"):
-        ws = getattr(store, "ws_users")
-    if ws is None and hasattr(store, "ws"):
-        ws = getattr(store, "ws")
+    # store 側にある場合
+    if ws is None and hasattr(store, "ws_dungeon"):
+        ws = getattr(store, "ws_dungeon")
 
     if ws is None:
-        raise RuntimeError("users ワークシート（ws_users 等）が見つからないのだ。")
+        raise RuntimeError("dungeon ワークシート（ws_dungeon 等）が見つからないのだ。")
 
     def _sync():
         headers = ws.row_values(1)
-
-        # 必須キー
         if "user_id" not in headers:
-            raise RuntimeError(f"usersヘッダに user_id が無い: {headers}")
+            raise RuntimeError(f"dungeonヘッダに user_id が無い: {headers}")
 
         col_uid = headers.index("user_id") + 1
         uid_list = ws.col_values(col_uid)
@@ -8002,9 +7993,8 @@ async def _force_update_user_weapon_async(uid: int, weapon: dict):
                 row = i
                 break
         if row is None:
-            raise RuntimeError(f"user_id={uid} の行が見つからないのだ。")
+            raise RuntimeError(f"dungeon に user_id={uid} の行が見つからないのだ。")
 
-        # ここで更新したい列名（シートのヘッダ名と一致している必要あり）
         mapping = {
             "weapon_name": weapon.get("weapon_name", "初期武器"),
             "weapon_atk": int(weapon.get("weapon_atk", 10)),
@@ -8015,49 +8005,11 @@ async def _force_update_user_weapon_async(uid: int, weapon: dict):
             "effect_value": int(weapon.get("effect_value", 0)),
         }
 
-        # シートに存在する列だけ更新（無い列で落とさない）
         for key, val in mapping.items():
             if key not in headers:
-                # 必要ならログだけ出す
-                # print(f"[WEAPON FORCE SAVE] column missing: {key}")
                 continue
             col = headers.index(key) + 1
             ws.update_cell(row, col, str(val))
-
-    return await asyncio.to_thread(_sync)
-
-async def _force_update_user_hp_async(uid: int, hp: int):
-    ws = None
-
-    for name in ("ws_users", "USERS_WS", "users_ws"):
-        obj = globals().get(name)
-        if obj is not None:
-            ws = obj
-            break
-
-    if ws is None and hasattr(store, "ws_users"):
-        ws = store.ws_users
-    if ws is None and hasattr(store, "ws"):
-        ws = store.ws
-
-    if ws is None:
-        raise RuntimeError("users ワークシートが見つからないのだ。")
-
-    def _sync():
-        headers = ws.row_values(1)
-        if "user_id" not in headers or "hp" not in headers:
-            raise RuntimeError(f"usersヘッダに user_id / hp が無い: {headers}")
-
-        col_uid = headers.index("user_id") + 1
-        col_hp = headers.index("hp") + 1
-
-        uid_list = ws.col_values(col_uid)
-        for i, v in enumerate(uid_list, start=1):
-            if str(v) == str(uid):
-                ws.update_cell(i, col_hp, str(int(hp)))
-                return
-
-        raise RuntimeError(f"user_id={uid} の行が見つからないのだ。")
 
     return await asyncio.to_thread(_sync)
 
@@ -8429,6 +8381,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
