@@ -410,7 +410,8 @@ DUNGEON_MESSAGE_ID_KEY = "dungeon_entry_message_id"
 DUNGEON_CHANNEL_ID_KEY = "dungeon_entry_channel_id"
 
 # ワールド上限
-WORLD_CAP = {1: 50, 2: 100, 3: 150, 4: 200}
+WORLD_CAP = {1: 50, 2: 100, 3: 150, 4: 200, 5: 200}  # ✅W5追加
+
 T_CENTER_BY_SEG = [0.55, 0.65, 0.75, 0.85, 0.93]  # 20区切り
 
 # 特殊効果（確定仕様）
@@ -587,8 +588,46 @@ BOSS_MULT = [
 def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
     w = int(world)
     f = max(1, min(100, int(floor)))
-    seg = (f - 1) // 20
     is_boss, is_midboss = boss_flags(f)
+
+    # kind はあなたの既存と同じ（mob/midboss/boss）
+    kind = "boss" if is_boss else "midboss" if is_midboss else "mob"
+
+    # =========================================================
+    # ✅ W5：フロア成長式を使わず「ステータスプール」から出す
+    # =========================================================
+    if w == 5:
+        st = _pick_w5_stats(kind)
+
+        # 見た目は既存の _pick_enemy_visual をそのまま使える（W5は全混ぜ仕様）
+        base_name, image_url = _pick_enemy_visual(w, kind)
+
+        prefix = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
+        display_name = f"{prefix}：{base_name}"
+
+        max_hp = max(10, int(st["hp"]))
+
+        return {
+            "name": display_name,
+            "base_name": base_name,
+            "image_url": image_url,
+
+            "hp": max_hp,
+            "max_hp": max_hp,
+            "atk": max(1, int(st["atk"])),
+            "def": max(0, int(st["def"])),
+            "spd": max(1, int(st["spd"])),
+
+            "is_boss": is_boss,
+            "is_midboss": is_midboss,
+            # ✅デバフゾーンは抽選しない：呼び出し側で決まったものをそのまま入れる
+            "debuff_zone": bool(debuff_zone),
+        }
+
+    # =========================================================
+    # W1〜W4：ここから下はあなたの既存ロジックをそのまま
+    # =========================================================
+    seg = (f - 1) // 20
 
     ceil = weapon_ceiling(w, f)
     wmax_atk = int(ceil["atk"])
@@ -633,28 +672,23 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
         max_hp = max(10, int(max_hp * 0.92))
 
     # -------------------------
-    # ✅ ここから「名前＆画像」差し込み
+    # 名前＆画像
     # -------------------------
-    kind = "boss" if is_boss else "midboss" if is_midboss else "mob"
     base_name, image_url = _pick_enemy_visual(w, kind)
-
     prefix = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
     display_name = f"{prefix}：{base_name}"
 
     return {
-        # 表示用
-        "name": display_name,          # 例: "中ボス：怒ったずんだもん"
-        "base_name": base_name,        # 例: "怒ったずんだもん"
-        "image_url": image_url,        # サムネ用URL（無ければNone）
+        "name": display_name,
+        "base_name": base_name,
+        "image_url": image_url,
 
-        # ステータス
         "hp": max_hp,
         "max_hp": max_hp,
         "atk": enemy_atk,
         "def": enemy_def,
         "spd": enemy_spd,
 
-        # フラグ
         "is_boss": is_boss,
         "is_midboss": is_midboss,
         "debuff_zone": bool(debuff_zone),
@@ -857,30 +891,41 @@ def _w5_seg_index(floor: int) -> int:
 
 
 def _roll_w5_zone() -> int:
-    # 好みで重み付けも可能
-    # return random.choices([1,2,3,4,5], weights=[22,22,20,20,16], k=1)[0]
-    return 
-
+    # 1〜5 を安全に返す（choice不使用）
+    return random.randint(1, 5)
 
 def ensure_w5_zone(sess: dict):
-    # 既に入っていればそれを使う
-    zone = sess.get("w5_zone", None)
-
-    # 無ければ floor から自動算出（20フロア区切り想定）
-    if zone is None:
-        floor = sess.get("floor")
-        try:
-            floor_i = int(floor) if floor is not None else 1
-        except (TypeError, ValueError):
-            floor_i = 1
-
-        zone = (max(1, floor_i) - 1) // 20 + 1  # 1-20=>1, 21-40=>2 ...
-
-    # 最後に安全に int 化（それでもダメなら1）
+    """
+    W5: 20フロア区切り(seg)が変わった時だけゾーンを抽選して固定
+    """
+    floor = sess.get("floor", 1)
     try:
-        sess["w5_zone"] = int(zone)
+        f = int(floor)
     except (TypeError, ValueError):
-        sess["w5_zone"] = 1
+        f = 1
+    f = max(1, f)
+
+    seg = (f - 1) // 20  # 0,1,2,3,4
+
+    prev_seg = sess.get("w5_seg", None)
+    try:
+        prev_seg_i = int(prev_seg) if prev_seg is not None else None
+    except (TypeError, ValueError):
+        prev_seg_i = None
+
+    # segが変わったら抽選し直す
+    if prev_seg_i != seg:
+        sess["w5_zone"] = _roll_w5_zone()
+        sess["w5_seg"] = seg
+
+    # ついでに安全化（何か壊れてても1に戻す）
+    try:
+        z = int(sess.get("w5_zone", 1))
+    except (TypeError, ValueError):
+        z = 1
+    if z not in (1, 2, 3, 4, 5):
+        z = 1
+    sess["w5_zone"] = z
 
 def apply_w5_zone_modifiers(sess: dict, enemy: dict):
     """
@@ -1027,6 +1072,20 @@ ENEMY_POOLS: dict[int, dict[str, list[dict[str, str]]]] = {
     },
 }
 
+W5_STAT_POOL = {
+    "normal": [
+        {"atk": 130, "def": 95,  "spd": 105, "hp": 520},
+        {"atk": 115, "def": 120, "spd": 90,  "hp": 600},
+        {"atk": 150, "def": 80,  "spd": 120, "hp": 460},
+    ],
+    "midboss": [
+        {"atk": 165, "def": 120, "spd": 110, "hp": 900},
+    ],
+    "boss": [
+        {"atk": 190, "def": 140, "spd": 120, "hp": 1400},
+    ],
+}
+
 def _pick_enemy_visual(world: int, kind: str) -> tuple[str, str | None]:
     """
     W1〜W4: そのワールドのプールから抽選
@@ -1047,6 +1106,13 @@ def _pick_enemy_visual(world: int, kind: str) -> tuple[str, str | None]:
 
     pick = random.choice(arr)
     return pick.get("name", "敵"), pick.get("url")
+
+def _pick_enemy_stats_w5(kind: str) -> dict:
+    arr = (W5_STAT_POOL.get(kind) or W5_STAT_POOL.get("normal") or [])
+    if not arr:
+        # 最低限の保険（空なら適当）
+        return {"atk": 120, "def": 100, "spd": 100, "hp": 500}
+    return dict(random.choice(arr))  # コピー必須（戦闘中にhp減らすので）
 
 def seg_of_floor(floor: int) -> int:
     f = max(1, int(floor))
@@ -8739,6 +8805,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
