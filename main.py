@@ -7565,15 +7565,17 @@ class DungeonAfterView(discord.ui.View):
             view=None,
         )
 
-        # ✅ ここで「メッセージ基準」のオートを開始（あなたが動いてた形）
+       # ✅ オート再開（メッセージ基準で回すのが安定）
         old = dungeon_auto_tasks.pop(uid, None)
         if old and not old.done():
             old.cancel()
 
-        # interaction.message を使うので message None にはならない
-        dungeon_auto_tasks[uid] = asyncio.create_task(
-            _auto_battle_loop_msg(uid, msg)
-        )
+        if getattr(self, "message", None):
+            dungeon_auto_tasks[uid] = asyncio.create_task(
+                _auto_battle_loop_msg(uid, self.message)
+            )
+        else:
+            print("[GO_NEXT] message is None -> cannot start _auto_battle_loop_msg")
 
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -7958,7 +7960,11 @@ def _next_world_floor(world: int, floor: int) -> tuple[int, int]:
         return w + 1, 1
     return w, f + 1
 
-async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interaction):
+async def _auto_battle_loop_msg(uid: int, message: discord.Message):
+    """
+    ✅ message.edit() で更新するオート戦闘ループ
+    - interaction を使わないので Unknown Webhook を回避できる
+    """
     try:
         while True:
             async with get_user_lock(uid):
@@ -7969,19 +7975,15 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                 result = _battle_one_turn(uid)
                 embed = _build_battle_embed(sess)
 
-            # 戦闘中の更新
+            # ロック外で編集
             try:
-                await interaction.edit_original_response(
-                    content="",
-                    embed=embed,
-                    view=None,
-                )
+                await message.edit(content="", embed=embed, view=None)
             except discord.HTTPException as e:
-                print("[AUTO EDIT ERROR]", type(e).__name__, e)
+                print("[AUTO MSG EDIT ERROR]", type(e).__name__, e)
                 return
 
             if result in ("win", "lose"):
-                # 報酬・保存・ログ（勝敗ログは _finish_battle 側でのみ）
+                # 報酬処理（コイン付与等）
                 await _finish_battle(uid, result, interaction=None)
 
                 async with get_user_lock(uid):
@@ -7993,16 +7995,17 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                     sess["finished"] = True
                     final_embed = _build_battle_embed(sess)
 
-                # ✅ ここが重要：結果表示(embed) + ボタン(view) を「同じ edit」で付ける
+                # 最終結果を表示
                 try:
-                    msg = await interaction.original_response()
-                    await interaction.edit_original_response(
-                        content="",
-                        embed=final_embed,
-                        view=DungeonAfterView(uid, message=msg),
-                    )
+                    await message.edit(content="", embed=final_embed, view=None)
+                except Exception:
+                    pass
+
+                # AfterView を付与（message を渡す）
+                try:
+                    await message.edit(view=DungeonAfterView(uid, message=message))
                 except Exception as e:
-                    print("[AFTER VIEW ERROR]", type(e).__name__, e)
+                    print("[AFTER VIEW MSG ERROR]", type(e).__name__, e)
 
                 return
 
@@ -8317,6 +8320,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
