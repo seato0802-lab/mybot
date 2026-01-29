@@ -7312,6 +7312,7 @@ async def _finish_battle(uid: int, result: str, interaction=None):
     """
     戦闘終了処理
     - 勝利時：コイン付与＆保存
+    - 敗北時：武器を失い、初期武器へ戻す（表示は「武器を失った」まで）
     - 進行度保存
     - 勝敗ログはここでだけ入れる（重複防止）
     - コインログは勝敗ログの一番最後
@@ -7336,9 +7337,35 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
 
     else:
+        # ✅ 敗北ログ（武器喪失を表示）
         _push_log(sess, "💀 敗北…")
+        _push_log(sess, "💥 武器を失ったのだ…！")
 
+        # ✅ 初期武器へ戻す（既存の定義をそのまま使う）
+        # ※ store に _ensure_user_row がある前提（あなたの提示コード通り）
+        init = store._ensure_user_row(uid)
+
+        # セッション側（戦闘で使う値）
+        sess["weapon_name"] = init.get("weapon_name", "初期武器")
+        sess["atk"] = int(init.get("weapon_atk", 10) or 10)
+        sess["def"] = int(init.get("weapon_def", 10) or 10)
+        sess["spd"] = int(init.get("weapon_spd", 10) or 10)
+        sess["effect_type"] = init.get("effect_type", "NONE") or "NONE"
+        sess["effect_lv"] = int(init.get("effect_lv", 0) or 0)
+        sess["effect_value"] = int(init.get("effect_value", 0) or 0)
+
+        # ユーザー側（スプレッドシートへ保存される値）
+        u["weapon_name"] = init.get("weapon_name", "初期武器")
+        u["weapon_atk"] = int(init.get("weapon_atk", 10) or 10)
+        u["weapon_def"] = int(init.get("weapon_def", 10) or 10)
+        u["weapon_spd"] = int(init.get("weapon_spd", 10) or 10)
+        u["effect_type"] = init.get("effect_type", "NONE") or "NONE"
+        u["effect_lv"] = int(init.get("effect_lv", 0) or 0)
+        u["effect_value"] = int(init.get("effect_value", 0) or 0)
+
+    # -----------------------------
     # ダンジョン進行保存
+    # -----------------------------
     try:
         await dungeon_save_after_battle_async(
             uid=uid,
@@ -7349,18 +7376,19 @@ async def _finish_battle(uid: int, result: str, interaction=None):
     except Exception as e:
         print("[DUNGEON SAVE ERROR]", type(e).__name__, e)
 
-    # ユーザーデータ保存（coins反映）
+    # -----------------------------
+    # ユーザーデータ保存（coins/武器反映）
+    # -----------------------------
     try:
         await sheets_upsert_async(u)
     except Exception as e:
         print("[USER SAVE ERROR]", type(e).__name__, e)
 
-    # 保険：coins だけ強制更新
+    # 保険：coins だけ強制更新（武器は upsert で反映させる）
     try:
         await _force_update_user_coins_async(uid, int(u.get("coins", 0)))
     except Exception as e:
         print("[COINS FORCE SAVE ERROR]", type(e).__name__, e)
-
 
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
@@ -8278,6 +8306,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
