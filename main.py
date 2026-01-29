@@ -452,6 +452,32 @@ def _rand_int(a: float, b: float) -> int:
         hi = lo
     return random.randint(lo, hi)
 
+def _spd_action_count(att_spd: int, def_spd: int) -> int:
+    """
+    SPD差で追加行動回数を決める（1〜3回）
+    比率方式でバランスが崩れにくい。
+    """
+    a = max(1, int(att_spd))
+    d = max(1, int(def_spd))
+    r = a / d
+
+    if r >= 1.80:
+        return 3
+    if r >= 1.35:
+        return 2
+    return 1
+
+def _spd_damage_bonus(att_spd: int, def_spd: int) -> float:
+    """
+    SPD差で与ダメを少し伸ばす（最大+20%）
+    """
+    a = max(1, int(att_spd))
+    d = max(1, int(def_spd))
+    if a <= d:
+        return 1.0
+
+    diff = a - d
+    return 1.0 + min(0.20, diff / 1000.0)
 
 def _fmt_effect(effect_type: str, effect_value: int) -> str:
     if effect_type == "NONE":
@@ -7759,7 +7785,18 @@ def _battle_one_turn(uid: int) -> str | None:
     if int(sess["player_hp"]) <= 0:
         return "lose"
 
-    player_first = _speed_first(int(spd_tmp), int(enemy["spd"]))
+    # 先攻判定（既存）
+    player_spd = int(spd_tmp)
+    enemy_spd = int(enemy.get("spd", 1) or 1)
+    player_first = _speed_first(player_spd, enemy_spd)
+
+    # ✅ SPD差：行動回数（双方に適用）
+    player_actions = _spd_action_count(player_spd, enemy_spd)
+    enemy_actions = _spd_action_count(enemy_spd, player_spd)
+
+    # ✅ SPD差：与ダメボーナス（速い側ほど微増）
+    player_bonus = _spd_damage_bonus(player_spd, enemy_spd)
+    enemy_bonus = _spd_damage_bonus(enemy_spd, player_spd)
 
     def maybe_enemy_apply_debuff():
         if not bool(sess.get("debuff_zone", 0)):
@@ -7772,55 +7809,80 @@ def _battle_one_turn(uid: int) -> str | None:
         elif r < 0.50:
             _try_apply_debuff(sess, "slow", 15)
 
-    if player_first:
-        # INSTAKILL（勝利ログは出さない / 返り値だけ）
-        if _roll_instakill(sess):
-            enemy["hp"] = 0
-            _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
-            _apply_heal_on_kill(sess)
-            return "win"
+    # ✅ プレイヤーの1行動
+    def do_player_attack(action_idx: int, total_actions: int) -> str | None:
+        # INSTAKILL は「このターン中の最初の1回だけ」判定（強すぎ防止）
+        if action_idx == 1:
+            if _roll_instakill(sess):
+                enemy["hp"] = 0
+                _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
+                _apply_heal_on_kill(sess)
+                return "win"
 
         dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
+        if player_bonus != 1.0:
+            dmg = int(dmg * player_bonus)
+
         apply_damage_to_enemy(dmg)
-        _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。")
+
+        if total_actions > 1:
+            _push_log(sess, f"{pname}の攻撃({action_idx}/{total_actions})！ {ename}に {dmg} ダメージ。")
+        else:
+            _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。")
 
         if int(enemy["hp"]) <= 0:
             _apply_heal_on_kill(sess)
             return "win"
 
+        return None
+
+    # ✅ 敵の1行動
+    def do_enemy_attack(action_idx: int, total_actions: int) -> str | None:
         dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
+        if enemy_bonus != 1.0:
+            dmg2 = int(dmg2 * enemy_bonus)
+
         apply_damage_to_player(dmg2)
-        _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。")
+
+        if total_actions > 1:
+            _push_log(sess, f"{ename}の攻撃({action_idx}/{total_actions})！ {pname}に {dmg2} ダメージ。")
+        else:
+            _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。")
+
         maybe_enemy_apply_debuff()
 
         if int(sess["player_hp"]) <= 0:
             return "lose"
+
+        return None
+
+    if player_first:
+        # プレイヤー複数回
+        for i in range(1, player_actions + 1):
+            r = do_player_attack(i, player_actions)
+            if r:
+                return r
+
+        # 敵複数回
+        for i in range(1, enemy_actions + 1):
+            r = do_enemy_attack(i, enemy_actions)
+            if r:
+                return r
 
     else:
-        dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
-        apply_damage_to_player(dmg2)
-        _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。")
-        maybe_enemy_apply_debuff()
+        # 敵複数回
+        for i in range(1, enemy_actions + 1):
+            r = do_enemy_attack(i, enemy_actions)
+            if r:
+                return r
 
-        if int(sess["player_hp"]) <= 0:
-            return "lose"
-
-        if _roll_instakill(sess):
-            enemy["hp"] = 0
-            _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
-            _apply_heal_on_kill(sess)
-            return "win"
-
-        dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
-        apply_damage_to_enemy(dmg)
-        _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。")
-
-        if int(enemy["hp"]) <= 0:
-            _apply_heal_on_kill(sess)
-            return "win"
+        # プレイヤー複数回
+        for i in range(1, player_actions + 1):
+            r = do_player_attack(i, player_actions)
+            if r:
+                return r
 
     return None
-
 
 async def start_battle_step(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -8506,6 +8568,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
