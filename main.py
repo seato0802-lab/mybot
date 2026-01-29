@@ -587,94 +587,70 @@ BOSS_MULT = [
 
 def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
     w = int(world)
-    f = max(1, min(100, int(floor)))
-    is_boss, is_midboss = boss_flags(f)
+    f = max(1, int(floor))
+    is_boss, is_midboss = boss_flags(min(f, 100))  # 判定だけは既存ロジック流用でもOK
 
-    # kind はあなたの既存と同じ（mob/midboss/boss）
-    kind = "boss" if is_boss else "midboss" if is_midboss else "mob"
-
-    # =========================================================
-    # ✅ W5：フロア成長式を使わず「ステータスプール」から出す
-    # =========================================================
-    if w == 5:
-        st = _pick_w5_stats(kind)
-
-        # 見た目は既存の _pick_enemy_visual をそのまま使える（W5は全混ぜ仕様）
-        base_name, image_url = _pick_enemy_visual(w, kind)
-
-        prefix = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
-        display_name = f"{prefix}：{base_name}"
-
-        max_hp = max(10, int(st["hp"]))
-
-        return {
-            "name": display_name,
-            "base_name": base_name,
-            "image_url": image_url,
-
-            "hp": max_hp,
-            "max_hp": max_hp,
-            "atk": max(1, int(st["atk"])),
-            "def": max(0, int(st["def"])),
-            "spd": max(1, int(st["spd"])),
-
-            "is_boss": is_boss,
-            "is_midboss": is_midboss,
-            # ✅デバフゾーンは抽選しない：呼び出し側で決まったものをそのまま入れる
-            "debuff_zone": bool(debuff_zone),
-        }
-
-    # =========================================================
-    # W1〜W4：ここから下はあなたの既存ロジックをそのまま
-    # =========================================================
-    seg = (f - 1) // 20
-
-    ceil = weapon_ceiling(w, f)
-    wmax_atk = int(ceil["atk"])
-    wmax_def = int(ceil["def"])
-    wmax_spd = int(ceil["spd"])
-    cap = int(ceil["cap"])
+    kind = "boss" if is_boss else "midboss" if is_midboss else "normal"
+    visual_kind = "boss" if is_boss else "midboss" if is_midboss else "mob"
 
     # -------------------------
-    # 強さレンジ
+    # ✅ W5はステを「プール」から出す（フロアで強くしない）
     # -------------------------
-    if is_midboss:
-        r_lo, r_hi = 0.86, 0.95
-        hp_mul_lo, hp_mul_hi = 0.95, 1.10
-    elif is_boss:
-        r_lo, r_hi = 0.92, 1.02
-        hp_mul_lo, hp_mul_hi = 1.05, 1.25
+    if w >= 5:
+        st = _pick_enemy_stats_w5(kind)  # ← W5_STAT_POOLから引く
+        enemy_atk = int(st["atk"])
+        enemy_def = int(st["def"])
+        enemy_spd = int(st["spd"])
+        max_hp    = int(st["hp"])
+        seg = (max(1, f) - 1) // 20  # 表示・ログ用に残してもOK（強さには使わない）
     else:
-        r_lo, r_hi = 0.78, 0.88
-        hp_mul_lo, hp_mul_hi = 0.80, 0.98
+        # -------------------------
+        # W1〜W4：既存の計算（あなたの今のまま）
+        # -------------------------
+        f2 = max(1, min(100, f))
+        seg = (f2 - 1) // 20
 
-    r = random.uniform(r_lo, r_hi)
+        ceil = weapon_ceiling(w, f2)
+        wmax_atk = int(ceil["atk"])
+        wmax_def = int(ceil["def"])
+        wmax_spd = int(ceil["spd"])
+        cap = int(ceil["cap"])
 
-    enemy_atk = max(1, int(wmax_atk * r))
-    enemy_def = max(0, int(wmax_def * (r - 0.08)))
-    enemy_spd = max(1, int(wmax_spd * (r - 0.02)))
+        if is_midboss:
+            r_lo, r_hi = 0.86, 0.95
+            hp_mul_lo, hp_mul_hi = 0.95, 1.10
+        elif is_boss:
+            r_lo, r_hi = 0.92, 1.02
+            hp_mul_lo, hp_mul_hi = 1.05, 1.25
+        else:
+            r_lo, r_hi = 0.78, 0.88
+            hp_mul_lo, hp_mul_hi = 0.80, 0.98
 
-    base_hp = int(cap * random.uniform(1.6, 2.2) * (0.92 + 0.03 * seg))
-    max_hp = int(base_hp * random.uniform(hp_mul_lo, hp_mul_hi))
-    max_hp = max(10, max_hp)
+        r = random.uniform(r_lo, r_hi)
+        enemy_atk = max(1, int(wmax_atk * r))
+        enemy_def = max(0, int(wmax_def * (r - 0.08)))
+        enemy_spd = max(1, int(wmax_spd * (r - 0.02)))
 
-    # ✅ W1序盤補正
-    if w == 1 and seg == 0:
-        enemy_atk = max(1, int(enemy_atk * 0.85))
-        enemy_def = max(0, int(enemy_def * 0.80))
-        enemy_spd = max(1, int(enemy_spd * 0.90))
-        max_hp = max(10, int(max_hp * (0.85 if not is_boss else 0.92)))
+        base_hp = int(cap * random.uniform(1.6, 2.2) * (0.92 + 0.03 * seg))
+        max_hp = int(base_hp * random.uniform(hp_mul_lo, hp_mul_hi))
+        max_hp = max(10, max_hp)
 
-    if w == 1 and seg == 1:
-        enemy_atk = max(1, int(enemy_atk * 0.90))
-        enemy_def = max(0, int(enemy_def * 0.92))
-        enemy_spd = max(1, int(enemy_spd * 0.95))
-        max_hp = max(10, int(max_hp * 0.92))
+        # W1補正（あなたの既存のまま）
+        if w == 1 and seg == 0:
+            enemy_atk = max(1, int(enemy_atk * 0.85))
+            enemy_def = max(0, int(enemy_def * 0.80))
+            enemy_spd = max(1, int(enemy_spd * 0.90))
+            max_hp = max(10, int(max_hp * (0.85 if not is_boss else 0.92)))
+        if w == 1 and seg == 1:
+            enemy_atk = max(1, int(enemy_atk * 0.90))
+            enemy_def = max(0, int(enemy_def * 0.92))
+            enemy_spd = max(1, int(enemy_spd * 0.95))
+            max_hp = max(10, int(max_hp * 0.92))
 
     # -------------------------
     # 名前＆画像
     # -------------------------
-    base_name, image_url = _pick_enemy_visual(w, kind)
+    base_name, image_url = _pick_enemy_visual(w, visual_kind)
     prefix = "ボス" if is_boss else "中ボス" if is_midboss else "敵"
     display_name = f"{prefix}：{base_name}"
 
@@ -692,6 +668,9 @@ def generate_enemy(world: int, floor: int, debuff_zone: bool = False) -> dict:
         "is_boss": is_boss,
         "is_midboss": is_midboss,
         "debuff_zone": bool(debuff_zone),
+
+        # ✅これを入れる（apply_w5_zone_modifiers が参照する）:contentReference[oaicite:9]{index=9}
+        "kind": ("boss" if is_boss else "midboss" if is_midboss else "mob"),
     }
 
 def _combat_damage(attacker_atk: int, defender_def: int) -> int:
@@ -8805,6 +8784,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
