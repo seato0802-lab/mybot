@@ -7960,23 +7960,21 @@ async def _force_update_user_coins_async(uid: int, coins: int):
 async def _force_update_dungeon_weapon_async(uid: int, weapon: dict):
     """
     dungeon シートの武器/効果カラムだけ更新する（HPは触らない）
-    ※ガチャで使ってる dungeon シートと同じ ws を使うこと
+    ※ガチャで使ってる dungeon シートと同じ ws（= dungeon_store.ws）を使う
     """
-    ws = None
+    # ★ここを統一：dungeon_store.ws を正とする
+    ws = getattr(globals().get("dungeon_store", None), "ws", None)
 
-    # ここはあなたの環境にある「dungeonシートの変数名」に合わせて候補を置いてます
-    for name in ("ws_dungeon", "DUNGEON_WS", "dungeon_ws"):
-        obj = globals().get(name)
-        if obj is not None:
-            ws = obj
-            break
+    # 互換：もし ws_dungeon を作ってるならそれでもOK
+    if ws is None:
+        ws = globals().get("ws_dungeon")
 
-    # store 側にある場合
+    # さらに互換：store 側に生えてる場合
     if ws is None and hasattr(store, "ws_dungeon"):
         ws = getattr(store, "ws_dungeon")
 
     if ws is None:
-        raise RuntimeError("dungeon ワークシート（ws_dungeon 等）が見つからないのだ。")
+        raise RuntimeError("dungeon ワークシート（dungeon_store.ws / ws_dungeon 等）が見つからないのだ。")
 
     def _sync():
         headers = ws.row_values(1)
@@ -8005,11 +8003,16 @@ async def _force_update_dungeon_weapon_async(uid: int, weapon: dict):
             "effect_value": int(weapon.get("effect_value", 0)),
         }
 
+        # まとめて更新（update_cell 連打より軽い）
+        updates = []
         for key, val in mapping.items():
             if key not in headers:
                 continue
             col = headers.index(key) + 1
-            ws.update_cell(row, col, str(val))
+            updates.append((row, col, str(val)))
+
+        for r, c, v in updates:
+            ws.update_cell(r, c, v)
 
     return await asyncio.to_thread(_sync)
 
@@ -8381,6 +8384,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
