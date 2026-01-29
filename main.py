@@ -7408,12 +7408,45 @@ def _build_battle_embed(sess: dict) -> discord.Embed:
 
 
 class DungeonAfterView(discord.ui.View):
-    def __init__(self, uid: int):
+    def __init__(self, uid: int, message: discord.Message | None = None):
         super().__init__(timeout=180)
         self.uid = uid
+        self.message = message  # ✅ timeout/quit 用に保持
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # ✅ ここで必ず message を掴む（ephemeralでもOK）
+        if not getattr(self, "message", None):
+            self.message = interaction.message
         return interaction.user.id == self.uid
+
+    def _resume_floor_on_exit(self, sess: dict) -> int:
+        """
+        ✅ 終了時に保存するフロア
+        - 直前が勝利なら「次のフロア」を保存
+        - それ以外は今のフロア
+        """
+        cur = int(sess.get("floor", 1) or 1)
+        if sess.get("battle_result") == "win":
+            return min(100, cur + 1)
+        return cur
+
+    async def _save_floor_on_exit(self, uid: int, sess: dict):
+        """
+        ✅ 終了時に floor を保存（勝利後なら次フロア）
+        """
+        save_floor = self._resume_floor_on_exit(sess)
+        try:
+            await dungeon_save_after_battle_async(
+                uid=uid,
+                world=int(sess.get("world", 1)),
+                floor=int(save_floor),
+                hp=int(sess.get("player_hp", 0)),
+            )
+        except Exception as e:
+            print("[DUNGEON EXIT SAVE ERROR]", type(e).__name__, e)
+
+        # ログに「次回開始フロア」を残す（好みで削除OK）
+        _push_log(sess, f"📍 次回は {int(sess.get('world', 1))}-{save_floor}F から開始なのだ。")
 
     @discord.ui.button(label="➡️ 次のフロアへ", style=discord.ButtonStyle.primary)
     async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -7468,15 +7501,15 @@ class DungeonAfterView(discord.ui.View):
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
-        # この interaction のメッセージだけ編集
+        # ✅ この interaction のメッセージだけ編集（ボタンは勝利時は消す）
         embed = _build_battle_embed(sess)
         await interaction.response.edit_message(
             content="",
             embed=embed,
-            view=None,
+            view=None if can_next else self,
         )
 
-        # 勝利時のみオート再開（interaction版のみ）
+        # ✅ 勝利時のみオート再開（interaction版）
         if can_next:
             old = dungeon_auto_tasks.pop(uid, None)
             if old and not old.done():
@@ -7490,57 +7523,76 @@ class DungeonAfterView(discord.ui.View):
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
 
+        # ✅ message を必ず掴む
+        if not getattr(self, "message", None):
+            self.message = interaction.message
+
         async with get_user_lock(uid):
             # ✅ オート戦闘停止
             t = dungeon_auto_tasks.pop(uid, None)
             if t and not t.done():
                 t.cancel()
 
-            sess = dungeon_sessions.pop(uid, None)
+            sess = dungeon_sessions.get(uid)
+            if not sess:
+                # セッション無いならボタン消して終了表示だけ
+                try:
+                    await interaction.response.edit_message(
+                        content="ダンジョンを終了したのだ。",
+                        embed=None,
+                        view=None,
+                    )
+                except Exception:
+                    pass
+                return
 
-            if sess:
-                _push_log(sess, "🚪 ダンジョンを終了したのだ。")
-                embed = _build_battle_embed(sess)
+            # ✅ 終了時に次フロア保存（勝利後なら +1）
+            await self._save_floor_on_exit(uid, sess)
+
+            _push_log(sess, "🚪 ダンジョンを終了したのだ。")
+            embed = _build_battle_embed(sess)
+
+            # ✅ セッション破棄
+            dungeon_sessions.pop(uid, None)
+
+        # ✅ 終了状態に編集（message.edit を優先）
+        try:
+            if getattr(self, "message", None):
+                await self.message.edit(content="", embed=embed, view=None)
             else:
-                embed = None
-
-        # ✅ メッセージを「終了状態」に編集
-        if embed:
-            await interaction.response.edit_message(
-                content="",
-                embed=embed,
-                view=None,  # ← ここ重要
-            )
-        else:
-            await interaction.response.edit_message(
-                content="ダンジョンを終了したのだ。",
-                embed=None,
-                view=None,
-            )
+                await interaction.response.edit_message(content="", embed=embed, view=None)
+        except Exception as e:
+            print("[QUIT EDIT ERROR]", type(e).__name__, e)
 
     async def on_timeout(self):
-        # ✅ オート戦闘タスク停止
-        t = dungeon_auto_tasks.pop(self.uid, None)
+        uid = self.uid
+
+        # ✅ オート戦闘停止
+        t = dungeon_auto_tasks.pop(uid, None)
         if t and not t.done():
             t.cancel()
 
-        # セッション取得
-        sess = dungeon_sessions.pop(self.uid, None)
+        async with get_user_lock(uid):
+            sess = dungeon_sessions.get(uid)
+            if not sess:
+                return
 
-        if not sess:
+            # ✅ 終了時に次フロア保存（勝利後なら +1）
+            await self._save_floor_on_exit(uid, sess)
+
+            _push_log(sess, "⌛ 操作が行われなかったため、ダンジョンを終了したのだ。")
+            embed = _build_battle_embed(sess)
+
+            # ✅ セッション破棄
+            dungeon_sessions.pop(uid, None)
+
+        # ✅ message が無ければ編集できない（落とさない）
+        if not getattr(self, "message", None):
+            print("[DUNGEON TIMEOUT] message is None -> cannot edit")
             return
 
-        _push_log(sess, "⌛ 操作が行われなかったため、ダンジョンを終了したのだ。")
-
-        embed = _build_battle_embed(sess)
-
         try:
-            # ✅ この View が付いていたメッセージを編集
-            await self.message.edit(
-                content="",
-                embed=embed,
-                view=None,  # ← ボタン完全削除
-            )
+            await self.message.edit(content="", embed=embed, view=None)
         except Exception as e:
             print("[DUNGEON TIMEOUT EDIT ERROR]", type(e).__name__, e)
 
@@ -7762,10 +7814,11 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                 except Exception:
                     pass
 
-                # view だけ付与
+                # ✅ view だけ付与（message を渡すのがポイント）
                 try:
+                    msg = await interaction.original_response()
                     await interaction.edit_original_response(
-                        view=DungeonAfterView(uid)
+                        view=DungeonAfterView(uid, message=msg)
                     )
                 except Exception as e:
                     print("[AFTER VIEW ERROR]", type(e).__name__, e)
@@ -7776,7 +7829,6 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
 
     except asyncio.CancelledError:
         return
-
 
 async def _force_update_user_coins_async(uid: int, coins: int):
     """
@@ -8127,6 +8179,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
