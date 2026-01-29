@@ -8016,7 +8016,7 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                 result = _battle_one_turn(uid)
                 embed = _build_battle_embed(sess)
 
-            # ✅ 戦闘中の更新（毎ターン）
+            # 戦闘中の更新
             try:
                 await interaction.edit_original_response(
                     content="",
@@ -8027,12 +8027,10 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                 print("[AUTO EDIT ERROR]", type(e).__name__, e)
                 return
 
-            # ✅ 勝敗確定
             if result in ("win", "lose"):
-                # 報酬・保存・ログ（勝敗ログは _finish_battle の中だけ）
+                # 報酬・保存・ログ（勝敗ログは _finish_battle 側でのみ）
                 await _finish_battle(uid, result, interaction=None)
 
-                # 戦闘終了フラグ付与＋最終表示を作成
                 async with get_user_lock(uid):
                     sess = dungeon_sessions.get(uid)
                     if not sess:
@@ -8042,21 +8040,13 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                     sess["finished"] = True
                     final_embed = _build_battle_embed(sess)
 
-                # ✅ 最終結果（コイン/敗北ログ込み）を表示
-                try:
-                    await interaction.edit_original_response(
-                        content="",
-                        embed=final_embed,
-                        view=None,
-                    )
-                except Exception:
-                    pass
-
-                # ✅ 結果後ボタン（次へ/やめる）を付与
+                # ✅ ここが重要：結果表示(embed) + ボタン(view) を「同じ edit」で付ける
                 try:
                     msg = await interaction.original_response()
                     await interaction.edit_original_response(
-                        view=DungeonAfterView(uid, message=msg)
+                        content="",
+                        embed=final_embed,
+                        view=DungeonAfterView(uid, message=msg),
                     )
                 except Exception as e:
                     print("[AFTER VIEW ERROR]", type(e).__name__, e)
@@ -8374,6 +8364,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
