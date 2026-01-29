@@ -7410,6 +7410,12 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         except Exception as e:
             print("[WEAPON FORCE SAVE ERROR]", type(e).__name__, e)
 
+    # ✅ HP も強制保存（勝敗どちらでも必須）
+    try:
+        await _force_update_user_hp_async(uid, int(sess.get("player_hp", 0)))
+    except Exception as e:
+        print("[HP FORCE SAVE ERROR]", type(e).__name__, e)
+
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
     world = int(sess.get("world", 1))
@@ -8020,6 +8026,41 @@ async def _force_update_user_weapon_async(uid: int, weapon: dict):
 
     return await asyncio.to_thread(_sync)
 
+async def _force_update_user_hp_async(uid: int, hp: int):
+    ws = None
+
+    for name in ("ws_users", "USERS_WS", "users_ws"):
+        obj = globals().get(name)
+        if obj is not None:
+            ws = obj
+            break
+
+    if ws is None and hasattr(store, "ws_users"):
+        ws = store.ws_users
+    if ws is None and hasattr(store, "ws"):
+        ws = store.ws
+
+    if ws is None:
+        raise RuntimeError("users ワークシートが見つからないのだ。")
+
+    def _sync():
+        headers = ws.row_values(1)
+        if "user_id" not in headers or "hp" not in headers:
+            raise RuntimeError(f"usersヘッダに user_id / hp が無い: {headers}")
+
+        col_uid = headers.index("user_id") + 1
+        col_hp = headers.index("hp") + 1
+
+        uid_list = ws.col_values(col_uid)
+        for i, v in enumerate(uid_list, start=1):
+            if str(v) == str(uid):
+                ws.update_cell(i, col_hp, str(int(hp)))
+                return
+
+        raise RuntimeError(f"user_id={uid} の行が見つからないのだ。")
+
+    return await asyncio.to_thread(_sync)
+
 def _resume_floor_on_exit(sess: dict) -> int:
     """
     終了時に保存する floor を決める。
@@ -8388,6 +8429,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
