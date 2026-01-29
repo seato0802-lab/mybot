@@ -7618,7 +7618,7 @@ class DungeonAfterView(discord.ui.View):
                  _auto_battle_loop_interaction(uid, interaction)
             )
         else:
-            print("[GO_NEXT] message is None -> cannot start _auto_battle_loop_msg")
+            print("[GO_NEXT] message is None -> cannot start _auto_battle_loop_interaction")
 
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -8362,6 +8362,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
