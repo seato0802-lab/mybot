@@ -7310,9 +7310,9 @@ def _checkpoint_floor(floor: int) -> int:
 
 async def _finish_battle(uid: int, result: str, interaction=None):
     """
-    戦闘終了処理
+    戦闘終了処理（最小変更版）
     - 勝利時：コイン付与＆保存
-    - 敗北時：武器を失う → 初期武器に戻す
+    - 敗北時：武器喪失 → 初期武器へ戻す（ログは「武器を失った」だけ）
     - 進行度保存
     - 勝敗ログはここでだけ入れる（重複防止）
     - コインログは勝敗ログの一番最後
@@ -7325,6 +7325,17 @@ async def _finish_battle(uid: int, result: str, interaction=None):
     if not u:
         return
 
+    # ✅ 初期武器（あなたの _ensure_user_row と同じ）
+    init_weapon = {
+        "weapon_name": "初期武器",
+        "weapon_atk": 10,
+        "weapon_def": 10,
+        "weapon_spd": 10,
+        "effect_type": "NONE",
+        "effect_lv": 0,
+        "effect_value": 0,
+    }
+
     if result == "win":
         enemy = sess.get("enemy", {})
         reward = _calc_dungeon_coin_reward(enemy)
@@ -7332,104 +7343,55 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         before = int(u.get("coins", 0))
         u["coins"] = before + int(reward)
 
-        # ✅ 勝敗 → コイン（最後）
         _push_log(sess, "✅ 勝利！")
         _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
 
     else:
         # ✅ 敗北ログ
         _push_log(sess, "💀 敗北…")
-        # ✅ 武器ロスト表示（これだけ追加）
-        _push_log(sess, "⚔️ 敗北したため武器を失ったのだ。")
+        _push_log(sess, "💥 敗北したため武器を失ったのだ。")
 
-        # ✅ 初期武器へ戻す（あなたの _ensure_user_row を利用）
-        init = None
-        try:
-            if hasattr(store, "_ensure_user_row"):
-                init = store._ensure_user_row(uid)  # あなたが貼った初期武器定義
-        except Exception:
-            init = None
+        # ✅ セッション側の武器を初期化（次戦闘表示にも反映）
+        sess["weapon_name"] = init_weapon["weapon_name"]
+        sess["atk"] = int(init_weapon["weapon_atk"])
+        sess["def"] = int(init_weapon["weapon_def"])
+        sess["spd"] = int(init_weapon["weapon_spd"])
+        sess["effect_type"] = init_weapon["effect_type"]
+        sess["effect_lv"] = int(init_weapon["effect_lv"])
+        sess["effect_value"] = int(init_weapon["effect_value"])
 
-        # _ensure_user_row が取れない環境でも落ちない保険
-        if not init:
-            init = {
-                "weapon_name": "初期武器",
-                "weapon_atk": 10,
-                "weapon_def": 10,
-                "weapon_spd": 10,
-                "effect_type": "NONE",
-                "effect_lv": 0,
-                "effect_value": 0,
-            }
+        # ✅ store(u) 側も初期化（スプレッドシートへ保存される前提）
+        u["weapon_name"] = init_weapon["weapon_name"]
+        u["weapon_atk"] = int(init_weapon["weapon_atk"])
+        u["weapon_def"] = int(init_weapon["weapon_def"])
+        u["weapon_spd"] = int(init_weapon["weapon_spd"])
+        u["effect_type"] = init_weapon["effect_type"]
+        u["effect_lv"] = int(init_weapon["effect_lv"])
+        u["effect_value"] = int(init_weapon["effect_value"])
 
-        # ✅ セッション側を初期武器に差し替え（次戦から反映）
-        sess["weapon_name"] = init["weapon_name"]
-        sess["atk"] = int(init["weapon_atk"])
-        sess["def"] = int(init["weapon_def"])
-        sess["spd"] = int(init["weapon_spd"])
-        sess["effect_type"] = init.get("effect_type", "NONE")
-        sess["effect_lv"] = int(init.get("effect_lv", 0) or 0)
-        sess["effect_value"] = int(init.get("effect_value", 0) or 0)
-
-    # -----------------------------
-    # ダンジョン進行保存（world/floor/hp + 可能なら武器も）
-    # -----------------------------
+    # ダンジョン進行保存
     try:
-        # ✅ dungeon_save_after_battle_async が「武器も受け取れる」実装ならここで一緒に保存される
         await dungeon_save_after_battle_async(
             uid=uid,
             world=int(sess.get("world", 1)),
             floor=int(sess.get("floor", 1)),
             hp=int(sess.get("player_hp", 0)),
-            weapon_name=str(sess.get("weapon_name", "")),
-            weapon_atk=int(sess.get("atk", 0)),
-            weapon_def=int(sess.get("def", 0)),
-            weapon_spd=int(sess.get("spd", 0)),
-            effect_type=str(sess.get("effect_type", "NONE")),
-            effect_lv=int(sess.get("effect_lv", 0) or 0),
-            effect_value=int(sess.get("effect_value", 0) or 0),
         )
-    except TypeError:
-        # ✅ 既存の dungeon_save_after_battle_async が world/floor/hp しか受けない場合は従来通り保存
-        try:
-            await dungeon_save_after_battle_async(
-                uid=uid,
-                world=int(sess.get("world", 1)),
-                floor=int(sess.get("floor", 1)),
-                hp=int(sess.get("player_hp", 0)),
-            )
-        except Exception as e:
-            print("[DUNGEON SAVE ERROR]", type(e).__name__, e)
     except Exception as e:
         print("[DUNGEON SAVE ERROR]", type(e).__name__, e)
 
-    # -----------------------------
-    # ユーザーデータ保存（coins反映）
-    # -----------------------------
+    # ✅ ユーザーデータ保存（coins・武器情報を反映）
     try:
         await sheets_upsert_async(u)
     except Exception as e:
         print("[USER SAVE ERROR]", type(e).__name__, e)
 
-    # 保険：coins だけ強制更新
+    # coins 保険（あなたの既存のまま）
     try:
         await _force_update_user_coins_async(uid, int(u.get("coins", 0)))
     except Exception as e:
         print("[COINS FORCE SAVE ERROR]", type(e).__name__, e)
 
-    # -----------------------------
-    # ユーザーデータ保存（coins/武器反映）
-    # -----------------------------
-    try:
-        await sheets_upsert_async(u)
-    except Exception as e:
-        print("[USER SAVE ERROR]", type(e).__name__, e)
-
-    # 保険：coins だけ強制更新（武器は upsert で反映させる）
-    try:
-        await _force_update_user_coins_async(uid, int(u.get("coins", 0)))
-    except Exception as e:
-        print("[COINS FORCE SAVE ERROR]", type(e).__name__, e)
 
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
@@ -7609,16 +7571,14 @@ class DungeonAfterView(discord.ui.View):
             print("[GO_NEXT EDIT ERROR]", type(e).__name__, e)
 
         # ✅ オート再開（メッセージ基準で回すのが安定）
+        # ✅ オート再開（interaction版に戻す）
         old = dungeon_auto_tasks.pop(uid, None)
         if old and not old.done():
             old.cancel()
 
-        if getattr(self, "message", None):
-            dungeon_auto_tasks[uid] = asyncio.create_task(
-                 _auto_battle_loop_interaction(uid, interaction)
-            )
-        else:
-            print("[GO_NEXT] message is None -> cannot start _auto_battle_loop_interaction")
+        dungeon_auto_tasks[uid] = asyncio.create_task(
+            _auto_battle_loop_interaction(uid, interaction)
+        )
 
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -8362,6 +8322,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
