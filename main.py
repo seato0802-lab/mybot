@@ -7468,6 +7468,7 @@ class DungeonAfterView(discord.ui.View):
     async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
         can_next = False
+        restart_battle = False
 
         # ✅ message を必ず掴む
         if not getattr(self, "message", None):
@@ -7486,10 +7487,13 @@ class DungeonAfterView(discord.ui.View):
             effect_type = sess.get("effect_type", "NONE")
             effect_value = int(sess.get("effect_value", 0) or 0)
 
-            if sess.get("battle_result") == "win":
+            # ✅ 直前結果を保持してから解除（敗北でも必要）
+            prev_result = sess.get("battle_result")
+            sess.pop("battle_result", None)
+            sess["finished"] = False
+
+            if prev_result == "win":
                 can_next = True
-                sess.pop("battle_result", None)
-                sess["finished"] = False
 
                 # ✅ 次フロアへ（表示上）
                 sess["floor"] = int(sess.get("floor", 1) or 1) + 1
@@ -7504,7 +7508,10 @@ class DungeonAfterView(discord.ui.View):
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
+                restart_battle = True
+
             else:
+                # ✅ 敗北時：チェックポイントに戻して再戦
                 checkpoint = _checkpoint_floor(int(sess.get("floor", 1) or 1))
                 sess["floor"] = checkpoint
                 sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
@@ -7522,16 +7529,20 @@ class DungeonAfterView(discord.ui.View):
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
-        # ✅ この interaction のメッセージだけ編集（勝利時はボタン消すなら view=None）
+                # ✅ これが無いと「回復ログだけで戦闘が始まらない」
+                restart_battle = True
+
+        # ✅ この interaction のメッセージだけ編集
+        # 戦闘を再開するので view は消す（ボタン連打防止）
         embed = _build_battle_embed(sess)
         await interaction.response.edit_message(
             content="",
             embed=embed,
-            view=None if can_next else self,
+            view=None,
         )
 
-        # ✅ 勝利時のみオート再開（interaction版）
-        if can_next:
+        # ✅ 勝利/敗北どちらでもオート再開
+        if restart_battle:
             old = dungeon_auto_tasks.pop(uid, None)
             if old and not old.done():
                 old.cancel()
@@ -8226,6 +8237,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
