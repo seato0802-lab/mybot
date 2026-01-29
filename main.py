@@ -7829,7 +7829,7 @@ async def start_battle_step(interaction: discord.Interaction):
     )
 
 
-async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interaction):
+async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
     try:
         while True:
             async with get_user_lock(uid):
@@ -7840,14 +7840,11 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                 result = _battle_one_turn(uid)
                 embed = _build_battle_embed(sess)
 
+            # ✅ メッセージを直接編集（最も安定）
             try:
-                await interaction.edit_original_response(
-                    content="",
-                    embed=embed,
-                    view=None,
-                )
+                await msg.edit(content="", embed=embed, view=None)
             except discord.HTTPException as e:
-                print("[AUTO EDIT ERROR]", type(e).__name__, e)
+                print("[AUTO MSG EDIT ERROR]", type(e).__name__, e)
                 return
 
             if result in ("win", "lose"):
@@ -7861,22 +7858,15 @@ async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interacti
                     sess["finished"] = True
                     final_embed = _build_battle_embed(sess)
 
-                # 最終結果（コイン獲得含む）を表示
+                # ✅ 最終結果を出す
                 try:
-                    await interaction.edit_original_response(
-                        content="",
-                        embed=final_embed,
-                        view=None,
-                    )
+                    await msg.edit(content="", embed=final_embed, view=None)
                 except Exception:
                     pass
 
-                # ✅ view だけ付与（message を渡すのがポイント）
+                # ✅ ボタン付与（message を渡す）
                 try:
-                    msg = await interaction.original_response()
-                    await interaction.edit_original_response(
-                        view=DungeonAfterView(uid, message=msg)
-                    )
+                    await msg.edit(view=DungeonAfterView(uid, message=msg))
                 except Exception as e:
                     print("[AFTER VIEW ERROR]", type(e).__name__, e)
 
@@ -8306,6 +8296,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
