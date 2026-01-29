@@ -7960,11 +7960,7 @@ def _next_world_floor(world: int, floor: int) -> tuple[int, int]:
         return w + 1, 1
     return w, f + 1
 
-async def _auto_battle_loop_msg(uid: int, message: discord.Message):
-    """
-    ✅ message.edit() で更新するオート戦闘ループ
-    - interaction を使わないので Unknown Webhook を回避できる
-    """
+async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
     try:
         while True:
             async with get_user_lock(uid):
@@ -7975,38 +7971,29 @@ async def _auto_battle_loop_msg(uid: int, message: discord.Message):
                 result = _battle_one_turn(uid)
                 embed = _build_battle_embed(sess)
 
-            # ロック外で編集
+            # ✅ 編集対象は msg のみ（入口/setupは一切触らない）
             try:
-                await message.edit(content="", embed=embed, view=None)
+                await msg.edit(content="", embed=embed, view=None)
             except discord.HTTPException as e:
                 print("[AUTO MSG EDIT ERROR]", type(e).__name__, e)
                 return
 
             if result in ("win", "lose"):
-                # 報酬処理（コイン付与等）
                 await _finish_battle(uid, result, interaction=None)
 
                 async with get_user_lock(uid):
                     sess = dungeon_sessions.get(uid)
                     if not sess:
                         return
-
                     sess["battle_result"] = result
                     sess["finished"] = True
                     final_embed = _build_battle_embed(sess)
 
-                # 最終結果を表示
+                # ✅ 結果表示＋ボタンも msg に付ける
                 try:
-                    await message.edit(content="", embed=final_embed, view=None)
-                except Exception:
-                    pass
-
-                # AfterView を付与（message を渡す）
-                try:
-                    await message.edit(view=DungeonAfterView(uid, message=message))
+                    await msg.edit(content="", embed=final_embed, view=DungeonAfterView(uid, message=msg))
                 except Exception as e:
-                    print("[AFTER VIEW MSG ERROR]", type(e).__name__, e)
-
+                    print("[AFTER VIEW ERROR]", type(e).__name__, e)
                 return
 
             await asyncio.sleep(AUTO_TICK_SEC)
@@ -8320,6 +8307,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
