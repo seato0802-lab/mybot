@@ -7312,7 +7312,7 @@ async def _finish_battle(uid: int, result: str, interaction=None):
     """
     戦闘終了処理
     - 勝利時：コイン付与＆保存
-    - 敗北時：武器を失い、初期武器へ戻す（表示は「武器を失った」まで）
+    - 敗北時：武器を失う → 初期武器に戻す
     - 進行度保存
     - 勝敗ログはここでだけ入れる（重複防止）
     - コインログは勝敗ログの一番最後
@@ -7337,44 +7337,85 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         _push_log(sess, f"💰 コインを {reward} 枚手に入れたのだ！")
 
     else:
-        # ✅ 敗北ログ（武器喪失を表示）
+        # ✅ 敗北ログ
         _push_log(sess, "💀 敗北…")
-        _push_log(sess, "💥 武器を失ったのだ…！")
+        # ✅ 武器ロスト表示（これだけ追加）
+        _push_log(sess, "⚔️ 敗北したため武器を失ったのだ。")
 
-        # ✅ 初期武器へ戻す（既存の定義をそのまま使う）
-        # ※ store に _ensure_user_row がある前提（あなたの提示コード通り）
-        init = store._ensure_user_row(uid)
+        # ✅ 初期武器へ戻す（あなたの _ensure_user_row を利用）
+        init = None
+        try:
+            if hasattr(store, "_ensure_user_row"):
+                init = store._ensure_user_row(uid)  # あなたが貼った初期武器定義
+        except Exception:
+            init = None
 
-        # セッション側（戦闘で使う値）
-        sess["weapon_name"] = init.get("weapon_name", "初期武器")
-        sess["atk"] = int(init.get("weapon_atk", 10) or 10)
-        sess["def"] = int(init.get("weapon_def", 10) or 10)
-        sess["spd"] = int(init.get("weapon_spd", 10) or 10)
-        sess["effect_type"] = init.get("effect_type", "NONE") or "NONE"
+        # _ensure_user_row が取れない環境でも落ちない保険
+        if not init:
+            init = {
+                "weapon_name": "初期武器",
+                "weapon_atk": 10,
+                "weapon_def": 10,
+                "weapon_spd": 10,
+                "effect_type": "NONE",
+                "effect_lv": 0,
+                "effect_value": 0,
+            }
+
+        # ✅ セッション側を初期武器に差し替え（次戦から反映）
+        sess["weapon_name"] = init["weapon_name"]
+        sess["atk"] = int(init["weapon_atk"])
+        sess["def"] = int(init["weapon_def"])
+        sess["spd"] = int(init["weapon_spd"])
+        sess["effect_type"] = init.get("effect_type", "NONE")
         sess["effect_lv"] = int(init.get("effect_lv", 0) or 0)
         sess["effect_value"] = int(init.get("effect_value", 0) or 0)
 
-        # ユーザー側（スプレッドシートへ保存される値）
-        u["weapon_name"] = init.get("weapon_name", "初期武器")
-        u["weapon_atk"] = int(init.get("weapon_atk", 10) or 10)
-        u["weapon_def"] = int(init.get("weapon_def", 10) or 10)
-        u["weapon_spd"] = int(init.get("weapon_spd", 10) or 10)
-        u["effect_type"] = init.get("effect_type", "NONE") or "NONE"
-        u["effect_lv"] = int(init.get("effect_lv", 0) or 0)
-        u["effect_value"] = int(init.get("effect_value", 0) or 0)
-
     # -----------------------------
-    # ダンジョン進行保存
+    # ダンジョン進行保存（world/floor/hp + 可能なら武器も）
     # -----------------------------
     try:
+        # ✅ dungeon_save_after_battle_async が「武器も受け取れる」実装ならここで一緒に保存される
         await dungeon_save_after_battle_async(
             uid=uid,
             world=int(sess.get("world", 1)),
             floor=int(sess.get("floor", 1)),
             hp=int(sess.get("player_hp", 0)),
+            weapon_name=str(sess.get("weapon_name", "")),
+            weapon_atk=int(sess.get("atk", 0)),
+            weapon_def=int(sess.get("def", 0)),
+            weapon_spd=int(sess.get("spd", 0)),
+            effect_type=str(sess.get("effect_type", "NONE")),
+            effect_lv=int(sess.get("effect_lv", 0) or 0),
+            effect_value=int(sess.get("effect_value", 0) or 0),
         )
+    except TypeError:
+        # ✅ 既存の dungeon_save_after_battle_async が world/floor/hp しか受けない場合は従来通り保存
+        try:
+            await dungeon_save_after_battle_async(
+                uid=uid,
+                world=int(sess.get("world", 1)),
+                floor=int(sess.get("floor", 1)),
+                hp=int(sess.get("player_hp", 0)),
+            )
+        except Exception as e:
+            print("[DUNGEON SAVE ERROR]", type(e).__name__, e)
     except Exception as e:
         print("[DUNGEON SAVE ERROR]", type(e).__name__, e)
+
+    # -----------------------------
+    # ユーザーデータ保存（coins反映）
+    # -----------------------------
+    try:
+        await sheets_upsert_async(u)
+    except Exception as e:
+        print("[USER SAVE ERROR]", type(e).__name__, e)
+
+    # 保険：coins だけ強制更新
+    try:
+        await _force_update_user_coins_async(uid, int(u.get("coins", 0)))
+    except Exception as e:
+        print("[COINS FORCE SAVE ERROR]", type(e).__name__, e)
 
     # -----------------------------
     # ユーザーデータ保存（coins/武器反映）
@@ -7964,7 +8005,7 @@ def _next_world_floor(world: int, floor: int) -> tuple[int, int]:
         return w + 1, 1
     return w, f + 1
 
-async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
+async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interaction):
     try:
         while True:
             async with get_user_lock(uid):
@@ -7975,34 +8016,48 @@ async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
                 result = _battle_one_turn(uid)
                 embed = _build_battle_embed(sess)
 
-            # ✅ message を直接更新（interactionに依存しない）
+            # ✅ 戦闘中の更新（毎ターン）
             try:
-                await msg.edit(content="", embed=embed, view=None)
+                await interaction.edit_original_response(
+                    content="",
+                    embed=embed,
+                    view=None,
+                )
             except discord.HTTPException as e:
-                print("[AUTO MSG EDIT ERROR]", type(e).__name__, e)
+                print("[AUTO EDIT ERROR]", type(e).__name__, e)
                 return
 
+            # ✅ 勝敗確定
             if result in ("win", "lose"):
-                # 報酬処理（ログ追加＆保存）
+                # 報酬・保存・ログ（勝敗ログは _finish_battle の中だけ）
                 await _finish_battle(uid, result, interaction=None)
 
+                # 戦闘終了フラグ付与＋最終表示を作成
                 async with get_user_lock(uid):
                     sess = dungeon_sessions.get(uid)
                     if not sess:
                         return
+
                     sess["battle_result"] = result
                     sess["finished"] = True
                     final_embed = _build_battle_embed(sess)
 
-                # 最終結果表示
+                # ✅ 最終結果（コイン/敗北ログ込み）を表示
                 try:
-                    await msg.edit(content="", embed=final_embed, view=None)
-                except Exception as e:
-                    print("[FINAL MSG EDIT ERROR]", type(e).__name__, e)
+                    await interaction.edit_original_response(
+                        content="",
+                        embed=final_embed,
+                        view=None,
+                    )
+                except Exception:
+                    pass
 
-                # AfterView 付与（message を渡す）
+                # ✅ 結果後ボタン（次へ/やめる）を付与
                 try:
-                    await msg.edit(view=DungeonAfterView(uid, message=msg))
+                    msg = await interaction.original_response()
+                    await interaction.edit_original_response(
+                        view=DungeonAfterView(uid, message=msg)
+                    )
                 except Exception as e:
                     print("[AFTER VIEW ERROR]", type(e).__name__, e)
 
@@ -8319,6 +8374,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
