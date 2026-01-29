@@ -7942,9 +7942,25 @@ def _battle_one_turn(uid: int) -> str | None:
         return min(0.20, diff * 0.005)
 
     def maybe_enemy_apply_debuff():
-        if not bool(sess.get("debuff_zone", 0)):
+        # 既存のデバフゾーン or W5ゾーン⑤で発動
+        if not bool(sess.get("debuff_zone", 0)) and not bool(sess.get("w5_debuff_zone", 0)):
             return
+
+        hard = bool(sess.get("w5_debuff_zone", 0))
         r = random.random()
+
+        if hard:
+            # ✅ ⑤：デバフ必須ゾーン（強化版）
+            # base_chance_pct を上げる（耐性は _try_apply_debuff 内で反映される）
+            if r < 0.25:
+                _try_apply_debuff(sess, "poison", 30)  # ←強化（例：20→30）
+            elif r < 0.45:
+            _try_apply_debuff(sess, "weak", 25)    # ←強化（例：15→25）
+            elif r < 0.65:
+            _try_apply_debuff(sess, "slow", 25)    # ←強化（例：15→25）
+            return
+
+        # ✅ 通常版（既存）
         if r < 0.20:
             _try_apply_debuff(sess, "poison", 20)
         elif r < 0.35:
@@ -8704,6 +8720,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
