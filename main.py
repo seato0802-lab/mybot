@@ -7489,15 +7489,15 @@ class DungeonAfterView(discord.ui.View):
     @discord.ui.button(label="➡️ 次のフロアへ", style=discord.ButtonStyle.primary)
     async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
-
-        # ✅ message を必ず掴む
+    
+        # ✅ ボタンが付いてる「このメッセージ」を必ず保持（これを編集＆これでオートを回す）
+        msg = interaction.message
         if not getattr(self, "message", None):
-            self.message = interaction.message
-
+            self.message = msg
+    
         async with get_user_lock(uid):
             sess = dungeon_sessions.get(uid)
             if not sess:
-                # interaction.response を使うのはここだけ（まだ応答してないのでOK）
                 await interaction.response.edit_message(
                     content="セッションが見つからないのだ。",
                     embed=None,
@@ -7514,10 +7514,10 @@ class DungeonAfterView(discord.ui.View):
             sess["finished"] = False
 
             if prev_result == "win":
-                # ✅ 100F勝利なら 次ワールド1Fへ
-                cur_floor = int(sess.get("floor", 1) or 1)
+                # 次フロア（100F勝利なら次ワールド1F）
                 cur_world = int(sess.get("world", 1) or 1)
-
+                cur_floor = int(sess.get("floor", 1) or 1)
+    
                 if cur_floor >= 100:
                     sess["world"] = cur_world + 1
                     sess["floor"] = 1
@@ -7529,8 +7529,6 @@ class DungeonAfterView(discord.ui.View):
 
                 debuff_zone = bool(sess.get("debuff_zone", 0))
                 sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
-
-                # ✅ バトル開始扱い：シールドを回復
                 sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
                 _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
@@ -7538,7 +7536,7 @@ class DungeonAfterView(discord.ui.View):
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
             else:
-                # ✅ 敗北時：チェックポイントに戻して再戦
+                # ✅ 敗北時：チェックポイントに戻して再戦（ここで enemy を作り直すのが必須）
                 checkpoint = _checkpoint_floor(int(sess.get("floor", 1) or 1))
                 sess["floor"] = checkpoint
                 sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
@@ -7552,32 +7550,29 @@ class DungeonAfterView(discord.ui.View):
 
                 sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
+                # ※ここは「敗北ログを再表示するだけ」なら消してOK（あなたの好み）
                 _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
                 _push_log(sess, "✨ HPを全回復したのだ。")
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
-            # ✅ ここで戦闘再開用の表示を確定
             embed = _build_battle_embed(sess)
 
-        # ✅ まず「このメッセージ」を更新（interaction.responseは1回だけ安全に使う）
-        # 既に応答済みの場合があるので message.edit を優先する
-        try:
-            if getattr(self, "message", None):
-                await self.message.edit(content="", embed=embed, view=None)
-            else:
-                await interaction.response.edit_message(content="", embed=embed, view=None)
-        except Exception as e:
-            print("[GO_NEXT EDIT ERROR]", type(e).__name__, e)
+        # ✅ まずこのボタンのメッセージを更新（ボタンは消して連打防止）
+        await interaction.response.edit_message(
+            content="",
+            embed=embed,
+            view=None,
+        )
 
-        # ✅ オート再開（メッセージ基準で回すのが安定）
-        # ✅ オート再開（interaction版に戻す）
+        # ✅ ここで「メッセージ基準」のオートを開始（あなたが動いてた形）
         old = dungeon_auto_tasks.pop(uid, None)
         if old and not old.done():
             old.cancel()
 
+        # interaction.message を使うので message None にはならない
         dungeon_auto_tasks[uid] = asyncio.create_task(
-            _auto_battle_loop_interaction(uid, interaction)
+            _auto_battle_loop_msg(uid, msg)
         )
 
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
@@ -8322,6 +8317,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
