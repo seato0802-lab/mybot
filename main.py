@@ -7498,12 +7498,12 @@ class DungeonAfterView(discord.ui.View):
         async with get_user_lock(uid):
             sess = dungeon_sessions.get(uid)
             if not sess:
-                await interaction.response.edit_message(
-                    content="セッションが見つからないのだ。",
-                    embed=None,
-                    view=None,
-                )
-                return
+                # ✅ setup側ではなく「個人表示 msg」を編集する（必須）
+                if getattr(self, "message", None):
+                    await self.message.edit(content="", embed=embed, view=None)
+                else:
+                    # ここに落ちるのは異常系。落とさずログだけ出す
+                    print("[GO_NEXT] self.message is None -> cannot edit")
 
             effect_type = sess.get("effect_type", "NONE")
             effect_value = int(sess.get("effect_value", 0) or 0)
@@ -7820,10 +7820,11 @@ async def start_battle_step(interaction: discord.Interaction):
     if old and not old.done():
         old.cancel()
 
+    # ✅ 個人表示（original_response）を msg として掴んで、それだけを編集対象にする
+    msg = await interaction.original_response()
     dungeon_auto_tasks[uid] = asyncio.create_task(
-        _auto_battle_loop_interaction(uid, interaction)
+        _auto_battle_loop_msg(uid, msg)
     )
-
 
 async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interaction):
     """
@@ -8307,6 +8308,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
