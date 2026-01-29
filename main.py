@@ -7692,9 +7692,14 @@ class DungeonAfterView(discord.ui.View):
                 cleared_floor = cur_floor  # ✅今倒したフロア
 
                 # 次フロア（100F勝利なら次ワールド1F）
-                if cur_floor >= 100:
+                if cur_floor >= 100 and cur_world < 5:
                     sess["world"] = cur_world + 1
                     sess["floor"] = 1
+                elif cur_floor >= 100 and cur_world >= 5:
+                    # ✅ W5は無限：100を超えてもworldは増やさず floor だけ進める（例）
+                    sess["floor"] = cur_floor + 1
+                else:
+                    sess["floor"] = cur_floor + 1
 
                     # ワールド跨ぎは区間管理をリセット（安全）
                     sess["debuff_zone"] = 0
@@ -7747,7 +7752,18 @@ class DungeonAfterView(discord.ui.View):
                 floor = int(sess.get("floor", 1) or 1)
 
                 debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
-                sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
+
+                # ✅ W5だけ：20Fごとにゾーン確定
+                if world >= 5:
+                    ensure_w5_zone(sess)
+
+                enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
+
+                # ✅ W5だけ：ゾーン補正
+                if world >= 5:
+                    apply_w5_zone_modifiers(sess, enemy)
+
+                sess["enemy"] = enemy
 
                 sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
@@ -7765,12 +7781,20 @@ class DungeonAfterView(discord.ui.View):
 
                 sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
 
+                world = int(sess.get("world", 1) or 1)
                 debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
-                sess["enemy"] = generate_enemy(
-                    int(sess.get("world", 1) or 1),
-                    checkpoint,
-                    debuff_zone=debuff_zone,
-                )
+
+                # ✅ W5だけ：チェックポイントに戻った後も seg に対応するゾーンへ
+                if world >= 5:
+                    ensure_w5_zone(sess)
+
+                enemy = generate_enemy(world, checkpoint, debuff_zone=debuff_zone)
+
+                # ✅ W5だけ：ゾーン補正
+                if world >= 5:
+                    apply_w5_zone_modifiers(sess, enemy)
+
+                sess["enemy"] = enemy
 
                 sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
@@ -8720,6 +8744,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
