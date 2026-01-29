@@ -1505,7 +1505,7 @@ class DungeonStore:
 
             header = self.ws.row_values(1)
             if not header:
-                self.ws.update("A1", [DUNGEON_HEADERS])
+                self.ws.update(range_name="A1", values=[DUNGEON_HEADERS])
                 header = DUNGEON_HEADERS
             else:
                 merged = list(header)
@@ -1513,7 +1513,7 @@ class DungeonStore:
                     if h not in merged:
                         merged.append(h)
                 if merged != header:
-                    self.ws.update("A1", [merged])
+                    self.ws.update(range_name="A1", values=[merged])
                 header = merged
 
             self._reindex()
@@ -8506,6 +8506,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
