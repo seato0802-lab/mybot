@@ -7608,19 +7608,14 @@ class DungeonAfterView(discord.ui.View):
         except Exception as e:
             print("[GO_NEXT EDIT ERROR]", type(e).__name__, e)
 
-        # ✅ オート再開（メッセージ基準で回すのが安定）
+        # ✅ オート再開（interaction版）
         old = dungeon_auto_tasks.pop(uid, None)
         if old and not old.done():
             old.cancel()
 
-        # あなた側に _auto_battle_loop_msg(uid, message) がある構成なので、それを使う
-        if getattr(self, "message", None):
-            dungeon_auto_tasks[uid] = asyncio.create_task(
-                _auto_battle_loop_msg(uid, self.message)
-            )
-        else:
-            # 最低限落とさない
-            print("[GO_NEXT] message is None -> cannot start _auto_battle_loop_msg")
+        dungeon_auto_tasks[uid] = asyncio.create_task(
+            _auto_battle_loop_interaction(uid, interaction)
+        )
 
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -8364,6 +8359,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
