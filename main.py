@@ -440,7 +440,6 @@ DUNGEON_HEADERS = [
     "current_debuffs",     # 文字列（必要なら運用）
 ]
 
-
 def _clamp(x: float, lo: float, hi: float) -> float:
     return lo if x < lo else hi if x > hi else x
 
@@ -840,6 +839,127 @@ def _pretty_weapon_name(world: int) -> str:
     if random.random() < 0.40:
         name += random.choice(WEAPON_SUFFIX)
     return name
+
+# =========================================================
+# W5 ゾーン（20Fごとに抽選・固定）
+# =========================================================
+W5_ZONES = {
+    1: "① 攻撃高め",
+    2: "② 素早さ高め",
+    3: "③ HP高め",
+    4: "④ 防御高め",
+    5: "⑤ デバフ必須",
+}
+
+
+def _w5_seg_index(floor: int) -> int:
+    return (max(1, int(floor)) - 1) // 20
+
+
+def _roll_w5_zone() -> int:
+    # 好みで重み付けも可能
+    # return random.choices([1,2,3,4,5], weights=[22,22,20,20,16], k=1)[0]
+    return random.choice([1, 2, 3, 4, 5])
+
+
+def ensure_w5_zone(sess: dict) -> int:
+    """
+    20F区間（1-20, 21-40, ...）ごとにゾーンを抽選して固定する
+    """
+    floor = int(sess.get("floor", 1) or 1)
+    seg = _w5_seg_index(floor)
+
+    prev_seg = sess.get("w5_zone_seg")
+    zone = sess.get("w5_zone")
+
+    if prev_seg != seg or zone not in (1, 2, 3, 4, 5):
+        zone = _roll_w5_zone()
+        sess["w5_zone"] = int(zone)
+        sess["w5_zone_seg"] = int(seg)
+
+        # ゾーン切替ログ（武器替えを促す）
+        _push_log(sess, f"🌪️ W5ゾーン：{W5_ZONES.get(zone, '不明')}（次の20F固定）なのだ！")
+
+        # 前ゾーンの制限フラグをリセット（残留防止）
+        sess.pop("enemy_actions_cap", None)
+        sess.pop("w5_debuff_zone", None)
+
+    return int(sess["w5_zone"])
+
+
+def apply_w5_zone_modifiers(sess: dict, enemy: dict):
+    """
+    W5ゾーン効果を enemy に反映
+    指定：
+    ① ATKは今の補正、DEF×0.5、SPD×0.8
+    ② SPDは今の補正、DEF×0.8、ATK補正なし
+    ③ HPは今の補正、その他×0.9
+    ④ DEFは今の補正、ATK×1.2、SPD×0.3
+    ⑤ デバフ以外補正なし
+    """
+    zone = int(sess.get("w5_zone", 0) or 0)
+    if zone not in (1, 2, 3, 4, 5):
+        return
+
+    base_atk = int(enemy.get("atk", 0) or 0)
+    base_def = int(enemy.get("def", 0) or 0)
+    base_spd = int(enemy.get("spd", 0) or 0)
+    base_hp = int(enemy.get("hp", 0) or 0)
+
+    kind = enemy.get("kind", "mob")  # "mob"/"midboss"/"boss" があれば利用
+
+    def clamp_int(v: float, lo: int = 0) -> int:
+        x = int(round(v))
+        return lo if x < lo else x
+
+    if zone == 1:
+        # ①：ATK上げ（今の補正） / DEF×0.5 / SPD×0.8
+        add_atk = int(base_atk * random.uniform(0.22, 0.35))
+        enemy["atk"] = base_atk + max(10, add_atk)
+        enemy["def"] = clamp_int(base_def * 0.5, 0)
+        enemy["spd"] = clamp_int(base_spd * 0.8, 0)
+        enemy["hp"] = int(base_hp * random.uniform(1.00, 1.06))
+
+    elif zone == 2:
+        # ②：SPD上げ（今の補正） / DEF×0.8 / ATK補正なし
+        add_spd = int(base_spd * random.uniform(0.25, 0.45))
+        enemy["spd"] = base_spd + max(10, add_spd)
+        enemy["def"] = clamp_int(base_def * 0.8, 0)
+        enemy["atk"] = base_atk
+        enemy["hp"] = int(base_hp * random.uniform(1.00, 1.05))
+
+        # SPDゾーンは敵の追加行動を暴れさせない
+        sess["enemy_actions_cap"] = 2
+
+    elif zone == 3:
+        # ③：HP倍率（今の補正） / 他×0.9
+        if kind == "boss":
+            enemy["hp"] = int(base_hp * random.uniform(1.65, 1.95))
+        else:
+            enemy["hp"] = int(base_hp * random.uniform(1.45, 1.85))
+
+        enemy["atk"] = clamp_int(base_atk * 0.9, 0)
+        enemy["def"] = clamp_int(base_def * 0.9, 0)
+        enemy["spd"] = clamp_int(base_spd * 0.9, 0)
+
+    elif zone == 4:
+        # ④：DEF上げ（今の補正） / ATK×1.2 / SPD×0.3
+        add_def = int(base_def * random.uniform(0.28, 0.55))
+        enemy["def"] = base_def + max(10, add_def)
+        enemy["atk"] = clamp_int(base_atk * 1.2, 0)
+        enemy["spd"] = clamp_int(base_spd * 0.3, 0)
+        enemy["hp"] = int(base_hp * random.uniform(1.00, 1.10))
+
+    elif zone == 5:
+        # ⑤：デバフ以外補正なし（数値は触らない）
+        enemy["atk"] = base_atk
+        enemy["def"] = base_def
+        enemy["spd"] = base_spd
+        enemy["hp"] = base_hp
+
+        # デバフ強化（battle側で参照）
+        sess["w5_debuff_zone"] = 1
+        sess["enemy_actions_cap"] = 1
 
 # -----------------------------
 # ダンジョン報酬（コイン）
@@ -8582,6 +8702,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
