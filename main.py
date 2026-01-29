@@ -7410,7 +7410,7 @@ class DungeonAfterView(discord.ui.View):
     def __init__(self, uid: int, message: discord.Message | None = None):
         super().__init__(timeout=180)
         self.uid = uid
-        self.message = message  # ✅ timeout/quit 用に保持
+        self.message = message  # ✅ timeout/quit/go_next 全部で使う
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         # ✅ ここで必ず message を掴む（ephemeralでもOK）
@@ -7418,57 +7418,46 @@ class DungeonAfterView(discord.ui.View):
             self.message = interaction.message
         return interaction.user.id == self.uid
 
-    def _resume_floor_on_exit(self, sess: dict) -> int:
+    def _resume_floor_on_exit(self, sess: dict) -> tuple[int, int]:
         """
-        ✅ 終了後に再開する floor を決定する
+        ✅ 終了後に再開する (world, floor) を決定
         - 勝利時：次フロア（100Fなら次ワールドの1F）
-        - 敗北時：すでに checkpoint に戻っている前提
+        - 敗北時：checkpoint 済みの floor をそのまま
         """
         world = int(sess.get("world", 1) or 1)
         floor = int(sess.get("floor", 1) or 1)
 
         if sess.get("battle_result") == "win":
-            # ✅ 100F勝利なら次ワールド1Fへ
             if floor >= 100:
-                sess["world"] = world + 1
-                sess["floor"] = 1
-                return 1
+                return world + 1, 1
+            return world, min(100, floor + 1)
 
-            # ✅ それ以外は次フロア
-            nxt = min(100, floor + 1)
-            sess["floor"] = nxt
-            return nxt
-
-        # ✅ 敗北時は checkpoint 済みの floor をそのまま使う
-        return floor
+        return world, floor
 
     async def _save_floor_on_exit(self, uid: int, sess: dict):
         """
-        ✅ 終了時に floor/world を保存（勝利後なら次フロア or 次ワールド1F）
+        ✅ 終了時に (world, floor) を保存（勝利後なら次フロア or 次ワールド1F）
         """
-        save_floor = self._resume_floor_on_exit(sess)
+        save_world, save_floor = self._resume_floor_on_exit(sess)
 
         try:
             await dungeon_save_after_battle_async(
                 uid=uid,
-                world=int(sess.get("world", 1)),
+                world=int(save_world),
                 floor=int(save_floor),
                 hp=int(sess.get("player_hp", 0)),
             )
         except Exception as e:
             print("[DUNGEON EXIT SAVE ERROR]", type(e).__name__, e)
 
-        # ログに「次回開始フロア」を残す（好みで削除OK）
         _push_log(
             sess,
-            f"📍 次回は {int(sess.get('world', 1))}-{int(save_floor)}F から開始なのだ。",
+            f"📍 次回は {int(save_world)}-{int(save_floor)}F から開始なのだ。",
         )
 
     @discord.ui.button(label="➡️ 次のフロアへ", style=discord.ButtonStyle.primary)
     async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
-        can_next = False
-        restart_battle = False
 
         # ✅ message を必ず掴む
         if not getattr(self, "message", None):
@@ -7477,6 +7466,7 @@ class DungeonAfterView(discord.ui.View):
         async with get_user_lock(uid):
             sess = dungeon_sessions.get(uid)
             if not sess:
+                # interaction.response を使うのはここだけ（まだ応答してないのでOK）
                 await interaction.response.edit_message(
                     content="セッションが見つからないのだ。",
                     embed=None,
@@ -7487,28 +7477,34 @@ class DungeonAfterView(discord.ui.View):
             effect_type = sess.get("effect_type", "NONE")
             effect_value = int(sess.get("effect_value", 0) or 0)
 
-            # ✅ 直前結果を保持してから解除（敗北でも必要）
+            # ✅ 直前結果を保持して解除（勝利/敗北どちらでも再戦できるように）
             prev_result = sess.get("battle_result")
             sess.pop("battle_result", None)
             sess["finished"] = False
 
             if prev_result == "win":
-                can_next = True
+                # ✅ 100F勝利なら 次ワールド1Fへ
+                cur_floor = int(sess.get("floor", 1) or 1)
+                cur_world = int(sess.get("world", 1) or 1)
 
-                # ✅ 次フロアへ（表示上）
-                sess["floor"] = int(sess.get("floor", 1) or 1) + 1
+                if cur_floor >= 100:
+                    sess["world"] = cur_world + 1
+                    sess["floor"] = 1
+                else:
+                    sess["floor"] = cur_floor + 1
+
                 world = int(sess.get("world", 1) or 1)
                 floor = int(sess.get("floor", 1) or 1)
-                debuff_zone = bool(sess.get("debuff_zone", 0))
 
+                debuff_zone = bool(sess.get("debuff_zone", 0))
                 sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
+
+                # ✅ バトル開始扱い：シールドを回復
                 sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
                 _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
-
-                restart_battle = True
 
             else:
                 # ✅ 敗北時：チェックポイントに戻して再戦
@@ -7516,10 +7512,11 @@ class DungeonAfterView(discord.ui.View):
                 sess["floor"] = checkpoint
                 sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
 
+                debuff_zone = bool(sess.get("debuff_zone", 0))
                 sess["enemy"] = generate_enemy(
                     int(sess.get("world", 1) or 1),
                     checkpoint,
-                    debuff_zone=bool(sess.get("debuff_zone", 0)),
+                    debuff_zone=debuff_zone,
                 )
 
                 sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
@@ -7529,27 +7526,32 @@ class DungeonAfterView(discord.ui.View):
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
-                # ✅ これが無いと「回復ログだけで戦闘が始まらない」
-                restart_battle = True
+            # ✅ ここで戦闘再開用の表示を確定
+            embed = _build_battle_embed(sess)
 
-        # ✅ この interaction のメッセージだけ編集
-        # 戦闘を再開するので view は消す（ボタン連打防止）
-        embed = _build_battle_embed(sess)
-        await interaction.response.edit_message(
-            content="",
-            embed=embed,
-            view=None,
-        )
+        # ✅ まず「このメッセージ」を更新（interaction.responseは1回だけ安全に使う）
+        # 既に応答済みの場合があるので message.edit を優先する
+        try:
+            if getattr(self, "message", None):
+                await self.message.edit(content="", embed=embed, view=None)
+            else:
+                await interaction.response.edit_message(content="", embed=embed, view=None)
+        except Exception as e:
+            print("[GO_NEXT EDIT ERROR]", type(e).__name__, e)
 
-        # ✅ 勝利/敗北どちらでもオート再開
-        if restart_battle:
-            old = dungeon_auto_tasks.pop(uid, None)
-            if old and not old.done():
-                old.cancel()
+        # ✅ オート再開（メッセージ基準で回すのが安定）
+        old = dungeon_auto_tasks.pop(uid, None)
+        if old and not old.done():
+            old.cancel()
 
+        # あなた側に _auto_battle_loop_msg(uid, message) がある構成なので、それを使う
+        if getattr(self, "message", None):
             dungeon_auto_tasks[uid] = asyncio.create_task(
-                _auto_battle_loop_interaction(uid, interaction)
+                _auto_battle_loop_msg(uid, self.message)
             )
+        else:
+            # 最低限落とさない
+            print("[GO_NEXT] message is None -> cannot start _auto_battle_loop_msg")
 
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -7559,15 +7561,14 @@ class DungeonAfterView(discord.ui.View):
         if not getattr(self, "message", None):
             self.message = interaction.message
 
-        async with get_user_lock(uid):
-            # ✅ オート戦闘停止
-            t = dungeon_auto_tasks.pop(uid, None)
-            if t and not t.done():
-                t.cancel()
+        # ✅ オート戦闘停止（ロック外でOK）
+        t = dungeon_auto_tasks.pop(uid, None)
+        if t and not t.done():
+            t.cancel()
 
+        async with get_user_lock(uid):
             sess = dungeon_sessions.get(uid)
             if not sess:
-                # セッション無いならボタン消して終了表示だけ
                 try:
                     await interaction.response.edit_message(
                         content="ダンジョンを終了したのだ。",
@@ -7578,16 +7579,15 @@ class DungeonAfterView(discord.ui.View):
                     pass
                 return
 
-            # ✅ 終了時に次フロア保存（100F勝利なら次ワールド1Fもここで反映）
+            # ✅ 終了時に次回開始地点を保存（100F勝利なら次ワールド1F）
             await self._save_floor_on_exit(uid, sess)
 
             _push_log(sess, "🚪 ダンジョンを終了したのだ。")
             embed = _build_battle_embed(sess)
 
-            # ✅ セッション破棄
             dungeon_sessions.pop(uid, None)
 
-        # ✅ 終了状態に編集（message.edit を優先）
+        # ✅ 終了状態に編集
         try:
             if getattr(self, "message", None):
                 await self.message.edit(content="", embed=embed, view=None)
@@ -7609,26 +7609,19 @@ class DungeonAfterView(discord.ui.View):
             if not sess:
                 return
 
-            # ✅ 終了時に次フロア保存（100F勝利なら次ワールド1F）
             await self._save_floor_on_exit(uid, sess)
 
             _push_log(sess, "⌛ 操作が行われなかったため、ダンジョンを終了したのだ。")
             embed = _build_battle_embed(sess)
 
-            # ✅ セッション破棄
             dungeon_sessions.pop(uid, None)
 
-        # ✅ message が無ければ編集できない（落とさない）
         if not getattr(self, "message", None):
             print("[DUNGEON TIMEOUT] message is None -> cannot edit")
             return
 
         try:
-            await self.message.edit(
-                content="",
-                embed=embed,
-                view=None,
-            )
+            await self.message.edit(content="", embed=embed, view=None)
         except Exception as e:
             print("[DUNGEON TIMEOUT EDIT ERROR]", type(e).__name__, e)
 
@@ -8237,6 +8230,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
