@@ -7927,6 +7927,8 @@ def _battle_one_turn(uid: int) -> str | None:
 
     p_actions = calc_actions(p_spd, e_spd)
     e_actions = calc_actions(e_spd, p_spd)
+    cap = int(sess.get("enemy_actions_cap", 99) or 99)
+    e_actions = min(e_actions, cap)
 
     # -----------------------------
     # SPD差ボーナス（ダメージ補正）
@@ -8702,6 +8704,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
