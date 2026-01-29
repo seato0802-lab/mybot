@@ -862,30 +862,25 @@ def _roll_w5_zone() -> int:
     return 
 
 
-def ensure_w5_zone(sess: dict) -> int:
-    """
-    20F区間（1-20, 21-40, ...）ごとにゾーンを抽選して固定する
-    """
-    floor = int(sess.get("floor", 1) or 1)
-    seg = _w5_seg_index(floor)
+def ensure_w5_zone(sess: dict):
+    # 既に入っていればそれを使う
+    zone = sess.get("w5_zone", None)
 
-    prev_seg = sess.get("w5_zone_seg")
-    zone = sess.get("w5_zone")
+    # 無ければ floor から自動算出（20フロア区切り想定）
+    if zone is None:
+        floor = sess.get("floor")
+        try:
+            floor_i = int(floor) if floor is not None else 1
+        except (TypeError, ValueError):
+            floor_i = 1
 
-    if prev_seg != seg or zone not in (1, 2, 3, 4, 5):
-        zone = _roll_w5_zone()
+        zone = (max(1, floor_i) - 1) // 20 + 1  # 1-20=>1, 21-40=>2 ...
+
+    # 最後に安全に int 化（それでもダメなら1）
+    try:
         sess["w5_zone"] = int(zone)
-        sess["w5_zone_seg"] = int(seg)
-
-        # ゾーン切替ログ（武器替えを促す）
-        _push_log(sess, f"🌪️ W5ゾーン：{W5_ZONES.get(zone, '不明')}（次の20F固定）なのだ！")
-
-        # 前ゾーンの制限フラグをリセット（残留防止）
-        sess.pop("enemy_actions_cap", None)
-        sess.pop("w5_debuff_zone", None)
-
-    return int(sess["w5_zone"])
-
+    except (TypeError, ValueError):
+        sess["w5_zone"] = 1
 
 def apply_w5_zone_modifiers(sess: dict, enemy: dict):
     """
@@ -8744,6 +8739,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
