@@ -7829,7 +7829,29 @@ async def start_battle_step(interaction: discord.Interaction):
     )
 
 
-async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
+async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interaction):
+    """
+    ✅ interaction は維持したまま動かす版
+    - 可能なら interaction.message を直接 edit（最優先）
+    - それが無理なら edit_original_response にフォールバック
+    """
+    async def _edit(embed: discord.Embed | None = None, view: discord.ui.View | None = None):
+        # 1) ボタン押下なら interaction.message がほぼ必ずある
+        msg = getattr(interaction, "message", None)
+        if msg is not None:
+            await msg.edit(content="", embed=embed, view=view)
+            return
+
+        # 2) それ以外（スラッシュの original_response 等）
+        try:
+            await interaction.edit_original_response(content="", embed=embed, view=view)
+        except Exception:
+            # 3) 最後の手段：未応答なら response.edit_message
+            try:
+                await interaction.response.edit_message(content="", embed=embed, view=view)
+            except Exception as e:
+                raise e
+
     try:
         while True:
             async with get_user_lock(uid):
@@ -7840,14 +7862,15 @@ async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
                 result = _battle_one_turn(uid)
                 embed = _build_battle_embed(sess)
 
-            # ✅ メッセージを直接編集（最も安定）
+            # ✅ 戦闘中更新
             try:
-                await msg.edit(content="", embed=embed, view=None)
+                await _edit(embed=embed, view=None)
             except discord.HTTPException as e:
-                print("[AUTO MSG EDIT ERROR]", type(e).__name__, e)
+                print("[AUTO EDIT ERROR]", type(e).__name__, e)
                 return
 
             if result in ("win", "lose"):
+                # ✅ 報酬処理（勝敗ログ/コインログは _finish_battle だけが入れる前提）
                 await _finish_battle(uid, result, interaction=None)
 
                 async with get_user_lock(uid):
@@ -7858,15 +7881,15 @@ async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
                     sess["finished"] = True
                     final_embed = _build_battle_embed(sess)
 
-                # ✅ 最終結果を出す
+                # ✅ 最終結果を表示
                 try:
-                    await msg.edit(content="", embed=final_embed, view=None)
+                    await _edit(embed=final_embed, view=None)
                 except Exception:
                     pass
 
-                # ✅ ボタン付与（message を渡す）
+                # ✅ ボタン付与（interaction.message を優先するので止まりにくい）
                 try:
-                    await msg.edit(view=DungeonAfterView(uid, message=msg))
+                    await _edit(embed=final_embed, view=DungeonAfterView(uid, message=getattr(interaction, "message", None)))
                 except Exception as e:
                     print("[AFTER VIEW ERROR]", type(e).__name__, e)
 
@@ -8296,6 +8319,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
