@@ -1389,7 +1389,7 @@ class SheetsStore:
         with self._lock:
             values = self.ws_config.get_all_values()
             if not values:
-                self.ws_config.update("A1", [["key", "value"]])
+                self.ws_config.update(range_name=f"B{idx}", values=[[value]])
                 values = self.ws_config.get_all_values()
 
             for idx, row in enumerate(values[1:], start=2):
@@ -8744,6 +8744,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
