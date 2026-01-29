@@ -7959,11 +7959,12 @@ async def _force_update_user_coins_async(uid: int, coins: int):
 
 async def _force_update_user_weapon_async(uid: int, weapon: dict):
     """
-    sheets_upsert_async が武器列を更新しない/漏れる環境向けの保険。
-    users ワークシートの該当行の weapon_* / effect_* を強制更新する。
+    sheets_upsert_async が武器系カラムを更新しない環境向け保険。
+    users ワークシートの weapon/effect 系列を直接更新する。
     """
     ws = None
 
+    # 既存と同じ探し方（あなたの環境に合わせて）
     for name in ("ws_users", "USERS_WS", "users_ws"):
         obj = globals().get(name)
         if obj is not None:
@@ -7980,14 +7981,10 @@ async def _force_update_user_weapon_async(uid: int, weapon: dict):
 
     def _sync():
         headers = ws.row_values(1)
-        need = [
-            "user_id",
-            "weapon_name", "weapon_atk", "weapon_def", "weapon_spd",
-            "effect_type", "effect_lv", "effect_value",
-        ]
-        missing = [h for h in need if h not in headers]
-        if missing:
-            raise RuntimeError(f"usersヘッダに列が無い: {missing} / headers={headers}")
+
+        # 必須キー
+        if "user_id" not in headers:
+            raise RuntimeError(f"usersヘッダに user_id が無い: {headers}")
 
         col_uid = headers.index("user_id") + 1
         uid_list = ws.col_values(col_uid)
@@ -8001,18 +7998,25 @@ async def _force_update_user_weapon_async(uid: int, weapon: dict):
         if row is None:
             raise RuntimeError(f"user_id={uid} の行が見つからないのだ。")
 
-        # まとめて更新（update_cell連打でもOKだけど、まずは安全に）
-        def set_cell(col_name: str, value: str):
-            c = headers.index(col_name) + 1
-            ws.update_cell(row, c, value)
+        # ここで更新したい列名（シートのヘッダ名と一致している必要あり）
+        mapping = {
+            "weapon_name": weapon.get("weapon_name", "初期武器"),
+            "weapon_atk": int(weapon.get("weapon_atk", 10)),
+            "weapon_def": int(weapon.get("weapon_def", 10)),
+            "weapon_spd": int(weapon.get("weapon_spd", 10)),
+            "effect_type": weapon.get("effect_type", "NONE"),
+            "effect_lv": int(weapon.get("effect_lv", 0)),
+            "effect_value": int(weapon.get("effect_value", 0)),
+        }
 
-        set_cell("weapon_name", str(weapon.get("weapon_name", "初期武器")))
-        set_cell("weapon_atk", str(int(weapon.get("weapon_atk", 10))))
-        set_cell("weapon_def", str(int(weapon.get("weapon_def", 10))))
-        set_cell("weapon_spd", str(int(weapon.get("weapon_spd", 10))))
-        set_cell("effect_type", str(weapon.get("effect_type", "NONE")))
-        set_cell("effect_lv", str(int(weapon.get("effect_lv", 0))))
-        set_cell("effect_value", str(int(weapon.get("effect_value", 0))))
+        # シートに存在する列だけ更新（無い列で落とさない）
+        for key, val in mapping.items():
+            if key not in headers:
+                # 必要ならログだけ出す
+                # print(f"[WEAPON FORCE SAVE] column missing: {key}")
+                continue
+            col = headers.index(key) + 1
+            ws.update_cell(row, col, str(val))
 
     return await asyncio.to_thread(_sync)
 
@@ -8384,6 +8388,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
