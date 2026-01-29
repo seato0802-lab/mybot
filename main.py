@@ -7506,9 +7506,9 @@ class DungeonAfterView(discord.ui.View):
 
     def _resume_floor_on_exit(self, sess: dict) -> tuple[int, int]:
         """
-        ✅ 終了後に再開する (world, floor) を決定
+        ✅ 終了時に保存する (world, floor) を決定
         - 勝利時：次フロア（100Fなら次ワールドの1F）
-        - 敗北時：checkpoint 済みの floor をそのまま
+        - 敗北時：チェックポイントに戻した floor
         """
         world = int(sess.get("world", 1) or 1)
         floor = int(sess.get("floor", 1) or 1)
@@ -7518,7 +7518,8 @@ class DungeonAfterView(discord.ui.View):
                 return world + 1, 1
             return world, min(100, floor + 1)
 
-        return world, floor
+        # ✅ 敗北時はチェックポイントへ
+        return world, _checkpoint_floor(floor)
 
     async def _save_floor_on_exit(self, uid: int, sess: dict):
         """
@@ -7785,18 +7786,38 @@ def _battle_one_turn(uid: int) -> str | None:
     if int(sess["player_hp"]) <= 0:
         return "lose"
 
-    # 先攻判定（既存）
-    player_spd = int(spd_tmp)
-    enemy_spd = int(enemy.get("spd", 1) or 1)
-    player_first = _speed_first(player_spd, enemy_spd)
+    p_spd = int(spd_tmp)
+    e_spd = int(enemy["spd"])
 
-    # ✅ SPD差：行動回数（双方に適用）
-    player_actions = _spd_action_count(player_spd, enemy_spd)
-    enemy_actions = _spd_action_count(enemy_spd, player_spd)
+    player_first = _speed_first(p_spd, e_spd)
 
-    # ✅ SPD差：与ダメボーナス（速い側ほど微増）
-    player_bonus = _spd_damage_bonus(player_spd, enemy_spd)
-    enemy_bonus = _spd_damage_bonus(enemy_spd, player_spd)
+    # -----------------------------
+    # SPD差による「複数回行動」決定
+    # - 15差以上：2回
+    # - 30差以上：3回
+    # （必要ならここだけ調整）
+    # -----------------------------
+    def calc_actions(att_spd: int, def_spd: int) -> int:
+        diff = att_spd - def_spd
+        if diff >= 30:
+            return 3
+        if diff >= 15:
+            return 2
+        return 1
+
+    p_actions = calc_actions(p_spd, e_spd)
+    e_actions = calc_actions(e_spd, p_spd)
+
+    # -----------------------------
+    # SPD差ボーナス（ダメージ補正）
+    # - 速い側だけ最大 +20% まで上乗せ
+    # -----------------------------
+    def spd_bonus(att_spd: int, def_spd: int) -> float:
+        diff = att_spd - def_spd
+        if diff <= 0:
+            return 0.0
+        # 1SPD差あたり +0.5%（上限+20%）
+        return min(0.20, diff * 0.005)
 
     def maybe_enemy_apply_debuff():
         if not bool(sess.get("debuff_zone", 0)):
@@ -7809,43 +7830,37 @@ def _battle_one_turn(uid: int) -> str | None:
         elif r < 0.50:
             _try_apply_debuff(sess, "slow", 15)
 
-    # ✅ プレイヤーの1行動
-    def do_player_attack(action_idx: int, total_actions: int) -> str | None:
-        # INSTAKILL は「このターン中の最初の1回だけ」判定（強すぎ防止）
-        if action_idx == 1:
-            if _roll_instakill(sess):
-                enemy["hp"] = 0
-                _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
-                _apply_heal_on_kill(sess)
-                return "win"
+    def do_player_attack() -> str | None:
+        # INSTAKILL（勝利ログは出さない / 返り値だけ）
+        if _roll_instakill(sess):
+            enemy["hp"] = 0
+            _push_log(sess, "💀 特殊効果：即死が発動したのだ！")
+            _apply_heal_on_kill(sess)
+            return "win"
 
-        dmg = _combat_damage(int(atk_tmp), int(enemy["def"]))
-        if player_bonus != 1.0:
-            dmg = int(dmg * player_bonus)
+        base = _combat_damage(int(atk_tmp), int(enemy["def"]))
+        mul = 1.0 + spd_bonus(p_spd, e_spd)
+        dmg = max(1, int(round(base * mul)))
 
         apply_damage_to_enemy(dmg)
-
-        if total_actions > 1:
-            _push_log(sess, f"{pname}の攻撃({action_idx}/{total_actions})！ {ename}に {dmg} ダメージ。")
+        if mul > 1.0:
+            _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。（SPDボーナス）")
         else:
             _push_log(sess, f"{pname}の攻撃！ {ename}に {dmg} ダメージ。")
 
         if int(enemy["hp"]) <= 0:
             _apply_heal_on_kill(sess)
             return "win"
-
         return None
 
-    # ✅ 敵の1行動
-    def do_enemy_attack(action_idx: int, total_actions: int) -> str | None:
-        dmg2 = _combat_damage(int(enemy["atk"]), int(def_tmp))
-        if enemy_bonus != 1.0:
-            dmg2 = int(dmg2 * enemy_bonus)
+    def do_enemy_attack() -> str | None:
+        base = _combat_damage(int(enemy["atk"]), int(def_tmp))
+        mul = 1.0 + spd_bonus(e_spd, p_spd)
+        dmg2 = max(1, int(round(base * mul)))
 
         apply_damage_to_player(dmg2)
-
-        if total_actions > 1:
-            _push_log(sess, f"{ename}の攻撃({action_idx}/{total_actions})！ {pname}に {dmg2} ダメージ。")
+        if mul > 1.0:
+            _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。（SPDボーナス）")
         else:
             _push_log(sess, f"{ename}の攻撃！ {pname}に {dmg2} ダメージ。")
 
@@ -7853,34 +7868,33 @@ def _battle_one_turn(uid: int) -> str | None:
 
         if int(sess["player_hp"]) <= 0:
             return "lose"
-
         return None
 
-    if player_first:
-        # プレイヤー複数回
-        for i in range(1, player_actions + 1):
-            r = do_player_attack(i, player_actions)
-            if r:
-                return r
+    # -----------------------------
+    # 実行：最大回数のループで「先攻側→後攻側」を回す
+    # （片方が多い分は後半で連続行動になる）
+    # -----------------------------
+    loops = max(p_actions, e_actions)
 
-        # 敵複数回
-        for i in range(1, enemy_actions + 1):
-            r = do_enemy_attack(i, enemy_actions)
-            if r:
-                return r
-
-    else:
-        # 敵複数回
-        for i in range(1, enemy_actions + 1):
-            r = do_enemy_attack(i, enemy_actions)
-            if r:
-                return r
-
-        # プレイヤー複数回
-        for i in range(1, player_actions + 1):
-            r = do_player_attack(i, player_actions)
-            if r:
-                return r
+    for i in range(loops):
+        if player_first:
+            if i < p_actions:
+                r = do_player_attack()
+                if r:
+                    return r
+            if i < e_actions:
+                r = do_enemy_attack()
+                if r:
+                    return r
+        else:
+            if i < e_actions:
+                r = do_enemy_attack()
+                if r:
+                    return r
+            if i < p_actions:
+                r = do_player_attack()
+                if r:
+                    return r
 
     return None
 
@@ -8568,6 +8582,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
