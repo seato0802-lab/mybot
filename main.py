@@ -435,7 +435,8 @@ DUNGEON_HEADERS = [
     "effect_type",
     "effect_lv",
     "effect_value",
-    "debuff_zone",         # 0/1（必要なら運用）
+    "debuff_zone",    # 0/1（必要なら運用）
+    "debuff_zone_seg",  # 0=1-20, 1=21-40, 2=41-60...
     "current_debuffs",     # 文字列（必要なら運用）
 ]
 
@@ -905,6 +906,15 @@ def _pick_enemy_visual(world: int, kind: str) -> tuple[str, str | None]:
 
     pick = random.choice(arr)
     return pick.get("name", "敵"), pick.get("url")
+
+def seg_of_floor(floor: int) -> int:
+    f = max(1, int(floor))
+    return (f - 1) // 20  # 0:1-20, 1:21-40, 2:41-60...
+    
+def roll_debuff_zone(world: int) -> int:
+    if int(world) <= 1:
+        return 0
+    return 1 if random.random() < 0.30 else 0
 
 # =========================================================
 # Google Sheets 永続ストア
@@ -1539,6 +1549,7 @@ class DungeonStore:
             "effect_lv": 0,
             "effect_value": 0,
             "debuff_zone": 0,
+            "debuff_zone_seg": -1,
             "current_debuffs": "",
         }
 
@@ -1586,6 +1597,7 @@ class DungeonStore:
                 "effect_lv": gi("effect_lv", 0),
                 "effect_value": gi("effect_value", 0),
                 "debuff_zone": gi("debuff_zone", 0),
+                "debuff_zone_seg": gi("debuff_zone_seg", -1),  # ✅追加（無ければ-1）
                 "current_debuffs": gs("current_debuffs", ""),
             }
 
@@ -7506,21 +7518,18 @@ class DungeonAfterView(discord.ui.View):
     @discord.ui.button(label="➡️ 次のフロアへ", style=discord.ButtonStyle.primary)
     async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
-    
+
         # ✅ ボタンが付いてる「このメッセージ」を必ず保持（これを編集＆これでオートを回す）
         msg = interaction.message
         if not getattr(self, "message", None):
             self.message = msg
-    
+
         async with get_user_lock(uid):
             sess = dungeon_sessions.get(uid)
             if not sess:
-                # ✅ setup側ではなく「個人表示 msg」を編集する（必須）
-                if getattr(self, "message", None):
-                    await self.message.edit(content="", embed=embed, view=None)
-                else:
-                    # ここに落ちるのは異常系。落とさずログだけ出す
-                    print("[GO_NEXT] self.message is None -> cannot edit")
+                # ここでは embed が無いので編集できない。ログだけ。
+                print("[GO_NEXT] sess is None")
+                return
 
             effect_type = sess.get("effect_type", "NONE")
             effect_value = int(sess.get("effect_value", 0) or 0)
@@ -7531,21 +7540,68 @@ class DungeonAfterView(discord.ui.View):
             sess["finished"] = False
 
             if prev_result == "win":
-                # 次フロア（100F勝利なら次ワールド1F）
                 cur_world = int(sess.get("world", 1) or 1)
                 cur_floor = int(sess.get("floor", 1) or 1)
-    
+                cleared_floor = cur_floor  # ✅今倒したフロア
+
+                # 次フロア（100F勝利なら次ワールド1F）
                 if cur_floor >= 100:
                     sess["world"] = cur_world + 1
                     sess["floor"] = 1
+
+                    # ワールド跨ぎは区間管理をリセット（安全）
+                    sess["debuff_zone"] = 0
+                    sess["debuff_zone_seg"] = 0
+                    sess["current_debuffs"] = ""
+
+                    try:
+                        await asyncio.get_running_loop().run_in_executor(
+                            None,
+                            lambda: dungeon_store.save_user_fields(uid, {
+                                "debuff_zone": 0,
+                                "debuff_zone_seg": 0,
+                                "current_debuffs": "",
+                            })
+                        )
+                    except Exception as e:
+                        print("[DEBUFF ZONE WORLD RESET SAVE ERROR]", type(e).__name__, e)
+
                 else:
                     sess["floor"] = cur_floor + 1
 
+                    # ✅ 20/40/60/80を倒した直後に「次区間」を確定
+                    tmp_state = {
+                        "world": int(sess.get("world", 1) or 1),
+                        "debuff_zone": int(sess.get("debuff_zone", 0) or 0),
+                        "debuff_zone_seg": int(sess.get("debuff_zone_seg", -1) or -1),
+                        "current_debuffs": str(sess.get("current_debuffs", "") or ""),
+                    }
+
+                    changed = apply_debuff_zone_transition_after_clear(tmp_state, cleared_floor)
+                    if changed:
+                        sess["debuff_zone"] = int(tmp_state["debuff_zone"])
+                        sess["debuff_zone_seg"] = int(tmp_state["debuff_zone_seg"])
+                        sess["current_debuffs"] = str(tmp_state.get("current_debuffs", "") or "")
+
+                        try:
+                            await asyncio.get_running_loop().run_in_executor(
+                                None,
+                                lambda: dungeon_store.save_user_fields(uid, {
+                                    "debuff_zone": int(sess["debuff_zone"]),
+                                    "debuff_zone_seg": int(sess["debuff_zone_seg"]),
+                                    "current_debuffs": str(sess.get("current_debuffs", "") or ""),
+                                })
+                            )
+                        except Exception as e:
+                            print("[DEBUFF ZONE TRANSITION SAVE ERROR]", type(e).__name__, e)
+
+                # 進んだ後の値で敵生成
                 world = int(sess.get("world", 1) or 1)
                 floor = int(sess.get("floor", 1) or 1)
 
-                debuff_zone = bool(sess.get("debuff_zone", 0))
+                debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
                 sess["enemy"] = generate_enemy(world, floor, debuff_zone=debuff_zone)
+
                 sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
                 _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
@@ -7553,12 +7609,16 @@ class DungeonAfterView(discord.ui.View):
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
             else:
-                # ✅ 敗北時：チェックポイントに戻して再戦（ここで enemy を作り直すのが必須）
+                # ✅ 敗北時：チェックポイントに戻して再戦
                 checkpoint = _checkpoint_floor(int(sess.get("floor", 1) or 1))
                 sess["floor"] = checkpoint
+
+                # ✅ 再抽選しない：戻った区間のsegに合わせるだけ
+                sess["debuff_zone_seg"] = seg_of_floor(checkpoint)
+
                 sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
 
-                debuff_zone = bool(sess.get("debuff_zone", 0))
+                debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
                 sess["enemy"] = generate_enemy(
                     int(sess.get("world", 1) or 1),
                     checkpoint,
@@ -7567,7 +7627,6 @@ class DungeonAfterView(discord.ui.View):
 
                 sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
-                # ※ここは「敗北ログを再表示するだけ」なら消してOK（あなたの好み）
                 _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
                 _push_log(sess, "✨ HPを全回復したのだ。")
                 if sess["shield_now"] > 0:
@@ -7582,7 +7641,7 @@ class DungeonAfterView(discord.ui.View):
             view=None,
         )
 
-       # ✅ オート再開（メッセージ基準で回すのが安定）
+        # ✅ オート再開（メッセージ基準で回すのが安定）
         old = dungeon_auto_tasks.pop(uid, None)
         if old and not old.done():
             old.cancel()
@@ -7792,7 +7851,26 @@ async def start_battle_step(interaction: discord.Interaction):
 
             world = int(state.get("world", 1) or 1)
             floor = int(state.get("floor", 1) or 1)
-            debuff_zone = bool(state.get("debuff_zone", 0))
+
+            # ✅ ここを追加：segズレを直して固定（再抽選はしない）
+            fixed = normalize_debuff_zone_state(state)
+            if fixed:
+                try:
+                    # dungeon シートへ保存（DungeonStore があるのでこれでOK）
+                    await asyncio.get_running_loop().run_in_executor(
+                        None,
+                        lambda: dungeon_store.save_user_fields(uid, {
+                            "debuff_zone": int(state.get("debuff_zone", 0) or 0),
+                            "debuff_zone_seg": int(state.get("debuff_zone_seg", -1) or -1),
+                            "current_debuffs": str(state.get("current_debuffs", "") or ""),
+                        })
+                    )
+                except Exception as e:
+                    print("[DEBUFF ZONE FIX SAVE ERROR]", type(e).__name__, e)
+
+            debuff_zone = bool(int(state.get("debuff_zone", 0) or 0))
+            debuff_zone_seg = int(state.get("debuff_zone_seg", -1) or -1)
+
         except Exception as e:
             await interaction.edit_original_response(
                 content=f"❌ ステータス計算で失敗したのだ…\n```{type(e).__name__}: {e}```",
@@ -7827,6 +7905,8 @@ async def start_battle_step(interaction: discord.Interaction):
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
             "debuff_zone": int(debuff_zone),
+            "debuff_zone_seg": int(debuff_zone_seg),          # ✅追加
+            "current_debuffs": str(state.get("current_debuffs", "") or ""),  # ✅あれば載せる
         }
         dungeon_sessions[uid] = sess
 
@@ -8077,6 +8157,48 @@ async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
 
     except asyncio.CancelledError:
         return
+
+def apply_debuff_zone_transition_after_clear(state: dict, cleared_floor: int) -> bool:
+    """
+    cleared_floor をクリアした直後に呼ぶ。
+    20/40/60/80 なら、次区間(21/41/61/81...)のデバフゾーンを抽選して確定する。
+    戻り値: stateを書き換えたらTrue
+    """
+    f = int(cleared_floor)
+    if f % 20 != 0:
+        return False  # 区間境目じゃない
+
+    world = int(state.get("world", 1) or 1)
+
+    next_floor = f + 1
+    next_seg = seg_of_floor(next_floor)
+
+    # すでに次segが確定済みなら再抽選しない（多重実行対策）
+    if int(state.get("debuff_zone_seg", -1) or -1) == next_seg:
+        return False
+
+    state["debuff_zone"] = roll_debuff_zone(world)
+    state["debuff_zone_seg"] = next_seg
+    state["current_debuffs"] = ""  # 区間変わるのでリセット推奨
+    return True
+
+def normalize_debuff_zone_state(state: dict) -> bool:
+    """
+    戦闘開始前に呼ぶ保険。
+    現在floorのsegと debuff_zone_seg がズレてる場合、
+    既存の debuff_zone を維持したまま seg を合わせて固定する（再抽選しない）。
+    """
+    cur_floor = int(state.get("floor", 1) or 1)
+    cur_seg = seg_of_floor(cur_floor)
+    saved_seg = int(state.get("debuff_zone_seg", -1) or -1)
+
+    if saved_seg == cur_seg:
+        return False
+
+    # 再抽選はしない。今のdebuff_zoneをそのsegのものとして固定する
+    state["debuff_zone_seg"] = cur_seg
+    state.setdefault("debuff_zone", 0)
+    return True
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -8384,6 +8506,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
