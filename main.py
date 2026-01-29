@@ -7592,7 +7592,11 @@ class DungeonAfterView(discord.ui.View):
             return
 
         try:
-            await self.message.edit(content="", embed=embed, view=None)
+            await self.message.edit(
+                content="",
+                embed=embed,
+                view=None,
+            )
         except Exception as e:
             print("[DUNGEON TIMEOUT EDIT ERROR]", type(e).__name__, e)
 
@@ -7872,6 +7876,20 @@ async def _force_update_user_coins_async(uid: int, coins: int):
         ws.update_cell(row, col_coins, str(int(coins)))
 
     return await asyncio.to_thread(_sync)
+
+def _resume_floor_on_exit(sess: dict) -> int:
+    """
+    終了時に保存する floor を決める。
+    - 直前が勝利（battle_result==win）なら「次のフロア」を保存
+    - それ以外は現在の floor を保存
+    """
+    cur = int(sess.get("floor", 1) or 1)
+
+    if sess.get("battle_result") == "win":
+        return min(100, cur + 1)
+
+    return cur
+
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -8179,6 +8197,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
