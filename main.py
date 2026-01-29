@@ -859,7 +859,7 @@ def _w5_seg_index(floor: int) -> int:
 def _roll_w5_zone() -> int:
     # 好みで重み付けも可能
     # return random.choices([1,2,3,4,5], weights=[22,22,20,20,16], k=1)[0]
-    return random.choice([1, 2, 3, 4, 5])
+    return 
 
 
 def ensure_w5_zone(sess: dict) -> int:
@@ -7691,32 +7691,33 @@ class DungeonAfterView(discord.ui.View):
                 cur_floor = int(sess.get("floor", 1) or 1)
                 cleared_floor = cur_floor  # ✅今倒したフロア
 
-                # 次フロア（100F勝利なら次ワールド1F）
-                if cur_floor >= 100 and cur_world < 5:
-                    sess["world"] = cur_world + 1
-                    sess["floor"] = 1
-                elif cur_floor >= 100 and cur_world >= 5:
-                    # ✅ W5は無限：100を超えてもworldは増やさず floor だけ進める（例）
-                    sess["floor"] = cur_floor + 1
-                else:
-                    sess["floor"] = cur_floor + 1
+                # 次フロア（100F勝利なら次ワールド1F / ただしW5以降は無限）
+                if cur_floor >= 100:
+                    if cur_world < 5:
+                        sess["world"] = cur_world + 1
+                        sess["floor"] = 1
 
-                    # ワールド跨ぎは区間管理をリセット（安全）
-                    sess["debuff_zone"] = 0
-                    sess["debuff_zone_seg"] = 0
-                    sess["current_debuffs"] = ""
+                        # ワールド跨ぎは区間管理をリセット（安全）
+                        sess["debuff_zone"] = 0
+                        sess["debuff_zone_seg"] = 0
+                        sess["current_debuffs"] = ""
 
-                    try:
-                        await asyncio.get_running_loop().run_in_executor(
-                            None,
-                            lambda: dungeon_store.save_user_fields(uid, {
-                                "debuff_zone": 0,
-                                "debuff_zone_seg": 0,
-                                "current_debuffs": "",
-                            })
-                        )
-                    except Exception as e:
-                        print("[DEBUFF ZONE WORLD RESET SAVE ERROR]", type(e).__name__, e)
+                        try:
+                            await asyncio.get_running_loop().run_in_executor(
+                                None,
+                                lambda: dungeon_store.save_user_fields(uid, {
+                                    "debuff_zone": 0,
+                                    "debuff_zone_seg": 0,
+                                    "current_debuffs": "",
+                                })
+                            )
+                        except Exception as e:
+                            print("[DEBUFF ZONE WORLD RESET SAVE ERROR]", type(e).__name__, e)
+
+                    else:
+                        # ✅ W5は無限：worldは増やさず floor だけ進める
+                        sess["world"] = cur_world  # 念のため据え置き
+                        sess["floor"] = cur_floor + 1
 
                 else:
                     sess["floor"] = cur_floor + 1
@@ -7975,13 +7976,12 @@ def _battle_one_turn(uid: int) -> str | None:
 
         if hard:
             # ✅ ⑤：デバフ必須ゾーン（強化版）
-            # base_chance_pct を上げる（耐性は _try_apply_debuff 内で反映される）
             if r < 0.25:
-                _try_apply_debuff(sess, "poison", 30)  # ←強化（例：20→30）
+                _try_apply_debuff(sess, "poison", 30)
             elif r < 0.45:
-            _try_apply_debuff(sess, "weak", 25)    # ←強化（例：15→25）
+                _try_apply_debuff(sess, "weak", 25)
             elif r < 0.65:
-            _try_apply_debuff(sess, "slow", 25)    # ←強化（例：15→25）
+                _try_apply_debuff(sess, "slow", 25)
             return
 
         # ✅ 通常版（既存）
@@ -8744,6 +8744,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
