@@ -7923,6 +7923,54 @@ def _next_world_floor(world: int, floor: int) -> tuple[int, int]:
         return w + 1, 1
     return w, f + 1
 
+async def _auto_battle_loop_msg(uid: int, msg: discord.Message):
+    try:
+        while True:
+            async with get_user_lock(uid):
+                sess = dungeon_sessions.get(uid)
+                if not sess:
+                    return
+
+                result = _battle_one_turn(uid)
+                embed = _build_battle_embed(sess)
+
+            # ✅ message を直接更新（interactionに依存しない）
+            try:
+                await msg.edit(content="", embed=embed, view=None)
+            except discord.HTTPException as e:
+                print("[AUTO MSG EDIT ERROR]", type(e).__name__, e)
+                return
+
+            if result in ("win", "lose"):
+                # 報酬処理（ログ追加＆保存）
+                await _finish_battle(uid, result, interaction=None)
+
+                async with get_user_lock(uid):
+                    sess = dungeon_sessions.get(uid)
+                    if not sess:
+                        return
+                    sess["battle_result"] = result
+                    sess["finished"] = True
+                    final_embed = _build_battle_embed(sess)
+
+                # 最終結果表示
+                try:
+                    await msg.edit(content="", embed=final_embed, view=None)
+                except Exception as e:
+                    print("[FINAL MSG EDIT ERROR]", type(e).__name__, e)
+
+                # AfterView 付与（message を渡す）
+                try:
+                    await msg.edit(view=DungeonAfterView(uid, message=msg))
+                except Exception as e:
+                    print("[AFTER VIEW ERROR]", type(e).__name__, e)
+
+                return
+
+            await asyncio.sleep(AUTO_TICK_SEC)
+
+    except asyncio.CancelledError:
+        return
 
 # -----------------------------
 # ガチャUI（結果表示→Select→確定）
@@ -8230,6 +8278,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
