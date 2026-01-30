@@ -8829,10 +8829,6 @@ class DungeonEntryView(discord.ui.View):
         
 @bot.tree.command(name="setup_dungeon", description="ダンジョン入口メッセージを設置するのだ（管理者のみ）")
 async def setup_dungeon_cmd(interaction: discord.Interaction):
-    if not is_admin_user(interaction):
-        await safe_send(interaction, "管理者だけ使えるのだ。", ephemeral=True)
-        return
-
     if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
         await safe_send(interaction, "設定したチャンネルで実行するのだ。", ephemeral=True)
         return
@@ -8982,6 +8978,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
