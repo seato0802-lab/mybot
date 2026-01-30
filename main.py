@@ -913,13 +913,12 @@ def ensure_w5_zone(sess: dict):
 
 def apply_w5_zone_modifiers(sess: dict, enemy: dict):
     """
-    W5ゾーン効果を enemy に反映
-    指定：
-    ① ATKは今の補正、DEF×0.5、SPD×0.8
-    ② SPDは今の補正、DEF×0.8、ATK補正なし
-    ③ HPは今の補正、その他×0.9
-    ④ DEFは今の補正、ATK×1.2、SPD×0.3
-    ⑤ デバフ以外補正なし
+    W5ゾーン効果を enemy に反映（③を基準に全ゾーンを調整）
+    ① 高火力：ATK大幅↑ / DEF↓ / SPD↓ / HP微増
+    ② 高速：SPD大幅↑ / DEF↓ / ATK微増 / HP微増（行動上限2）
+    ③ 超HP：HP大幅↑ / ATK微増 / DEF微増 / SPDほぼ据え置き（行動上限2）
+    ④ 超防御：DEF大幅↑ / ATK↑ / SPD大幅↓ / HP微増
+    ⑤ デバフ：数値ほぼ据え置き（HPだけ微増）＋デバフ強化（行動上限1）
     """
     zone = int(sess.get("w5_zone", 0) or 0)
     if zone not in (1, 2, 3, 4, 5):
@@ -930,75 +929,120 @@ def apply_w5_zone_modifiers(sess: dict, enemy: dict):
     base_spd = int(enemy.get("spd", 0) or 0)
     base_hp = int(enemy.get("hp", 0) or 0)
 
-    kind = enemy.get("kind", "mob")  # "mob"/"midboss"/"boss" があれば利用
+    kind = enemy.get("kind", "mob")  # "mob"/"midboss"/"boss"
 
     def clamp_int(v: float, lo: int = 0) -> int:
         x = int(round(v))
         return lo if x < lo else x
 
+    is_boss = (kind == "boss")
+    is_midboss = (kind == "midboss")
+
+    # -------------- zone 1 --------------
     if zone == 1:
-        # ①：ATK上げ（今の補正） / DEF×0.5 / SPD×0.8
-        add_atk = int(base_atk * random.uniform(0.22, 0.35))
-        enemy["atk"] = base_atk + max(10, add_atk)
-        enemy["def"] = clamp_int(base_def * 0.5, 0)
-        enemy["spd"] = clamp_int(base_spd * 0.8, 0)
-        enemy["hp"] = int(base_hp * random.uniform(1.00, 1.06))
+        # ①：高火力短期決戦（上限武器でも事故る）
+        if is_boss:
+            atk_mul = random.uniform(1.35, 1.55)
+            hp_mul  = random.uniform(1.10, 1.20)
+        elif is_midboss:
+            atk_mul = random.uniform(1.28, 1.45)
+            hp_mul  = random.uniform(1.06, 1.14)
+        else:
+            atk_mul = random.uniform(1.22, 1.38)
+            hp_mul  = random.uniform(1.04, 1.10)
 
+        enemy["atk"] = clamp_int(base_atk * atk_mul, 1)
+        enemy["def"] = clamp_int(base_def * random.uniform(0.45, 0.65), 0)
+        enemy["spd"] = clamp_int(base_spd * random.uniform(0.70, 0.88), 1)
+        enemy["hp"]  = clamp_int(base_hp  * hp_mul, 10)
+
+    # -------------- zone 2 --------------
     elif zone == 2:
-        # ②：SPD上げ（今の補正） / DEF×0.8 / ATK補正なし
-        add_spd = int(base_spd * random.uniform(0.25, 0.45))
-        enemy["spd"] = base_spd + max(10, add_spd)
-        enemy["def"] = clamp_int(base_def * 0.8, 0)
-        enemy["atk"] = base_atk
-        enemy["hp"] = int(base_hp * random.uniform(1.00, 1.05))
+        # ②：高速手数（行動は暴れないよう上限2）
+        if is_boss:
+            spd_mul = random.uniform(1.45, 1.70)
+            atk_mul = random.uniform(1.05, 1.15)
+            hp_mul  = random.uniform(1.08, 1.18)
+        elif is_midboss:
+            spd_mul = random.uniform(1.40, 1.62)
+            atk_mul = random.uniform(1.03, 1.12)
+            hp_mul  = random.uniform(1.05, 1.14)
+        else:
+            spd_mul = random.uniform(1.35, 1.55)
+            atk_mul = random.uniform(1.02, 1.10)
+            hp_mul  = random.uniform(1.03, 1.10)
 
-        # SPDゾーンは敵の追加行動を暴れさせない
+        enemy["spd"] = clamp_int(base_spd * spd_mul, 1)
+        enemy["def"] = clamp_int(base_def * random.uniform(0.65, 0.82), 0)
+        enemy["atk"] = clamp_int(base_atk * atk_mul, 1)
+        enemy["hp"]  = clamp_int(base_hp  * hp_mul, 10)
+
         sess["enemy_actions_cap"] = 2
 
+    # -------------- zone 3 --------------
     elif zone == 3:
-        # ③：HP高め + じわっと攻撃/防御も上げる（上限武器でも簡単になりにくい）
-        # 目的：長期戦にして被弾リスクを増やす
-
-        is_boss = (kind == "boss")
-
-        # HPは少し抑えめにして、その分 ATK/DEF を上げる
+        # ③：超HPゾーン（長期戦・事故誘発）
         if is_boss:
-            hp_mul_lo, hp_mul_hi = 1.55, 1.85
+            hp_mul_lo, hp_mul_hi = 2.30, 2.90
             atk_mul_lo, atk_mul_hi = 1.10, 1.22
-            def_mul_lo, def_mul_hi = 1.05, 1.18
-            spd_mul_lo, spd_mul_hi = 1.00, 1.10
-        else:
-            hp_mul_lo, hp_mul_hi = 1.40, 1.70
+            def_mul_lo, def_mul_hi = 1.05, 1.15
+            spd_mul_lo, spd_mul_hi = 0.95, 1.05
+        elif is_midboss:
+            hp_mul_lo, hp_mul_hi = 2.00, 2.50
             atk_mul_lo, atk_mul_hi = 1.08, 1.18
             def_mul_lo, def_mul_hi = 1.03, 1.12
-            spd_mul_lo, spd_mul_hi = 1.00, 1.08
+            spd_mul_lo, spd_mul_hi = 0.95, 1.05
+        else:
+            hp_mul_lo, hp_mul_hi = 1.85, 2.30
+            atk_mul_lo, atk_mul_hi = 1.05, 1.15
+            def_mul_lo, def_mul_hi = 1.02, 1.10
+            spd_mul_lo, spd_mul_hi = 0.95, 1.05
 
-        enemy["hp"]  = int(base_hp  * random.uniform(hp_mul_lo,  hp_mul_hi))
-        enemy["atk"] = clamp_int(base_atk * random.uniform(atk_mul_lo, atk_mul_hi), 0)
+        enemy["hp"]  = clamp_int(base_hp  * random.uniform(hp_mul_lo,  hp_mul_hi), 10)
+        enemy["atk"] = clamp_int(base_atk * random.uniform(atk_mul_lo, atk_mul_hi), 1)
         enemy["def"] = clamp_int(base_def * random.uniform(def_mul_lo, def_mul_hi), 0)
-        enemy["spd"] = clamp_int(base_spd * random.uniform(spd_mul_lo, spd_mul_hi), 0)
+        enemy["spd"] = clamp_int(base_spd * random.uniform(spd_mul_lo, spd_mul_hi), 1)
 
-        # 暴れすぎ防止：HPゾーンでも追加行動を抑える（任意）
         sess["enemy_actions_cap"] = 2
 
+    # -------------- zone 4 --------------
     elif zone == 4:
-        # ④：DEF上げ（今の補正） / ATK×1.2 / SPD×0.3
-        add_def = int(base_def * random.uniform(0.28, 0.55))
-        enemy["def"] = base_def + max(10, add_def)
-        enemy["atk"] = clamp_int(base_atk * 1.2, 0)
-        enemy["spd"] = clamp_int(base_spd * 0.3, 0)
-        enemy["hp"] = int(base_hp * random.uniform(1.00, 1.10))
+        # ④：超防御（硬い＋痛い、ただし遅い）
+        if is_boss:
+            def_mul = random.uniform(1.55, 1.95)
+            atk_mul = random.uniform(1.18, 1.32)
+            hp_mul  = random.uniform(1.12, 1.25)
+            spd_mul = random.uniform(0.25, 0.40)
+        elif is_midboss:
+            def_mul = random.uniform(1.45, 1.80)
+            atk_mul = random.uniform(1.14, 1.28)
+            hp_mul  = random.uniform(1.08, 1.18)
+            spd_mul = random.uniform(0.25, 0.42)
+        else:
+            def_mul = random.uniform(1.35, 1.65)
+            atk_mul = random.uniform(1.12, 1.25)
+            hp_mul  = random.uniform(1.05, 1.15)
+            spd_mul = random.uniform(0.25, 0.45)
 
+        enemy["def"] = clamp_int(base_def * def_mul, 0)
+        enemy["atk"] = clamp_int(base_atk * atk_mul, 1)
+        enemy["spd"] = clamp_int(base_spd * spd_mul, 1)
+        enemy["hp"]  = clamp_int(base_hp  * hp_mul, 10)
+
+    # -------------- zone 5 --------------
     elif zone == 5:
-        # ⑤：デバフ以外補正なし（数値は触らない）
+        # ⑤：デバフ主役（数値はほぼ据え置き。ただしHPだけ少し増やして“耐える”）
         enemy["atk"] = base_atk
         enemy["def"] = base_def
         enemy["spd"] = base_spd
-        enemy["hp"] = base_hp
+        enemy["hp"]  = clamp_int(base_hp * random.uniform(1.05, 1.15), 10)
 
-        # デバフ強化（battle側で参照）
         sess["w5_debuff_zone"] = 1
         sess["enemy_actions_cap"] = 1
+
+    # ✅ どのゾーンでも hp を弄るので max_hp 同期（重要）
+    enemy["hp"] = max(1, int(enemy.get("hp", 1) or 1))
+    enemy["max_hp"] = enemy["hp"]
 
 # -----------------------------
 # ダンジョン報酬（コイン）
@@ -8934,6 +8978,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
