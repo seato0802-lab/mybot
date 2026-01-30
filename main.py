@@ -8833,8 +8833,6 @@ async def setup_dungeon_cmd(interaction: discord.Interaction):
         await safe_send(interaction, "管理者だけ使えるのだ。", ephemeral=True)
         return
 
-    # ✅ チャンネル制限をしてないなら、このチェック自体いらない
-    # もし DUNGEON_CHANNEL_ID=None 運用なら is_in_channel は True 返す実装にするか、ここを外す
     if not is_in_channel(interaction, DUNGEON_CHANNEL_ID):
         await safe_send(interaction, "設定したチャンネルで実行するのだ。", ephemeral=True)
         return
@@ -8843,15 +8841,46 @@ async def setup_dungeon_cmd(interaction: discord.Interaction):
 
     embed = discord.Embed(
         title="🏰 ダンジョン",
-        description="入る/次に進むで戦闘が始まるのだ。\nガチャで武器を更新できるのだ。",
+        description=(
+            "このダンジョンは **完全ソロ専用** のローグライクダンジョンなのだ。\n"
+            "ボタン操作だけで奥へ奥へと進んでいくのだ。\n\n"
+
+            "【🎮 基本ルール】\n"
+            "・1人プレイ専用（対人なし）\n"
+            "・1ワールド最大100フロア\n"
+            "・各フロアで敵と1対1バトル\n"
+            "・勝利すると「次のフロアへ」進めるのだ\n\n"
+            "・バトルはすべてオートで攻撃なのだ！\n"
+
+            "【🧪 武器・特殊効果】\n"
+            "・ガチャで武器を当てるのだ！\n"
+            "・武器には特殊効果もあるのだ！\n"
+            "・武器は一つしか持てないのだ！交換したら持ってた武器は消えるのだ！\n\n"
+
+            "【💀 敗北すると】\n"
+            "・今の武器を失って初期武器に戻るのだ\n"
+            "・チェックポイントからやり直しなのだ\n\n"
+
+            "準備ができたら下のボタンから挑戦するのだ！"
+        ),
+        color=0x2ecc71,
     )
-    msg = await interaction.channel.send(embed=embed, view=DungeonEntryView())
 
-    # ✅ ここが「関数の中」なので await OK
-    await sheets_save_config_once_async(DUNGEON_CHANNEL_ID_KEY, str(interaction.channel_id))
-    await sheets_save_config_once_async(DUNGEON_MESSAGE_ID_KEY, str(msg.id))
+    msg = await interaction.channel.send(
+        embed=embed,
+        view=DungeonEntryView()
+    )
 
-    await safe_send(interaction, "設置したのだ。", ephemeral=True)
+    await sheets_save_config_once_async(
+        DUNGEON_CHANNEL_ID_KEY,
+        str(interaction.channel_id)
+    )
+    await sheets_save_config_once_async(
+        DUNGEON_MESSAGE_ID_KEY,
+        str(msg.id)
+    )
+
+    await safe_send(interaction, "ダンジョン入口を設置したのだ。", ephemeral=True)
 
 # =========================================================
 # 起動イベント
@@ -8953,6 +8982,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
