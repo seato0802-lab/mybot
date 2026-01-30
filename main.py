@@ -1068,15 +1068,24 @@ ENEMY_POOLS: dict[int, dict[str, list[dict[str, str]]]] = {
 
 W5_STAT_POOL = {
     "normal": [
-        {"atk": 130, "def": 95,  "spd": 105, "hp": 520},
-        {"atk": 115, "def": 120, "spd": 90,  "hp": 600},
-        {"atk": 150, "def": 80,  "spd": 120, "hp": 460},
+        # バランス型（基準）
+        {"atk": 155, "def": 105, "spd": 105, "hp": 620},
+
+        # 耐久寄り（HPゾーンで長期戦化）
+        {"atk": 145, "def": 125, "spd": 95,  "hp": 700},
+
+        # 高速アタッカー（HPゾーンでも事故りやすい）
+        {"atk": 165, "def": 90,  "spd": 125, "hp": 580},
     ],
+
     "midboss": [
-        {"atk": 165, "def": 120, "spd": 110, "hp": 900},
+        # 中ボスは「HPゾーン③＝明確に危険」にする
+        {"atk": 185, "def": 135, "spd": 115, "hp": 1050},
     ],
+
     "boss": [
-        {"atk": 190, "def": 140, "spd": 120, "hp": 1400},
+        # ボスは上限武器でも油断不可
+        {"atk": 215, "def": 155, "spd": 125, "hp": 1650},
     ],
 }
 
@@ -8920,6 +8929,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
