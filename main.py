@@ -951,15 +951,30 @@ def apply_w5_zone_modifiers(sess: dict, enemy: dict):
         sess["enemy_actions_cap"] = 2
 
     elif zone == 3:
-        # ③：HP倍率（今の補正） / 他×0.9
-        if kind == "boss":
-            enemy["hp"] = int(base_hp * random.uniform(1.65, 1.95))
-        else:
-            enemy["hp"] = int(base_hp * random.uniform(1.45, 1.85))
+        # ③：HP高め + じわっと攻撃/防御も上げる（上限武器でも簡単になりにくい）
+        # 目的：長期戦にして被弾リスクを増やす
 
-        enemy["atk"] = clamp_int(base_atk * 0.9, 0)
-        enemy["def"] = clamp_int(base_def * 0.9, 0)
-        enemy["spd"] = clamp_int(base_spd * 0.9, 0)
+        is_boss = (kind == "boss")
+
+        # HPは少し抑えめにして、その分 ATK/DEF を上げる
+        if is_boss:
+            hp_mul_lo, hp_mul_hi = 1.55, 1.85
+            atk_mul_lo, atk_mul_hi = 1.10, 1.22
+            def_mul_lo, def_mul_hi = 1.05, 1.18
+            spd_mul_lo, spd_mul_hi = 1.00, 1.10
+        else:
+            hp_mul_lo, hp_mul_hi = 1.40, 1.70
+            atk_mul_lo, atk_mul_hi = 1.08, 1.18
+            def_mul_lo, def_mul_hi = 1.03, 1.12
+            spd_mul_lo, spd_mul_hi = 1.00, 1.08
+
+        enemy["hp"]  = int(base_hp  * random.uniform(hp_mul_lo,  hp_mul_hi))
+        enemy["atk"] = clamp_int(base_atk * random.uniform(atk_mul_lo, atk_mul_hi), 0)
+        enemy["def"] = clamp_int(base_def * random.uniform(def_mul_lo, def_mul_hi), 0)
+        enemy["spd"] = clamp_int(base_spd * random.uniform(spd_mul_lo, spd_mul_hi), 0)
+
+        # 暴れすぎ防止：HPゾーンでも追加行動を抑える（任意）
+        sess["enemy_actions_cap"] = 2
 
     elif zone == 4:
         # ④：DEF上げ（今の補正） / ATK×1.2 / SPD×0.3
@@ -8794,6 +8809,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
