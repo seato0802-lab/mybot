@@ -7809,26 +7809,25 @@ class DungeonAfterView(discord.ui.View):
                     if cur_world < 5:
                         sess["world"] = cur_world + 1
                         sess["floor"] = 1
-                        # ✅ 次ワールド突入でHP全回復
+
                         sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
                         _push_log(sess, "🌍 新しいワールドへ！HPが全回復したのだ。")
 
-                        # ワールド跨ぎは区間管理をリセット（安全）
                         sess["debuff_zone"] = 0
                         sess["debuff_zone_seg"] = 0
-                        sess["current_debuffs"] = ""
-                        # ✅ チェックポイント到達（区間が変わった）ならHP全回復
-                        sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
-                        _push_log(sess, "🏁 チェックポイント到達！HPが全回復したのだ。")
+                        sess["current_debuffs"] = []   # ← ここは本当は list 推奨（前に落ちた原因）
+                        # もし表示/保存都合で文字列にしたいなら保存時だけ変換
 
                         try:
                             await asyncio.get_running_loop().run_in_executor(
                                 None,
                                 lambda: dungeon_store.save_user_fields(uid, {
+                                    "world": int(sess["world"]),
+                                    "floor": int(sess["floor"]),
+                                    "hp": int(sess["player_hp"]),
                                     "debuff_zone": 0,
                                     "debuff_zone_seg": 0,
-                                    "current_debuffs": "",
-                                    "hp": int(sess.get("player_hp", 100) or 100),  # ✅これを追加
+                                    "current_debuffs": "",  # ←保存形式が文字列ならここだけ "" でOK
                                 })
                             )
                         except Exception as e:
@@ -7909,13 +7908,13 @@ class DungeonAfterView(discord.ui.View):
                 debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
 
                 # ✅ W5だけ：チェックポイントに戻った後も seg に対応するゾーンへ
-                if world >= 5:
+                if world == 5:
                     ensure_w5_zone(sess)
 
-                enemy = generate_enemy(world, checkpoint, debuff_zone=debuff_zone)
+                enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
 
                 # ✅ W5だけ：ゾーン補正
-                if world >= 5:
+                if world == 5:
                     apply_w5_zone_modifiers(sess, enemy)
 
                 sess["enemy"] = enemy
@@ -8049,7 +8048,7 @@ class DungeonAfterView(discord.ui.View):
             print("[DUNGEON END EDIT ERROR]", type(e).__name__, e)
 
     async def on_timeout(self):
-        await self._end(self.uid, reason="timeout", interaction=None)
+        uid = self.uid  # ✅ここが必要
 
         # ✅ オート戦闘停止
         t = dungeon_auto_tasks.pop(uid, None)
@@ -8068,6 +8067,7 @@ class DungeonAfterView(discord.ui.View):
 
             dungeon_sessions.pop(uid, None)
 
+        # timeoutはinteractionが無いので message が必要
         if not getattr(self, "message", None):
             print("[DUNGEON TIMEOUT] message is None -> cannot edit")
             return
@@ -8978,6 +8978,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
