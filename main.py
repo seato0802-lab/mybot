@@ -7893,6 +7893,8 @@ class DungeonAfterView(discord.ui.View):
     @discord.ui.button(label="🚪 やめる", style=discord.ButtonStyle.secondary)
     async def quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
+        await self._end(uid, reason="quit", interaction=interaction)
+
 
         # ✅ message を必ず掴む
         if not getattr(self, "message", None):
@@ -7932,9 +7934,64 @@ class DungeonAfterView(discord.ui.View):
                 await interaction.response.edit_message(content="", embed=embed, view=None)
         except Exception as e:
             print("[QUIT EDIT ERROR]", type(e).__name__, e)
+    async def _end(
+        self,
+        uid: int,
+        *,
+        reason: str,
+        interaction: discord.Interaction | None = None,
+    ):
+        # ✅ message を必ず掴む（interactionがある時だけ）
+        if interaction and not getattr(self, "message", None):
+            self.message = interaction.message
+
+        # ✅ オート戦闘停止（ロック外でOK）
+        t = dungeon_auto_tasks.pop(uid, None)
+        if t and not t.done():
+            t.cancel()
+
+        async with get_user_lock(uid):
+            sess = dungeon_sessions.get(uid)
+            if not sess:
+                # interactionがある場合だけ編集を試す
+                if interaction:
+                    try:
+                        await interaction.response.edit_message(
+                            content="ダンジョンを終了したのだ。",
+                            embed=None,
+                            view=None,
+                        )
+                    except Exception:
+                        pass
+                return
+
+            # ✅ 「やめる」と同じ扱い：終了時に次回開始地点を保存
+            await self._save_floor_on_exit(uid, sess)
+
+            # ログ（reasonで出し分け）
+            if reason == "timeout":
+                _push_log(sess, "⌛ 操作が行われなかったため、ダンジョンを終了したのだ。")
+            else:
+                _push_log(sess, "🚪 ダンジョンを終了したのだ。")
+
+            embed = _build_battle_embed(sess)
+
+            # ✅ セッション破棄
+            dungeon_sessions.pop(uid, None)
+
+        # ✅ 終了状態に編集（timeoutはinteractionが無いので message 必須）
+        try:
+            if getattr(self, "message", None):
+                await self.message.edit(content="", embed=embed, view=None)
+            elif interaction:
+                await interaction.response.edit_message(content="", embed=embed, view=None)
+            else:
+                print("[DUNGEON END] message is None -> cannot edit")
+        except Exception as e:
+            print("[DUNGEON END EDIT ERROR]", type(e).__name__, e)
 
     async def on_timeout(self):
-        uid = self.uid
+        await self._end(self.uid, reason="timeout", interaction=None)
 
         # ✅ オート戦闘停止
         t = dungeon_auto_tasks.pop(uid, None)
@@ -8412,6 +8469,60 @@ def _resume_floor_on_exit(sess: dict) -> int:
 
     return cur
 
+async def dungeon_end_like_stop(uid: int, *, message: discord.Message | None, reason: str):
+    """
+    「やめる」と同じ扱いで終了する共通処理
+    - progress（world/floor/hp等）を保存
+    - auto task を止める
+    - セッションを閉じる（または finished にする）
+    - 表示を「終了」に更新（ボタン消す）
+    """
+    async with get_user_lock(uid):
+        sess = dungeon_sessions.get(uid)
+        if not sess:
+            return
+
+        # ✅ まず進行度を確実に保存（巻き戻り防止）
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: dungeon_store.save_user_fields(uid, {
+                    "world": int(sess.get("world", 1) or 1),
+                    "floor": int(sess.get("floor", 1) or 1),
+                    "hp": int(sess.get("player_hp", sess.get("hp", 100)) or 100),
+                    "debuff_zone": int(sess.get("debuff_zone", 0) or 0),
+                    "debuff_zone_seg": int(sess.get("debuff_zone_seg", 0) or 0),
+                    "current_debuffs": str(sess.get("current_debuffs", "") or ""),
+                    # W5を使ってるなら保存（列が無いなら消してOK）
+                    "w5_zone": int(sess.get("w5_zone", 1) or 1),
+                    "w5_seg": int(sess.get("w5_seg", 0) or 0),
+                })
+            )
+        except Exception as e:
+            print("[DUNGEON END SAVE ERROR]", type(e).__name__, e)
+
+        # ✅ オート停止
+        t = dungeon_auto_tasks.pop(uid, None)
+        if t and not t.done():
+            t.cancel()
+
+        # ✅ セッション終了フラグ（あなたの設計に合わせて）
+        sess["finished"] = True
+        sess["battle_result"] = "stop"
+        _push_log(sess, f"🛑 終了したのだ（理由: {reason}）")
+
+        # ✅ viewが残って連打されないように、メッセージを編集してボタンを消す
+        if message:
+            try:
+                embed = _build_battle_embed(sess)
+                await message.edit(content="", embed=embed, view=None)
+            except Exception as e:
+                print("[DUNGEON END MESSAGE EDIT ERROR]", type(e).__name__, e)
+
+        # ✅ セッションを消すかどうかは好み
+        # 「やめる＝中断して抜ける」なら消してOK
+        dungeon_sessions.pop(uid, None)
+
 def _next_world_floor(world: int, floor: int) -> tuple[int, int]:
     w = int(world)
     f = int(floor)
@@ -8809,6 +8920,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
