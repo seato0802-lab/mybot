@@ -725,14 +725,8 @@ def _debuff_resist_pct(sess: dict) -> int:
 
 
 def _try_apply_debuff(sess: dict, debuff: str, base_chance_pct: int) -> bool:
-    """
-    デバフ付与（デバフゾーン等で使用）
-    - base_chance_pct: 0〜100
-    - DEBUFF_RESIST がある場合、付与確率を (1 - resist) 倍する
-    """
     base = max(0, min(100, int(base_chance_pct)))
     resist = _debuff_resist_pct(sess)
-    # 実効確率
     eff = int(base * (1.0 - resist / 100.0))
 
     if eff <= 0:
@@ -740,15 +734,26 @@ def _try_apply_debuff(sess: dict, debuff: str, base_chance_pct: int) -> bool:
         return False
 
     if random.randint(1, 100) <= eff:
-        cur = sess.setdefault("current_debuffs", [])
-        if debuff not in cur:
-            cur.append(debuff)
+        # ✅ current_debuffs を必ず list に正規化
+        cur = sess.get("current_debuffs", None)
+
+        if isinstance(cur, list):
+            debuffs = cur
+        elif isinstance(cur, str):
+            s = cur.strip()
+            debuffs = [] if not s else [x.strip() for x in s.split(",") if x.strip()]
+        else:
+            debuffs = []
+
+        if debuff not in debuffs:
+            debuffs.append(debuff)
+
+        sess["current_debuffs"] = debuffs  # ✅必ず list として戻す
+
         _push_log(sess, f"⚠️ デバフ付与：{debuff}（{eff}%判定）")
         return True
 
-    # 失敗（ログ出すと騒がしいので通常は出さない）
     return False
-
 
 def _apply_debuffs_start_of_turn(sess: dict) -> tuple[int, int, int]:
     """
@@ -8929,6 +8934,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
