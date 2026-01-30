@@ -984,9 +984,9 @@ def apply_w5_zone_modifiers(sess: dict, enemy: dict):
         # ③：超HPゾーン（長期戦・事故誘発）
         if is_boss:
             hp_mul_lo, hp_mul_hi = 2.30, 2.90
-            atk_mul_lo, atk_mul_hi = 1.10, 1.22
+            atk_mul_lo, atk_mul_hi = 0.98, 1.08
             def_mul_lo, def_mul_hi = 1.05, 1.15
-            spd_mul_lo, spd_mul_hi = 0.95, 1.05
+            spd_mul_lo, spd_mul_hi = 0.80, 0.90
         elif is_midboss:
             hp_mul_lo, hp_mul_hi = 2.00, 2.50
             atk_mul_lo, atk_mul_hi = 1.08, 1.18
@@ -8978,6 +8978,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
