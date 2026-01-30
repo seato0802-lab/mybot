@@ -7736,11 +7736,17 @@ class DungeonAfterView(discord.ui.View):
                     if cur_world < 5:
                         sess["world"] = cur_world + 1
                         sess["floor"] = 1
+                        # ✅ 次ワールド突入でHP全回復
+                        sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
+                        _push_log(sess, "🌍 新しいワールドへ！HPが全回復したのだ。")
 
                         # ワールド跨ぎは区間管理をリセット（安全）
                         sess["debuff_zone"] = 0
                         sess["debuff_zone_seg"] = 0
                         sess["current_debuffs"] = ""
+                        # ✅ チェックポイント到達（区間が変わった）ならHP全回復
+                        sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
+                        _push_log(sess, "🏁 チェックポイント到達！HPが全回復したのだ。")
 
                         try:
                             await asyncio.get_running_loop().run_in_executor(
@@ -7749,6 +7755,7 @@ class DungeonAfterView(discord.ui.View):
                                     "debuff_zone": 0,
                                     "debuff_zone_seg": 0,
                                     "current_debuffs": "",
+                                    "hp": int(sess.get("player_hp", 100) or 100),  # ✅これを追加
                                 })
                             )
                         except Exception as e:
@@ -7775,6 +7782,9 @@ class DungeonAfterView(discord.ui.View):
                         sess["debuff_zone"] = int(tmp_state["debuff_zone"])
                         sess["debuff_zone_seg"] = int(tmp_state["debuff_zone_seg"])
                         sess["current_debuffs"] = str(tmp_state.get("current_debuffs", "") or "")
+                        # ✅ チェックポイント到達（区間が変わった）ならHP全回復
+                        sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
+                        _push_log(sess, "🏁 チェックポイント到達！HPが全回復したのだ。")
 
                         try:
                             await asyncio.get_running_loop().run_in_executor(
@@ -8784,6 +8794,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
