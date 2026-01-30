@@ -7578,7 +7578,6 @@ def _checkpoint_floor(floor: int) -> int:
     # 1,21,41,61,81 ...
     return 1 + ((f - 1) // 20) * 20
 
-
 async def _finish_battle(uid: int, result: str, interaction=None):
     """
     戦闘終了処理（最小変更版）
@@ -7642,31 +7641,29 @@ async def _finish_battle(uid: int, result: str, interaction=None):
 
     # ✅ ダンジョン進行保存（戦闘終了時だけ）
     # 仕様：
-    # - 途中復帰不要なので「保存HPは常に満タン」
+    # - HPは満タン保存しない（戦闘後の残HPを保存）
     # - 勝利時は「次フロア（100Fなら次ワールド1F / W5以降は無限でworld据え置き）」を保存
-    # - 敗北時は「チェックポイント」を保存
+    # - 敗北時は「チェックポイント」を保存（HPは残HPのまま）
     try:
         cur_world = int(sess.get("world", 1) or 1)
         cur_floor = int(sess.get("floor", 1) or 1)
 
-        # 戦闘開始時に満タンで始める前提なので max_hp を保存
-        max_hp = int(sess.get("max_hp", 100) or 100)
+        # ✅ 残HPを保存（0以下なら1に丸め）
+        hp_to_save = int(sess.get("player_hp", 1) or 1)
+        hp_to_save = max(1, hp_to_save)
 
         if result == "win":
-            # 次フロアへ
             if cur_floor >= 100:
                 if cur_world < 5:
                     save_world = cur_world + 1
                     save_floor = 1
                 else:
-                    # W5以降は無限：world据え置きで floor+1
                     save_world = cur_world
                     save_floor = cur_floor + 1
             else:
                 save_world = cur_world
                 save_floor = cur_floor + 1
         else:
-            # 敗北はチェックポイントへ
             save_world = cur_world
             save_floor = _checkpoint_floor(cur_floor)
 
@@ -7674,44 +7671,13 @@ async def _finish_battle(uid: int, result: str, interaction=None):
             uid=uid,
             world=int(save_world),
             floor=int(save_floor),
-            hp=int(max_hp),  # ✅ 途中復帰不要：常に満タンを保存
+            hp=int(hp_to_save),  # ✅ 満タン禁止：残HP保存
         )
 
-        # ログ（任意）
         _push_log(sess, f"📍 次回は {int(save_world)}-{int(save_floor)}F から開始なのだ。")
 
     except Exception as e:
         print("[DUNGEON SAVE ERROR]", type(e).__name__, e)
-
-    # ✅ ユーザーデータ保存（coins・武器情報を反映）
-    try:
-        await sheets_upsert_async(u)
-    except Exception as e:
-        print("[USER SAVE ERROR]", type(e).__name__, e)
-
-    # ✅ coins 保険（あなたの既存のまま）
-    try:
-        await _force_update_user_coins_async(uid, int(u.get("coins", 0)))
-    except Exception as e:
-        print("[COINS FORCE SAVE ERROR]", type(e).__name__, e)
-
-    # ✅ 武器は dungeon シートへ強制更新（敗北時のみ）
-    if result != "win":
-        try:
-            await _force_update_dungeon_weapon_async(
-                uid,
-                {
-                    "weapon_name": sess.get("weapon_name", "初期武器"),
-                    "weapon_atk": int(sess.get("atk", 10)),
-                    "weapon_def": int(sess.get("def", 10)),
-                    "weapon_spd": int(sess.get("spd", 10)),
-                    "effect_type": sess.get("effect_type", "NONE"),
-                    "effect_lv": int(sess.get("effect_lv", 0)),
-                    "effect_value": int(sess.get("effect_value", 0)),
-                },
-            )
-        except Exception as e:
-            print("[DUNGEON WEAPON FORCE SAVE ERROR]", type(e).__name__, e)
 
 def _build_battle_text(sess: dict) -> str:
     enemy = sess["enemy"]
@@ -7807,134 +7773,155 @@ class DungeonAfterView(discord.ui.View):
             f"📍 次回は {int(save_world)}-{int(save_floor)}F から開始なのだ。",
         )
 
-    @discord.ui.button(label="➡️ 次のフロアへ", style=discord.ButtonStyle.primary)
-    async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
-        uid = interaction.user.id
+@discord.ui.button(label="➡️ 次のフロアへ", style=discord.ButtonStyle.primary)
+async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
+    uid = interaction.user.id
 
-        # ✅ ボタンが付いてる「このメッセージ」を必ず保持（これを編集＆これでオートを回す）
-        msg = interaction.message
-        if not getattr(self, "message", None):
-            self.message = msg
+    # ✅ ボタンが付いてる「このメッセージ」を必ず保持（これを編集＆これでオートを回す）
+    msg = interaction.message
+    if not getattr(self, "message", None):
+        self.message = msg
 
-        async with get_user_lock(uid):
-            sess = dungeon_sessions.get(uid)
-            if not sess:
-                # ここでは embed が無いので編集できない。ログだけ。
-                print("[GO_NEXT] sess is None")
-                return
+    async with get_user_lock(uid):
+        sess = dungeon_sessions.get(uid)
+        if not sess:
+            print("[GO_NEXT] sess is None")
+            return
 
-            effect_type = sess.get("effect_type", "NONE")
-            effect_value = int(sess.get("effect_value", 0) or 0)
+        effect_type = sess.get("effect_type", "NONE")
+        effect_value = int(sess.get("effect_value", 0) or 0)
 
-            # ✅ 直前結果を保持して解除（勝利/敗北どちらでも再戦できるように）
-            prev_result = sess.get("battle_result")
-            sess.pop("battle_result", None)
-            sess["finished"] = False
+        # ✅ 直前結果を保持して解除（勝利/敗北どちらでも再戦できるように）
+        prev_result = sess.get("battle_result")
+        sess.pop("battle_result", None)
+        sess["finished"] = False
 
-            if prev_result == "win":
-                cur_world = int(sess.get("world", 1) or 1)
-                cur_floor = int(sess.get("floor", 1) or 1)
-                cleared_floor = cur_floor  # ✅今倒したフロア
+        if prev_result == "win":
+            cur_world = int(sess.get("world", 1) or 1)
+            cur_floor = int(sess.get("floor", 1) or 1)
+            cleared_floor = cur_floor  # ✅今倒したフロア
 
-                # 次フロア（100F勝利なら次ワールド1F / ただしW5以降は無限）
-                if cur_floor >= 100:
-                    if cur_world < 5:
-                        sess["world"] = cur_world + 1
-                        sess["floor"] = 1
+            # 次フロア（100F勝利なら次ワールド1F / ただしW5以降は無限）
+            if cur_floor >= 100:
+                if cur_world < 5:
+                    sess["world"] = cur_world + 1
+                    sess["floor"] = 1
 
-                        sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
-                        _push_log(sess, "🌍 新しいワールドへ！HPが全回復したのだ。")
+                    sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
+                    _push_log(sess, "🌍 新しいワールドへ！HPが全回復したのだ。")
 
-                        sess["debuff_zone"] = 0
-                        sess["debuff_zone_seg"] = 0
-                        sess["current_debuffs"] = []   # ← ここは本当は list 推奨（前に落ちた原因）
-                        # もし表示/保存都合で文字列にしたいなら保存時だけ変換
-
-                    else:
-                        # ✅ W5は無限：worldは増やさず floor だけ進める
-                        sess["world"] = cur_world  # 念のため据え置き
-                        sess["floor"] = cur_floor + 1
-
+                    sess["debuff_zone"] = 0
+                    sess["debuff_zone_seg"] = 0
+                    sess["current_debuffs"] = []
                 else:
+                    # ✅ W5は無限：worldは増やさず floor だけ進める
+                    sess["world"] = cur_world
                     sess["floor"] = cur_floor + 1
-
-                    # ✅ 20/40/60/80を倒した直後に「次区間」を確定
-                    tmp_state = {
-                        "world": int(sess.get("world", 1) or 1),
-                        "debuff_zone": int(sess.get("debuff_zone", 0) or 0),
-                        "debuff_zone_seg": int(sess.get("debuff_zone_seg", -1) or -1),
-                        "current_debuffs": str(sess.get("current_debuffs", "") or ""),
-                    }
-
-                    changed = apply_debuff_zone_transition_after_clear(tmp_state, cleared_floor)
-                    if changed:
-                        sess["debuff_zone"] = int(tmp_state["debuff_zone"])
-                        sess["debuff_zone_seg"] = int(tmp_state["debuff_zone_seg"])
-                        sess["current_debuffs"] = str(tmp_state.get("current_debuffs", "") or "")
-                        # ✅ チェックポイント到達（区間が変わった）ならHP全回復
-                        sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
-                        _push_log(sess, "🏁 チェックポイント到達！HPが全回復したのだ。")
-
-
-                # 進んだ後の値で敵生成
-                world = int(sess.get("world", 1) or 1)
-                floor = int(sess.get("floor", 1) or 1)
-
-                debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
-
-                # ✅ W5だけ：20Fごとにゾーン確定
-                if world >= 5:
-                    ensure_w5_zone(sess)
-
-                enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
-
-                # ✅ W5だけ：ゾーン補正
-                if world >= 5:
-                    apply_w5_zone_modifiers(sess, enemy)
-
-                sess["enemy"] = enemy
-
-                sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
-
-                _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
-                if sess["shield_now"] > 0:
-                    _push_log(sess, "🛡 シールドが全回復したのだ。")
-
             else:
-                # ✅ 敗北時：チェックポイントに戻して再戦
-                checkpoint = _checkpoint_floor(int(sess.get("floor", 1) or 1))
-                sess["floor"] = checkpoint
+                sess["floor"] = cur_floor + 1
 
-                # ✅ segだけ合わせる
-                sess["debuff_zone_seg"] = seg_of_floor(checkpoint)
+                # ✅ 20/40/60/80を倒した直後に「次区間」を確定
+                tmp_state = {
+                    "world": int(sess.get("world", 1) or 1),
+                    "debuff_zone": int(sess.get("debuff_zone", 0) or 0),
+                    "debuff_zone_seg": int(sess.get("debuff_zone_seg", -1) or -1),
+                    "current_debuffs": str(sess.get("current_debuffs", "") or ""),
+                }
 
-                # ✅ 途中復帰不要：HP満タン
-                sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
+                changed = apply_debuff_zone_transition_after_clear(tmp_state, cleared_floor)
+                if changed:
+                    sess["debuff_zone"] = int(tmp_state["debuff_zone"])
+                    sess["debuff_zone_seg"] = int(tmp_state["debuff_zone_seg"])
+                    sess["current_debuffs"] = str(tmp_state.get("current_debuffs", "") or "")
+                    # ✅ チェックポイント到達（区間が変わった）ならHP全回復
+                    sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
+                    _push_log(sess, "🏁 チェックポイント到達！HPが全回復したのだ。")
 
-                world = int(sess.get("world", 1) or 1)
-                floor = int(sess.get("floor", checkpoint) or checkpoint)  # ✅ ここで floor を確定
-                debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
+            # 進んだ後の値で敵生成
+            world = int(sess.get("world", 1) or 1)
+            floor = int(sess.get("floor", 1) or 1)
+            debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
 
-                # ✅ W5だけ：チェックポイントに戻った後もゾーンへ
-                if world >= 5:
-                    ensure_w5_zone(sess)
+            # ✅ W5だけ：20Fごとにゾーン確定
+            if world >= 5:
+                ensure_w5_zone(sess)
 
-                enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
+            enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
 
-                # ✅ W5だけ：ゾーン補正
-                if world >= 5:
-                    apply_w5_zone_modifiers(sess, enemy)
+            # ✅ W5だけ：ゾーン補正
+            if world >= 5:
+                apply_w5_zone_modifiers(sess, enemy)
 
-                sess["enemy"] = enemy
+            sess["enemy"] = enemy
+            sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
 
-                sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
+            _push_log(sess, "➡️ 次のフロアへ進んだのだ！")
+            if sess["shield_now"] > 0:
+                _push_log(sess, "🛡 シールドが全回復したのだ。")
 
-                _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
-                _push_log(sess, "✨ HPを全回復したのだ。")
-                if sess["shield_now"] > 0:
-                    _push_log(sess, "🛡 シールドが全回復したのだ。")
+        else:
+            # ✅ 敗北時：チェックポイントに戻して再戦
+            checkpoint = _checkpoint_floor(int(sess.get("floor", 1) or 1))
+            sess["floor"] = checkpoint
 
-            embed = _build_battle_embed(sess)
+            # ✅ segだけ合わせる
+            sess["debuff_zone_seg"] = seg_of_floor(checkpoint)
+
+            # ✅ go_next の挙動は正しいとのことなので現状維持
+            sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
+
+            world = int(sess.get("world", 1) or 1)
+            floor = int(sess.get("floor", checkpoint) or checkpoint)
+            debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
+
+            # ✅ W5だけ：チェックポイントに戻った後もゾーンへ
+            if world >= 5:
+                ensure_w5_zone(sess)
+
+            enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
+
+            # ✅ W5だけ：ゾーン補正
+            if world >= 5:
+                apply_w5_zone_modifiers(sess, enemy)
+
+            sess["enemy"] = enemy
+            sess["shield_now"] = int(get_player_shield_max(effect_type, effect_value))
+
+            _push_log(sess, f"💀 敗北したためチェックポイント（{checkpoint}F）に戻ったのだ。")
+            _push_log(sess, "✨ HPを全回復したのだ。")
+            if sess["shield_now"] > 0:
+                _push_log(sess, "🛡 シールドが全回復したのだ。")
+
+        # ✅ ここが追加：go_next を押した時点の状態をシートに保存（world/floor/hp）
+        # ※重くしないため “1回だけ”。save_user_fields は使わない。
+        try:
+            await dungeon_save_after_battle_async(
+                uid=uid,
+                world=int(sess.get("world", 1) or 1),
+                floor=int(sess.get("floor", 1) or 1),
+                hp=int(sess.get("player_hp", 0) or 0),
+            )
+        except Exception as e:
+            print("[GO_NEXT SAVE ERROR]", type(e).__name__, e)
+
+        embed = _build_battle_embed(sess)
+
+    # ✅ まずこのボタンのメッセージを更新（ボタンは消して連打防止）
+    await interaction.response.edit_message(
+        content="",
+        embed=embed,
+        view=None,
+    )
+
+    # ✅ オート再開（メッセージ基準で回すのが安定）
+    old = dungeon_auto_tasks.pop(uid, None)
+    if old and not old.done():
+        old.cancel()
+
+    if getattr(self, "message", None):
+        dungeon_auto_tasks[uid] = asyncio.create_task(_auto_battle_loop_msg(uid, self.message))
+    else:
+        print("[GO_NEXT] message is None -> cannot start _auto_battle_loop_msg")
 
         # ✅ まずこのボタンのメッセージを更新（ボタンは消して連打防止）
         await interaction.response.edit_message(
@@ -8980,6 +8967,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
