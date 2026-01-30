@@ -7640,14 +7640,46 @@ async def _finish_battle(uid: int, result: str, interaction=None):
         u["effect_lv"] = int(init_weapon["effect_lv"])
         u["effect_value"] = int(init_weapon["effect_value"])
 
-    # ✅ ダンジョン進行保存
+    # ✅ ダンジョン進行保存（戦闘終了時だけ）
+    # 仕様：
+    # - 途中復帰不要なので「保存HPは常に満タン」
+    # - 勝利時は「次フロア（100Fなら次ワールド1F / W5以降は無限でworld据え置き）」を保存
+    # - 敗北時は「チェックポイント」を保存
     try:
+        cur_world = int(sess.get("world", 1) or 1)
+        cur_floor = int(sess.get("floor", 1) or 1)
+
+        # 戦闘開始時に満タンで始める前提なので max_hp を保存
+        max_hp = int(sess.get("max_hp", 100) or 100)
+
+        if result == "win":
+            # 次フロアへ
+            if cur_floor >= 100:
+                if cur_world < 5:
+                    save_world = cur_world + 1
+                    save_floor = 1
+                else:
+                    # W5以降は無限：world据え置きで floor+1
+                    save_world = cur_world
+                    save_floor = cur_floor + 1
+            else:
+                save_world = cur_world
+                save_floor = cur_floor + 1
+        else:
+            # 敗北はチェックポイントへ
+            save_world = cur_world
+            save_floor = _checkpoint_floor(cur_floor)
+
         await dungeon_save_after_battle_async(
             uid=uid,
-            world=int(sess.get("world", 1)),
-            floor=int(sess.get("floor", 1)),
-            hp=int(sess.get("player_hp", 0)),
+            world=int(save_world),
+            floor=int(save_floor),
+            hp=int(max_hp),  # ✅ 途中復帰不要：常に満タンを保存
         )
+
+        # ログ（任意）
+        _push_log(sess, f"📍 次回は {int(save_world)}-{int(save_floor)}F から開始なのだ。")
+
     except Exception as e:
         print("[DUNGEON SAVE ERROR]", type(e).__name__, e)
 
@@ -7818,21 +7850,6 @@ class DungeonAfterView(discord.ui.View):
                         sess["current_debuffs"] = []   # ← ここは本当は list 推奨（前に落ちた原因）
                         # もし表示/保存都合で文字列にしたいなら保存時だけ変換
 
-                        try:
-                            await asyncio.get_running_loop().run_in_executor(
-                                None,
-                                lambda: dungeon_store.save_user_fields(uid, {
-                                    "world": int(sess["world"]),
-                                    "floor": int(sess["floor"]),
-                                    "hp": int(sess["player_hp"]),
-                                    "debuff_zone": 0,
-                                    "debuff_zone_seg": 0,
-                                    "current_debuffs": "",  # ←保存形式が文字列ならここだけ "" でOK
-                                })
-                            )
-                        except Exception as e:
-                            print("[DEBUFF ZONE WORLD RESET SAVE ERROR]", type(e).__name__, e)
-
                     else:
                         # ✅ W5は無限：worldは増やさず floor だけ進める
                         sess["world"] = cur_world  # 念のため据え置き
@@ -7858,17 +7875,6 @@ class DungeonAfterView(discord.ui.View):
                         sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
                         _push_log(sess, "🏁 チェックポイント到達！HPが全回復したのだ。")
 
-                        try:
-                            await asyncio.get_running_loop().run_in_executor(
-                                None,
-                                lambda: dungeon_store.save_user_fields(uid, {
-                                    "debuff_zone": int(sess["debuff_zone"]),
-                                    "debuff_zone_seg": int(sess["debuff_zone_seg"]),
-                                    "current_debuffs": str(sess.get("current_debuffs", "") or ""),
-                                })
-                            )
-                        except Exception as e:
-                            print("[DEBUFF ZONE TRANSITION SAVE ERROR]", type(e).__name__, e)
 
                 # 進んだ後の値で敵生成
                 world = int(sess.get("world", 1) or 1)
@@ -7899,22 +7905,24 @@ class DungeonAfterView(discord.ui.View):
                 checkpoint = _checkpoint_floor(int(sess.get("floor", 1) or 1))
                 sess["floor"] = checkpoint
 
-                # ✅ 再抽選しない：戻った区間のsegに合わせるだけ
+                # ✅ segだけ合わせる
                 sess["debuff_zone_seg"] = seg_of_floor(checkpoint)
 
+                # ✅ 途中復帰不要：HP満タン
                 sess["player_hp"] = int(sess.get("max_hp", 100) or 100)
 
                 world = int(sess.get("world", 1) or 1)
+                floor = int(sess.get("floor", checkpoint) or checkpoint)  # ✅ ここで floor を確定
                 debuff_zone = bool(int(sess.get("debuff_zone", 0) or 0))
 
-                # ✅ W5だけ：チェックポイントに戻った後も seg に対応するゾーンへ
-                if world == 5:
+                # ✅ W5だけ：チェックポイントに戻った後もゾーンへ
+                if world >= 5:
                     ensure_w5_zone(sess)
 
                 enemy = generate_enemy(world, floor, debuff_zone=debuff_zone)
 
                 # ✅ W5だけ：ゾーン補正
-                if world == 5:
+                if world >= 5:
                     apply_w5_zone_modifiers(sess, enemy)
 
                 sess["enemy"] = enemy
@@ -8245,7 +8253,7 @@ async def start_battle_step(interaction: discord.Interaction):
 
     # followup じゃなく response で “戦闘メッセ” を作る
     await interaction.response.send_message("準備中なのだ…", ephemeral=True)
-    await interaction.original_response()  # msg を直接使わなくてもOK（edit_original_responseで更新）
+    await interaction.original_response()
 
     async with get_user_lock(uid):
         loader = globals().get("dungeon_load_user_cached_async")
@@ -8264,27 +8272,17 @@ async def start_battle_step(interaction: discord.Interaction):
             effect_value = int(state.get("effect_value", 0) or 0)
 
             max_hp = calc_player_max_hp(effect_type, effect_value)
-            hp = min(int(state.get("hp", 0) or 0), int(max_hp))
+
+            # ✅ 途中復帰不要：開始時HPは常に満タン
+            hp = int(max_hp)
+
             shield_max = get_player_shield_max(effect_type, effect_value)
 
             world = int(state.get("world", 1) or 1)
             floor = int(state.get("floor", 1) or 1)
 
-            # ✅ ここを追加：segズレを直して固定（再抽選はしない）
-            fixed = normalize_debuff_zone_state(state)
-            if fixed:
-                try:
-                    # dungeon シートへ保存（DungeonStore があるのでこれでOK）
-                    await asyncio.get_running_loop().run_in_executor(
-                        None,
-                        lambda: dungeon_store.save_user_fields(uid, {
-                            "debuff_zone": int(state.get("debuff_zone", 0) or 0),
-                            "debuff_zone_seg": int(state.get("debuff_zone_seg", -1) or -1),
-                            "current_debuffs": str(state.get("current_debuffs", "") or ""),
-                        })
-                    )
-                except Exception as e:
-                    print("[DEBUFF ZONE FIX SAVE ERROR]", type(e).__name__, e)
+            # ✅ segズレ補正はするが「ここでは保存しない」（保存は戦闘終了時だけ）
+            normalize_debuff_zone_state(state)
 
             debuff_zone = bool(int(state.get("debuff_zone", 0) or 0))
             debuff_zone_seg = int(state.get("debuff_zone_seg", -1) or -1)
@@ -8311,20 +8309,27 @@ async def start_battle_step(interaction: discord.Interaction):
             "world": world,
             "floor": floor,
             "player_name": interaction.user.display_name,
+
             "player_hp": int(hp),
             "max_hp": int(max_hp),
+
             "shield_now": int(shield_max),
             "atk": int(state.get("weapon_atk", 0) or 0),
             "def": int(state.get("weapon_def", 0) or 0),
             "spd": int(state.get("weapon_spd", 0) or 0),
+
             "effect_type": effect_type,
             "effect_value": effect_value,
             "effect_lv": int(state.get("effect_lv", 0) or 0),
+
             "enemy": enemy,
             "logs": ["戦闘開始なのだ！"],
+
             "debuff_zone": int(debuff_zone),
-            "debuff_zone_seg": int(debuff_zone_seg),          # ✅追加
-            "current_debuffs": str(state.get("current_debuffs", "") or ""),  # ✅あれば載せる
+            "debuff_zone_seg": int(debuff_zone_seg),
+
+            # ✅ “今回バトルで付与された” なので開始時は空でOK
+            "current_debuffs": "",
         }
         dungeon_sessions[uid] = sess
 
@@ -8335,11 +8340,8 @@ async def start_battle_step(interaction: discord.Interaction):
     if old and not old.done():
         old.cancel()
 
-    # ✅ 個人表示（original_response）を msg として掴んで、それだけを編集対象にする
     msg = await interaction.original_response()
-    dungeon_auto_tasks[uid] = asyncio.create_task(
-        _auto_battle_loop_msg(uid, msg)
-    )
+    dungeon_auto_tasks[uid] = asyncio.create_task(_auto_battle_loop_msg(uid, msg))
 
 async def _auto_battle_loop_interaction(uid: int, interaction: discord.Interaction):
     """
@@ -8978,6 +8980,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
