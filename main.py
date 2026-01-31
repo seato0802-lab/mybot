@@ -5,11 +5,6 @@ from dotenv import load_dotenv
 # .env を確実に読む
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
 
-from openai import OpenAI
-
-# OpenAIクライアント（★ここが重要）
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-
 import io
 import re
 import csv
@@ -135,131 +130,6 @@ async def get_csv(category: str):
         CSV_CACHE[category] = sheet
         CSV_CACHE["timestamp"] = now
     return sheet
-
-
-# =========================================================
-# ずんだもんシステムプロンプト
-# =========================================================
-ZUNDAMON_SYSTEM = """
-あなたはずんだもんです。
-語尾は必ず「〜なのだ」「〜なのだよ」になります。
-JSON形式では返さず、必ず普通の文章だけで返答してください。
-""".strip()
-
-
-# =========================================================
-# 既存：AIメモリ(SQLite)
-# =========================================================
-def init_ai_memory_db():
-    conn = sqlite3.connect("ai_memory.db")
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS user_summary (
-            user_id INTEGER PRIMARY KEY,
-            summary TEXT
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS chat_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            message TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-
-    # ✅ 抽選イベント（Sheetsには保存しない）
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS lottery_events (
-            message_id INTEGER PRIMARY KEY,
-            channel_id INTEGER NOT NULL,
-            guild_id INTEGER NOT NULL,
-            created_by INTEGER NOT NULL,
-            created_at INTEGER NOT NULL,
-            ends_at INTEGER NOT NULL,
-            winners_count INTEGER NOT NULL,
-            reward_coins INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'open' -- open / closed
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS lottery_entries (
-            message_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            joined_at INTEGER NOT NULL,
-            PRIMARY KEY (message_id, user_id)
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS lottery_winners (
-            message_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            reward_coins INTEGER NOT NULL,
-            decided_at INTEGER NOT NULL,
-            PRIMARY KEY (message_id, user_id)
-        )
-        """
-    )
-
-    conn.commit()
-    conn.close()
-
-def save_chat(user_id: int, message: str):
-    conn = sqlite3.connect("ai_memory.db")
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO chat_log (user_id, message) VALUES (?, ?)",
-        (user_id, message),
-    )
-    conn.commit()
-    conn.close()
-
-
-def get_recent_chats(user_id: int, limit=3):
-    conn = sqlite3.connect("ai_memory.db")
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT message FROM chat_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
-        (user_id, limit),
-    )
-    rows = cur.fetchall()
-    conn.close()
-    return [r[0] for r in reversed(rows)]
-
-
-def clear_chats(user_id: int):
-    conn = sqlite3.connect("ai_memory.db")
-    cur = conn.cursor()
-    cur.execute("DELETE FROM chat_log WHERE user_id=?", (user_id,))
-    conn.commit()
-    conn.close()
-
-
-def get_ai_summary_from_sheet(user_id: int) -> str:
-    u = store.get_user(user_id)
-    return (u.get("ai_summary") or "").strip()
-
-def save_summary(user_id: int, summary: str):
-    conn = sqlite3.connect("ai_memory.db")
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO user_summary (user_id, summary) VALUES (?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET summary=excluded.summary
-        """,
-        (user_id, summary),
-    )
-    conn.commit()
-    conn.close()
 
 # =========================================================
 # 抽選（Lottery）SQLite ユーティリティ
@@ -2104,10 +1974,95 @@ def calc_login_extra(streak: int) -> int:
 
 
 # =========================================================
-# 占い（AI）
+# 占い（AI）※OpenAI無し版
 # =========================================================
 FORTUNE_CHOICES = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"]
 FORTUNE_COIN = {"大吉": 10, "中吉": 6, "小吉": 4, "吉": 3, "末吉": 2, "凶": 1, "大凶": 0}
+
+# ✅ 日常ラッキーアイテム（10〜20文字目安・記号/絵文字なし）
+LUCKY_ITEMS_NORMAL = [
+    "ハンカチ",
+    "温かいお茶",
+    "新品のノート",
+    "ミントタブレット",
+    "折りたたみ傘",
+    "水筒",
+    "替えの靴下",
+    "ボールペン",
+    "小さなメモ帳",
+    "目薬",
+    "リップクリーム",
+    "スニーカー",
+    "タオル",
+    "イヤホンケース",
+    "おにぎり",
+    "バナナ",
+    "チョコレート",
+    "カイロ",
+    "消毒ジェル",
+    "ティッシュ",
+]
+
+# ✅ 入手困難/レア（10〜20文字目安・記号/絵文字なし）
+LUCKY_ITEMS_RARE = [
+    "限定生産の記念品",
+    "抽選限定の景品",
+    "生産終了の名品",
+    "入場制限の特典",
+    "先着限定の非売品",
+    "配布終了のグッズ",
+    "期間限定の特典品",
+    "一点物のコレクション",
+]
+
+# ✅ 一言コメント（短め）
+FORTUNE_MSGS = {
+    "大吉": [
+        "今日は強気でいくのだ！",
+        "追い風が来てるのだ！",
+        "迷ったら前に出るのだ！",
+    ],
+    "中吉": [
+        "いい流れなのだよ。",
+        "落ち着いて進めば勝てるのだ。",
+        "丁寧にやればうまくいくのだ。",
+    ],
+    "小吉": [
+        "コツコツが勝つのだ。",
+        "小さな工夫が効くのだ。",
+        "焦らず積み上げるのだ。",
+    ],
+    "吉": [
+        "安定がいちばんのだ。",
+        "いつも通りが強いのだ。",
+        "淡々とやれば大丈夫なのだ。",
+    ],
+    "末吉": [
+        "焦らずいくのだよ。",
+        "慎重さが味方なのだ。",
+        "一歩ずつで十分なのだ。",
+    ],
+    "凶": [
+        "慎重に行動するのだ。",
+        "無理せず守りを固めるのだ。",
+        "今日は確認を増やすのだ。",
+    ],
+    "大凶": [
+        "今日は守りに徹するのだ…！",
+        "無理は禁物なのだ…！",
+        "安全第一でいくのだ…！",
+    ],
+}
+
+def _clean_item_name(name: str) -> str:
+    # 記号・絵文字っぽいのを軽く除去（完全ではないが運用上十分）
+    name = re.sub(r"[^\wぁ-んァ-ン一-龥ー\s]", "", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    if not name:
+        return "ハンカチ"
+    if len(name) > 30:
+        name = name[:30].strip()
+    return name
 
 async def ai_fortune_message() -> tuple[str, str, str]:
     fortune = random.choices(
@@ -2116,84 +2071,20 @@ async def ai_fortune_message() -> tuple[str, str, str]:
         k=1,
     )[0]
 
-    # 大凶だけ「難しい/入手困難」指定、それ以外は日常品
-    lucky_rule = (
-        "大凶のときは、現実に入手が難しい・レア・困難な物にしてほしい。"
-        if fortune == "大凶"
-        else
-        "大凶以外のときは、日常で手に入る身近な物にしてほしい。"
-    )
+    # コメント
+    msg_list = FORTUNE_MSGS.get(fortune) or ["無理せずいくのだ。"]
+    fortune_msg = random.choice(msg_list)
 
-    try:
-        prompt = [
-            {"role": "system", "content": ZUNDAMON_SYSTEM},
-            {
-                "role": "user",
-                "content": (
-                    f"今日の占い結果は「{fortune}」なのだ。\n"
-                    "短めの一言コメントと、ラッキーアイテムを1つ出してほしいのだ。\n"
-                    f"{lucky_rule}\n"
-                    "出力形式は次の2行だけにしてほしいのだ（余計な説明は禁止なのだ）:\n"
-                    "コメント：<一言>\n"
-                    "ラッキー：<アイテム名>\n"
-                    "アイテム名は10〜20文字程度で、記号や絵文字は使わないでほしいのだ。"
-                ),
-            },
-        ]
+    # ラッキーアイテム（大凶だけ入手困難）
+    if fortune == "大凶":
+        lucky_item = random.choice(LUCKY_ITEMS_RARE)
+    else:
+        lucky_item = random.choice(LUCKY_ITEMS_NORMAL)
 
-        loop = asyncio.get_running_loop()
-        resp = await loop.run_in_executor(
-            None,
-            lambda: client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=prompt,
-                max_tokens=120,
-                temperature=0.9,
-            ),
-        )
+    lucky_item = _clean_item_name(lucky_item)
 
-        out = (resp.choices[0].message.content or "").strip()
+    return fortune, fortune_msg, lucky_item
 
-        # 2行形式から安全に抽出
-        fortune_msg = ""
-        lucky_item = ""
-
-        for line in out.splitlines():
-            line = line.strip()
-            if line.startswith("コメント："):
-                fortune_msg = line.replace("コメント：", "", 1).strip()
-            elif line.startswith("ラッキー："):
-                lucky_item = line.replace("ラッキー：", "", 1).strip()
-
-        # フォールバック
-        if not fortune_msg:
-            fortune_msg = "今日は肩の力を抜くのだよ。"
-        if not lucky_item:
-            lucky_item = "ハンカチ" if fortune != "大凶" else "入手困難な限定アイテム"
-
-        # 念のためのクリーニング（長すぎ/空白だけ対策）
-        lucky_item = re.sub(r"\s+", " ", lucky_item).strip()
-        if len(lucky_item) > 30:
-            lucky_item = lucky_item[:30].strip()
-
-        return fortune, fortune_msg, lucky_item
-
-    except Exception as e:
-        print("ai_fortune_message error:", e)
-        traceback.print_exc()
-
-    # 完全フォールバック
-    fallback_msg = {
-        "大吉": "今日は強気でいくのだ！",
-        "中吉": "いい流れなのだよ。",
-        "小吉": "コツコツが勝つのだ。",
-        "吉": "安定がいちばんのだ。",
-        "末吉": "焦らずいくのだよ。",
-        "凶": "慎重に行動するのだ。",
-        "大凶": "今日は守りに徹するのだ…！",
-    }
-    lucky_item = "ハンカチ" if fortune != "大凶" else "入手困難な限定アイテム"
-    return fortune, fallback_msg.get(fortune, "無理せずいくのだ。"), lucky_item
 
 async def notify_title_earned_only_user(
     interaction: discord.Interaction,
@@ -8908,6 +8799,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
