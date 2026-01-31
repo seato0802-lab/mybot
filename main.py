@@ -8701,7 +8701,6 @@ def keep_alive():
 # Bot 起動（✅ bot.run に一本化）
 # =========================================================
 if __name__ == "__main__":
-    init_ai_memory_db()
     keep_alive()
 
     token = os.getenv("DISCORD_TOKEN")
@@ -8710,6 +8709,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
