@@ -2861,102 +2861,6 @@ async def starter100_cmd(interaction: discord.Interaction):
         except Exception:
             pass
 
-# =========================================================
-# /ai（既存：表示形式そのまま）
-# =========================================================
-@bot.tree.command(name="ai", description="ずんだもんとおしゃべりするのだ")
-@app_commands.describe(message="ずんだもんに話しかける内容")
-async def ai_cmd(interaction: discord.Interaction, message: str):
-    await interaction.response.defer(ephemeral=True)
-
-    user_id = interaction.user.id
-
-    # 直近ログ（SQLite）
-    save_chat(user_id, message)
-    recent_chats = get_recent_chats(user_id)
-
-    # ★ 要約は Sheets から読む
-    summary = get_ai_summary_from_sheet(user_id)
-
-    messages = [{"role": "system", "content": ZUNDAMON_SYSTEM}]
-    if summary:
-        messages.append(
-            {"role": "system", "content": f"このユーザーの傾向メモ（非公開）:\n{summary}"}
-        )
-    for m in recent_chats:
-        messages.append({"role": "user", "content": m})
-
-    new_summary: str | None = None
-
-    try:
-        loop = asyncio.get_running_loop()
-
-        # ずんだもん返信
-        response = await loop.run_in_executor(
-            None,
-            lambda: client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages,
-                max_tokens=200,
-                temperature=0.8,
-            ),
-        )
-        reply = (response.choices[0].message.content or "").strip()
-
-        await interaction.followup.send(
-            f"🗣 **あなた**：{message}\n\n🟢 **ずんだもん**：{reply}"
-        )
-
-        # ★ 3発たまったら要約生成
-        if len(recent_chats) >= 3:
-            summary_prompt = [
-                {"role": "system", "content": ZUNDAMON_SYSTEM},
-                {
-                    "role": "system",
-                    "content": "以下の会話から、この人の話し方や好みを短く要約してください。",
-                },
-            ]
-            for m in recent_chats:
-                summary_prompt.append({"role": "user", "content": m})
-
-            s = await loop.run_in_executor(
-                None,
-                lambda: client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=summary_prompt,
-                    max_tokens=150,
-                    temperature=0.5,
-                ),
-            )
-            new_summary = (s.choices[0].message.content or "").strip()
-            clear_chats(user_id)
-
-    except Exception as e:
-        print("AI error:", e)
-        traceback.print_exc()
-        return await interaction.followup.send(
-            "ごめんなのだ…今はうまく答えられないのだ 💦"
-        )
-
-    # =========================
-    # Sheets 更新（回数・要約）
-    # =========================
-    async with get_user_lock(user_id):
-        u = store.get_user(user_id)
-
-        # 回数
-        u["ai_chat_count"] = int(u.get("ai_chat_count", 0)) + 1
-
-        # 要約（あれば上書き）
-        if new_summary:
-            u["ai_summary"] = new_summary
-
-        await sheets_upsert_async(u)
-
-    # ★ AI称号チェック（獲得者のみ通知）
-    await maybe_award_hidden_titles(interaction, u, {"AI_CHAT"})
-
-
 @bot.tree.command(name="lottery", description="抽選を作成するのだ（管理者専用）")
 @app_commands.describe(
     minutes="締め切りまでの分数",
@@ -8806,6 +8710,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
