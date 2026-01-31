@@ -1293,8 +1293,20 @@ class SheetsStore:
             raise RuntimeError("GS_SPREADSHEET_ID が未設定です")
 
         if not os.path.exists("gs_service_account.json"):
-            raise RuntimeError("gs_service_account.json が見つかりません（~/bot に置いてください）")
-
+            raw = os.getenv("GS_SERVICE_ACCOUNT_JSON", "").strip()
+            if raw:
+                # env が JSON文字列なら整形して保存（改行なしでもOK）
+                try:
+                    obj = json.loads(raw)
+                    with open("gs_service_account.json", "w", encoding="utf-8") as f:
+                        json.dump(obj, f, ensure_ascii=False, indent=2)
+                except Exception:
+                    # もし raw がそのままJSONとして読めない形式なら、そのまま書く
+                    with open("gs_service_account.json", "w", encoding="utf-8") as f:
+                        f.write(raw)
+            else:
+                raise RuntimeError("gs_service_account.json が無く、GS_SERVICE_ACCOUNT_JSON も未設定です")
+                
         creds = Credentials.from_service_account_file(
             "gs_service_account.json",
             scopes=["https://www.googleapis.com/auth/spreadsheets"]
@@ -8794,6 +8806,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
