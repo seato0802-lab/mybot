@@ -2076,16 +2076,11 @@ async def ai_fortune_message() -> tuple[str, str, str]:
     fortune_msg = random.choice(msg_list)
 
     # ラッキーアイテム（大凶だけ入手困難）
-    if fortune == "大凶":
-        lucky_item = random.choice(LUCKY_ITEMS_RARE)
-    else:
-        lucky_item = random.choice(LUCKY_ITEMS_NORMAL)
-
+    lucky_item = random.choice(LUCKY_ITEMS_RARE if fortune == "大凶" else LUCKY_ITEMS_NORMAL)
     lucky_item = _clean_item_name(lucky_item)
 
     return fortune, fortune_msg, lucky_item
-
-
+    
 async def notify_title_earned_only_user(
     interaction: discord.Interaction,
     member: discord.Member | discord.User,
@@ -8799,6 +8794,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
