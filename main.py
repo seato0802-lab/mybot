@@ -7738,19 +7738,30 @@ class DungeonAfterView(discord.ui.View):
     def _resume_floor_on_exit(self, sess: dict) -> tuple[int, int]:
         """
         ✅ 終了時に保存する (world, floor) を決定
-        - 勝利時：次フロア（100Fなら次ワールドの1F）
-        - 敗北時：チェックポイントに戻した floor
+        - 勝利時：次フロア（100Fなら次ワールドの1F / W5以降は無限でworld据え置き）
+        - 敗北時：チェックポイント
+        - 未確定（battle_result無し）: チェックポイントに戻さず現状維持（timeout誤敗北防止）
         """
         world = int(sess.get("world", 1) or 1)
         floor = int(sess.get("floor", 1) or 1)
 
-        if sess.get("battle_result") == "win":
+        br = sess.get("battle_result")  # "win" / "lose" / None
+
+        # ✅ 勝利確定だけ次へ進めて保存
+        if br == "win":
             if floor >= 100:
-                return world + 1, 1
+                if world < 5:
+                    return world + 1, 1
+                # W5以降は無限：world据え置き
+                return world, floor + 1
             return world, min(100, floor + 1)
 
-        # ✅ 敗北時はチェックポイントへ
-        return world, _checkpoint_floor(floor)
+        # ✅ 敗北確定だけチェックポイント
+        if br == "lose":
+            return world, _checkpoint_floor(floor)
+
+        # ✅ br が None/未知（timeout等）は「現状維持」
+        return world, floor
 
     async def _save_floor_on_exit(self, uid: int, sess: dict):
         """
@@ -8987,6 +8998,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
