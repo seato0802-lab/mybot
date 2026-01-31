@@ -7604,9 +7604,9 @@ class DungeonAfterView(discord.ui.View):
                 if interaction:
                     try:
                         if interaction.response.is_done():
-                            await interaction.followup.send("⚠️ セッションが切れているのだ。/dungeon から入り直してほしいのだ。", ephemeral=True)
+                            await interaction.followup.send("⚠️ セッションが切れているのだ。", ephemeral=True)
                         else:
-                            await interaction.response.send_message("⚠️ セッションが切れているのだ。/dungeon から入り直してほしいのだ。", ephemeral=True)
+                            await interaction.response.send_message("⚠️ セッションが切れているのだ。", ephemeral=True)
                     except Exception:
                         pass
                 return
@@ -7650,12 +7650,12 @@ class DungeonAfterView(discord.ui.View):
                 try:
                     if interaction.response.is_done():
                         await interaction.followup.send(
-                            "⚠️ セッションが切れているのだ…\nもう一度 /dungeon から入り直してほしいのだ。",
+                            "⚠️ セッションが切れているのだ… ",
                             ephemeral=True,
                         )
                     else:
                         await interaction.response.send_message(
-                            "⚠️ セッションが切れているのだ…\nもう一度 /dungeon から入り直してほしいのだ。",
+                            "⚠️ セッションが切れているのだ…",
                             ephemeral=True,
                         )
                 except Exception as e:
@@ -7979,7 +7979,8 @@ async def start_battle_step(interaction: discord.Interaction):
             max_hp = calc_player_max_hp(effect_type, effect_value)
 
             # ✅ 途中復帰不要：開始時HPは常に満タン
-            hp = int(max_hp)
+            saved_hp = int(state.get("hp", max_hp) or max_hp)
+            hp = max(1, min(saved_hp, int(max_hp)))
 
             shield_max = get_player_shield_max(effect_type, effect_value)
 
@@ -8709,6 +8710,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
