@@ -7755,13 +7755,22 @@ class DungeonAfterView(discord.ui.View):
                 if sess["shield_now"] > 0:
                     _push_log(sess, "🛡 シールドが全回復したのだ。")
 
-            # ✅ go_next 押下時HPで保存（MAX保存回避）
+            # ✅ 保存HPの方針
+            # - 勝利: 押下時HP（戦闘後残HPを保持したい場合）
+            # - 敗北: 回復後HP（チェックポイント復帰は全回復させる）
+            hp_to_save = int(hp_at_click)
+            if prev_result != "win":
+                hp_to_save = int(sess.get("player_hp", 0) or 0)
+
+            # 0 を保存しない保険（仕様に合わせて 1 以上に）
+            hp_to_save = max(1, hp_to_save)
+
             try:
                 await dungeon_save_after_battle_async(
                     uid=uid,
                     world=int(sess.get("world", 1) or 1),
                     floor=int(sess.get("floor", 1) or 1),
-                    hp=int(hp_at_click),
+                    hp=int(hp_to_save),
                 )
             except Exception as e:
                 print("[GO_NEXT SAVE ERROR]", type(e).__name__, e)
@@ -8710,6 +8719,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
