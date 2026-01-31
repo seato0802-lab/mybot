@@ -7786,7 +7786,16 @@ class DungeonAfterView(discord.ui.View):
             sess = dungeon_sessions.get(uid)
             if not sess:
                 print("[GO_NEXT] sess is None")
-                return
+                # ✅ ユーザーに見える案内（無反応防止）
+                try:
+                    if interaction.response.is_done():
+                        await interaction.followup.send(
+                            "⚠️ セッションが切れているのだ…\nもう一度 /dungeon から入り直してほしいのだ。",
+                            ephemeral=True
+                        )
+                    else:
+                        await interaction.response.send_message(
+                            "⚠️ セッションが切れているのだ…\nもう一度 /dungeon
 
             # ✅ 押した瞬間のHPを退避（この値をシートに保存する）
             hp_at_click = int(sess.get("player_hp", 0) or 0)
@@ -8978,6 +8987,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
