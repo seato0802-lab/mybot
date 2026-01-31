@@ -7527,7 +7527,7 @@ def _build_battle_embed(sess: dict) -> discord.Embed:
 
 class DungeonAfterView(discord.ui.View):
     def __init__(self, uid: int, message: discord.Message | None = None):
-        super().__init__(timeout=300)
+        super().__init__(timeout=600)
         self.uid = uid
         self.message = message  # timeout/quit/go_next 全部で使う
 
@@ -8719,6 +8719,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
