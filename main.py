@@ -106,10 +106,19 @@ WEAPON_URL = (
     "2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/"
     "pub?gid=793378898&single=true&output=csv"
 )
-
 SPECIAL_URL = (
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/pub?gid=1331134618&single=true&output=csv"
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vRH53VZ7iL7EFXNhkGTmRBS0JdE6oAjex51ape3cqOoXnuoR7RGATJlq_TaLupYmT4YJB2Luaa5NwXx/"
+    "pub?gid=1331134618&single=true&output=csv"
 )
+
+CSV_TTL = 300  # 例：5分（既に定義済みなら削除OK）
+CSV_TIMESTAMP = 0
+
+# ✅ カテゴリ別キャッシュ（timestampは入れない）
+CSV_CACHE = {"道具": [], "武器": [], "特殊": []}
+
+
 async def fetch_csv(url: str):
     timeout = aiohttp.ClientTimeout(total=6)  # 6秒で諦める
     async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -120,11 +129,11 @@ async def fetch_csv(url: str):
     reader = csv.DictReader(f)
     return [row for row in reader]
 
-CSV_CACHE = {"道具": [], "武器": [],  "特殊": ],"timestamp": 0}
 
 async def get_csv(category: str):
     global CSV_TIMESTAMP
 
+    # ✅ TTL内 & キャッシュありなら返す
     if (time.time() - CSV_TIMESTAMP) < CSV_TTL and CSV_CACHE.get(category):
         return CSV_CACHE[category]
 
@@ -137,16 +146,14 @@ async def get_csv(category: str):
     else:
         return None
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                return None
-            text = await resp.text()
+    try:
+        rows = await fetch_csv(url)
+    except Exception:
+        return None
 
-    reader = csv.DictReader(io.StringIO(text))
-    CSV_CACHE[category] = list(reader)
+    CSV_CACHE[category] = rows
     CSV_TIMESTAMP = time.time()
-    return CSV_CACHE[category]
+    return rows
 
 # =========================================================
 # 抽選（Lottery）SQLite ユーティリティ
@@ -8746,6 +8753,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
