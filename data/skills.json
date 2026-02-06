@@ -1,41 +1,70 @@
 {
   "version": 1,
   "skills": [
-    { "skill_id": "SK_NAGIHARAI", "name": "なぎ払い", "cost_type": "mp", "cost": 2, "type": "physical", "target": "enemy_all", "power": 22, "weapon_required": ["sword","axe","spear"] },
+    // ----------------------------
+    // 剣
+    // ----------------------------
+    { "skill_id": "SK_NAGIHARAI", "name": "なぎ払い", "cost_type": "mp", "cost": 2, "type": "physical", "target": "enemy_all", "power": 22, "weapon_required": ["sword"] },
     { "skill_id": "SK_HAYABUSA_GIRI", "name": "はやぶさ斬り", "cost_type": "mp", "cost": 3, "type": "physical", "target": "enemy_single", "power": 16, "hits": 2, "weapon_required": ["sword"] },
     { "skill_id": "SK_SAMIDARE_GIRI", "name": "さみだれ斬り", "cost_type": "mp", "cost": 5, "type": "physical", "target": "enemy_random", "power": 14, "hits": 4, "weapon_required": ["sword"] },
-    { "skill_id": "SK_MAJIN_GIRI", "name": "まじん斬り", "cost_type": "mp", "cost": 4, "type": "physical", "target": "enemy_single", "power": 30, "crit_bonus": 0.35, "accuracy_mult": 0.7, "weapon_required": ["sword","axe"] },
+    { "skill_id": "SK_MAJIN_GIRI", "name": "まじん斬り", "cost_type": "mp", "cost": 4, "type": "physical", "target": "enemy_single", "power": 30, "crit_bonus": 0.35, "accuracy_mult": 0.7, "weapon_required": ["sword"] },
     { "skill_id": "SK_KAEN_GIRI", "name": "かえん斬り", "cost_type": "mp", "cost": 3, "type": "physical", "target": "enemy_single", "power": 20, "element": "fire", "weapon_required": ["sword"] },
     { "skill_id": "SK_SHINKUU_GIRI", "name": "しんくう斬り", "cost_type": "mp", "cost": 4, "type": "physical", "target": "enemy_single", "power": 20, "element": "wind", "weapon_required": ["sword"] },
-    { "skill_id": "SK_GIGA_SLASH", "name": "ギガスラッシュ", "cost_type": "mp", "cost": 16, "type": "physical", "target": "enemy_all", "power": 55, "element": "lightning", "weapon_required": ["sword"], "job_required": ["hero"] },
-    { "skill_id": "SK_GIGA_BREAK", "name": "ギガブレイク", "cost_type": "mp", "cost": 28, "type": "physical", "target": "enemy_all", "power": 85, "element": "lightning", "weapon_required": ["sword"], "job_required": ["hero"] },
 
-    { "skill_id": "SK_SEIKEN_ZUKI", "name": "せいけん突き", "cost_type": "mp", "cost": 3, "type": "physical", "target": "enemy_single", "power": 22, "weapon_required": ["spear","staff"] },
+    // ----------------------------
+    // 槍
+    // ----------------------------
+    { "skill_id": "SK_SEIKEN_ZUKI", "name": "せいけん突き", "cost_type": "mp", "cost": 3, "type": "physical", "target": "enemy_single", "power": 22, "weapon_required": ["spear"] },
     { "skill_id": "SK_SAMIDARE_ZUKI", "name": "さみだれ突き", "cost_type": "mp", "cost": 5, "type": "physical", "target": "enemy_single", "power": 14, "hits": 4, "weapon_required": ["spear"] },
 
+    // ----------------------------
+    // 斧
+    // ----------------------------
+    { "skill_id": "SK_KABUTO_WARI", "name": "かぶと割り", "cost_type": "mp", "cost": 4, "type": "debuff", "target": "enemy_single", "debuffs": [{ "stat": "def", "mult": 0.75 }], "hit_rate": 0.85, "duration_turns": 4, "weapon_required": ["axe"] },
+    { "skill_id": "SK_MUSOU_GIRI", "name": "むそう斬り", "cost_type": "mp", "cost": 8, "type": "physical", "target": "enemy_single", "power": 45, "weapon_required": ["axe"] },
+
+    // ----------------------------
+    // 格闘
+    // ----------------------------
     { "skill_id": "SK_BAKURETSUKEN", "name": "ばくれつけん", "cost_type": "mp", "cost": 6, "type": "physical", "target": "enemy_single", "power": 12, "hits": 4, "weapon_required": ["fist"] },
-    { "skill_id": "SK_SINKUU_GERI", "name": "しんくうげり", "cost_type": "mp", "cost": 6, "type": "physical", "target": "enemy_all", "power": 18, "element": "wind", "weapon_required": ["fist"] },
+    { "skill_id": "SK_SHINKUU_GERI", "name": "しんくうげり", "cost_type": "mp", "cost": 6, "type": "physical", "target": "enemy_all", "power": 18, "element": "wind", "weapon_required": ["fist"] },
     { "skill_id": "SK_TAMERU", "name": "ためる", "cost_type": "none", "cost": 0, "type": "buff", "target": "self", "buffs": [{ "stat": "atk", "mult": 1.8 }], "duration_turns": 1 },
 
+    // ----------------------------
+    // 守り（パラ/戦士系）
+    // ----------------------------
     { "skill_id": "SK_KABAU", "name": "かばう", "cost_type": "none", "cost": 0, "type": "guard", "target": "ally_single", "guard": { "redirect": true }, "duration_turns": 1 },
     { "skill_id": "SK_NIOU_DACHI", "name": "におうだち", "cost_type": "mp", "cost": 6, "type": "guard", "target": "self", "guard": { "cover_all": true }, "duration_turns": 1 },
-    { "skill_id": "SK_MIGAWARI", "name": "みがわり", "cost_type": "none", "cost": 0, "type": "guard", "target": "ally_single", "guard": { "redirect": true, "damage_mult": 0.7 }, "duration_turns": 1 },
     { "skill_id": "SK_DAIBOU_GYO", "name": "だいぼうぎょ", "cost_type": "mp", "cost": 3, "type": "buff", "target": "self", "buffs": [{ "stat": "def", "mult": 2.0 }], "duration_turns": 1 },
 
-    { "skill_id": "SK_OTAKESAKEBI", "name": "おたけび", "cost_type": "mp", "cost": 5, "type": "status", "target": "enemy_all", "status": "stun", "hit_rate": 0.35, "duration_turns": 1 },
-    { "skill_id": "SK_TAIATARI", "name": "たいあたり", "cost_type": "none", "cost": 0, "type": "physical", "target": "enemy_single", "power": 35, "self_damage_ratio": 0.1 },
-
+    // ----------------------------
+    // 盗賊（ぬすむ）
+    // ----------------------------
     { "skill_id": "SK_NUSUMU", "name": "ぬすむ", "cost_type": "none", "cost": 0, "type": "steal", "target": "enemy_single", "steal": { "base_rate": 0.2, "use_spd_diff": true, "use_level": true } },
     { "skill_id": "SK_SHINOBIASHI", "name": "しのびあし", "cost_type": "mp", "cost": 3, "type": "utility", "target": "self", "utility": "lower_encounter", "duration_steps": 30 },
     { "skill_id": "SK_TOUZOKU_NO_HANA", "name": "とうぞくのはな", "cost_type": "mp", "cost": 2, "type": "utility", "target": "self", "utility": "reveal_enemies", "duration_steps": 30 },
 
+    // ----------------------------
+    // 状態異常系
+    // ----------------------------
+    { "skill_id": "SK_OTAKESAKEBI", "name": "おたけび", "cost_type": "mp", "cost": 5, "type": "status", "target": "enemy_all", "status": "stun", "hit_rate": 0.35, "duration_turns": 1 },
+    { "skill_id": "SK_DOKUBARI", "name": "どくばり", "cost_type": "mp", "cost": 2, "type": "status", "target": "enemy_single", "status": "poison", "hit_rate": 0.6, "duration_turns": 6 },
+
+    // ----------------------------
+    // 回復系（特技側：魔法と分離）
+    // ----------------------------
     { "skill_id": "SK_HASSHIN", "name": "はっしん", "cost_type": "mp", "cost": 4, "type": "buff", "target": "ally_all", "buffs": [{ "stat": "spd", "mult": 1.2 }], "duration_turns": 3 },
     { "skill_id": "SK_HUSTLE_DANCE", "name": "ハッスルダンス", "cost_type": "mp", "cost": 10, "type": "heal", "target": "ally_all", "power": 70 },
 
-    { "skill_id": "SK_ARMOR_BREAK", "name": "かぶと割り", "cost_type": "mp", "cost": 4, "type": "debuff", "target": "enemy_single", "debuffs": [{ "stat": "def", "mult": 0.75 }], "hit_rate": 0.85, "duration_turns": 4, "weapon_required": ["axe","sword"] },
-    { "skill_id": "SK_POISON_STING", "name": "どくばり", "cost_type": "mp", "cost": 2, "type": "status", "target": "enemy_single", "status": "poison", "hit_rate": 0.6, "duration_turns": 6 },
-
+    // ----------------------------
+    // メタル対策
+    // ----------------------------
     { "skill_id": "SK_METAL_SLASH", "name": "メタル斬り", "cost_type": "mp", "cost": 3, "type": "physical", "target": "enemy_single", "power": 8, "flags": ["metal_bonus"], "weapon_required": ["sword"] },
-    { "skill_id": "SK_SHIELD_BASH", "name": "シールドアタック", "cost_type": "mp", "cost": 4, "type": "physical", "target": "enemy_single", "power": 16, "status": "stun", "hit_rate": 0.25, "duration_turns": 1, "weapon_required": ["shield"] }
+
+    // ----------------------------
+    // 勇者専用（主人公専用職）
+    // ----------------------------
+    { "skill_id": "SK_GIGA_SLASH", "name": "ギガスラッシュ", "cost_type": "mp", "cost": 16, "type": "physical", "target": "enemy_all", "power": 55, "element": "lightning", "weapon_required": ["sword"], "job_required": ["hero"] },
+    { "skill_id": "SK_GIGA_BREAK", "name": "ギガブレイク", "cost_type": "mp", "cost": 28, "type": "physical", "target": "enemy_all", "power": 85, "element": "lightning", "weapon_required": ["sword"], "job_required": ["hero"] }
   ]
 }
