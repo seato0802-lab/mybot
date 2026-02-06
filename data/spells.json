@@ -1,54 +1,72 @@
 {
   "version": 1,
   "spells": [
+    // ----------------------------
+    // 攻撃（メラ系）
+    // ----------------------------
     { "spell_id": "SP_MERA", "name": "メラ", "mp_cost": 2, "type": "damage", "element": "fire", "target": "enemy_single", "power": 18 },
     { "spell_id": "SP_MERAMI", "name": "メラミ", "mp_cost": 5, "type": "damage", "element": "fire", "target": "enemy_single", "power": 42 },
     { "spell_id": "SP_MERAZOMA", "name": "メラゾーマ", "mp_cost": 12, "type": "damage", "element": "fire", "target": "enemy_single", "power": 95 },
     { "spell_id": "SP_MERAGAIA", "name": "メラガイアー", "mp_cost": 24, "type": "damage", "element": "fire", "target": "enemy_single", "power": 160 },
 
+    // ヒャド系
     { "spell_id": "SP_HYADO", "name": "ヒャド", "mp_cost": 3, "type": "damage", "element": "ice", "target": "enemy_single", "power": 22 },
     { "spell_id": "SP_HYADARUKO", "name": "ヒャダルコ", "mp_cost": 6, "type": "damage", "element": "ice", "target": "enemy_all", "power": 38 },
     { "spell_id": "SP_MAHYADO", "name": "マヒャド", "mp_cost": 12, "type": "damage", "element": "ice", "target": "enemy_all", "power": 78 },
     { "spell_id": "SP_MAHYADEDOSU", "name": "マヒャデドス", "mp_cost": 26, "type": "damage", "element": "ice", "target": "enemy_all", "power": 130 },
 
+    // ギラ系
     { "spell_id": "SP_GIRA", "name": "ギラ", "mp_cost": 3, "type": "damage", "element": "fire", "target": "enemy_line", "power": 24 },
     { "spell_id": "SP_BEGIRAMA", "name": "ベギラマ", "mp_cost": 8, "type": "damage", "element": "fire", "target": "enemy_line", "power": 55 },
     { "spell_id": "SP_BEGIRAGON", "name": "ベギラゴン", "mp_cost": 18, "type": "damage", "element": "fire", "target": "enemy_line", "power": 105 },
     { "spell_id": "SP_GIRAGUREIDO", "name": "ギラグレイド", "mp_cost": 30, "type": "damage", "element": "fire", "target": "enemy_line", "power": 150 },
 
+    // バギ系
     { "spell_id": "SP_BAGI", "name": "バギ", "mp_cost": 4, "type": "damage", "element": "wind", "target": "enemy_all", "power": 28 },
     { "spell_id": "SP_BAGIMA", "name": "バギマ", "mp_cost": 9, "type": "damage", "element": "wind", "target": "enemy_all", "power": 60 },
     { "spell_id": "SP_BAGIKUROSU", "name": "バギクロス", "mp_cost": 20, "type": "damage", "element": "wind", "target": "enemy_all", "power": 110 },
     { "spell_id": "SP_BAGIMUCHO", "name": "バギムーチョ", "mp_cost": 32, "type": "damage", "element": "wind", "target": "enemy_all", "power": 155 },
 
+    // イオ系
     { "spell_id": "SP_IO", "name": "イオ", "mp_cost": 5, "type": "damage", "element": "explosion", "target": "enemy_all", "power": 34 },
     { "spell_id": "SP_IORA", "name": "イオラ", "mp_cost": 12, "type": "damage", "element": "explosion", "target": "enemy_all", "power": 74 },
     { "spell_id": "SP_IONAZUN", "name": "イオナズン", "mp_cost": 25, "type": "damage", "element": "explosion", "target": "enemy_all", "power": 125 },
     { "spell_id": "SP_IOGURANDE", "name": "イオグランデ", "mp_cost": 38, "type": "damage", "element": "explosion", "target": "enemy_all", "power": 170 },
 
+    // デイン系
     { "spell_id": "SP_DEIN", "name": "デイン", "mp_cost": 6, "type": "damage", "element": "lightning", "target": "enemy_single", "power": 45 },
     { "spell_id": "SP_RAIDEIN", "name": "ライデイン", "mp_cost": 12, "type": "damage", "element": "lightning", "target": "enemy_single", "power": 85 },
     { "spell_id": "SP_GIGADEIN", "name": "ギガデイン", "mp_cost": 28, "type": "damage", "element": "lightning", "target": "enemy_all", "power": 140 },
 
+    // ドルマ系
     { "spell_id": "SP_DORUMA", "name": "ドルマ", "mp_cost": 4, "type": "damage", "element": "dark", "target": "enemy_single", "power": 28 },
     { "spell_id": "SP_DORUKUMA", "name": "ドルクマ", "mp_cost": 9, "type": "damage", "element": "dark", "target": "enemy_single", "power": 62 },
     { "spell_id": "SP_DORUMOA", "name": "ドルモーア", "mp_cost": 18, "type": "damage", "element": "dark", "target": "enemy_single", "power": 110 },
     { "spell_id": "SP_DORUMADON", "name": "ドルマドン", "mp_cost": 32, "type": "damage", "element": "dark", "target": "enemy_single", "power": 170 },
 
+    // ----------------------------
+    // 回復（ホイミ系）
+    // ----------------------------
     { "spell_id": "SP_HOIMI", "name": "ホイミ", "mp_cost": 2, "type": "heal", "element": "none", "target": "ally_single", "power": 35 },
     { "spell_id": "SP_BEHOIMI", "name": "ベホイミ", "mp_cost": 5, "type": "heal", "element": "none", "target": "ally_single", "power": 90 },
     { "spell_id": "SP_BEHOMA", "name": "ベホマ", "mp_cost": 12, "type": "heal", "element": "none", "target": "ally_single", "power": 220 },
     { "spell_id": "SP_BEHOMARA", "name": "ベホマラー", "mp_cost": 16, "type": "heal", "element": "none", "target": "ally_all", "power": 120 },
     { "spell_id": "SP_BEHOMAZUN", "name": "ベホマズン", "mp_cost": 42, "type": "heal", "element": "none", "target": "ally_all", "power": 999 },
 
+    // 状態回復
     { "spell_id": "SP_KIARI", "name": "キアリー", "mp_cost": 3, "type": "cure", "element": "none", "target": "ally_single", "cure": ["poison"] },
+    { "spell_id": "SP_KIAI", "name": "キアリク", "mp_cost": 8, "type": "cure", "element": "none", "target": "ally_all", "cure": ["poison"] },
     { "spell_id": "SP_ZAMEHA", "name": "ザメハ", "mp_cost": 3, "type": "cure", "element": "none", "target": "ally_single", "cure": ["sleep"] },
-    { "spell_id": "SP_KIARARU", "name": "キアラル", "mp_cost": 6, "type": "cure", "element": "none", "target": "ally_all", "cure": ["poison","sleep","paralysis"] },
+    { "spell_id": "SP_TSUKEI", "name": "キアラル", "mp_cost": 6, "type": "cure", "element": "none", "target": "ally_all", "cure": ["poison", "sleep", "paralysis"] },
 
+    // 蘇生
     { "spell_id": "SP_ZAO", "name": "ザオ", "mp_cost": 8, "type": "revive", "element": "none", "target": "ally_single", "revive_rate": 0.5, "revive_hp_ratio": 0.25 },
     { "spell_id": "SP_ZAORARU", "name": "ザオラル", "mp_cost": 15, "type": "revive", "element": "none", "target": "ally_single", "revive_rate": 0.75, "revive_hp_ratio": 0.5 },
     { "spell_id": "SP_ZAORIKU", "name": "ザオリク", "mp_cost": 28, "type": "revive", "element": "none", "target": "ally_single", "revive_rate": 1.0, "revive_hp_ratio": 1.0 },
 
+    // ----------------------------
+    // 補助（バイキルト/スクルト等）
+    // ----------------------------
     { "spell_id": "SP_BAIKIRUTO", "name": "バイキルト", "mp_cost": 6, "type": "buff", "element": "none", "target": "ally_single", "buffs": [{ "stat": "atk", "mult": 1.5 }], "duration_turns": 4 },
     { "spell_id": "SP_SUKURUTO", "name": "スクルト", "mp_cost": 5, "type": "buff", "element": "none", "target": "ally_all", "buffs": [{ "stat": "def", "mult": 1.3 }], "duration_turns": 4 },
     { "spell_id": "SP_PIORIMU", "name": "ピオリム", "mp_cost": 5, "type": "buff", "element": "none", "target": "ally_all", "buffs": [{ "stat": "spd", "mult": 1.3 }], "duration_turns": 4 },
@@ -56,19 +74,29 @@
     { "spell_id": "SP_MAJIKKUBARIA", "name": "マジックバリア", "mp_cost": 8, "type": "buff", "element": "none", "target": "ally_all", "buffs": [{ "stat": "magic_resist", "add": 0.3 }], "duration_turns": 4 },
     { "spell_id": "SP_MAHOKANTA", "name": "マホカンタ", "mp_cost": 12, "type": "buff", "element": "none", "target": "ally_single", "buffs": [{ "stat": "reflect_magic", "add": 1 }], "duration_turns": 3 },
 
+    // ----------------------------
+    // 妨害（ルカニ/マヌーサ/ラリホー等）
+    // ----------------------------
     { "spell_id": "SP_RUKANI", "name": "ルカニ", "mp_cost": 4, "type": "debuff", "element": "none", "target": "enemy_single", "debuffs": [{ "stat": "def", "mult": 0.75 }], "hit_rate": 0.75, "duration_turns": 4 },
     { "spell_id": "SP_RUKANAN", "name": "ルカナン", "mp_cost": 8, "type": "debuff", "element": "none", "target": "enemy_all", "debuffs": [{ "stat": "def", "mult": 0.75 }], "hit_rate": 0.65, "duration_turns": 4 },
     { "spell_id": "SP_BOMIOSU", "name": "ボミオス", "mp_cost": 4, "type": "debuff", "element": "none", "target": "enemy_single", "debuffs": [{ "stat": "spd", "mult": 0.75 }], "hit_rate": 0.75, "duration_turns": 4 },
+
     { "spell_id": "SP_MANUSA", "name": "マヌーサ", "mp_cost": 5, "type": "status", "element": "none", "target": "enemy_single", "status": "blind", "hit_rate": 0.65, "duration_turns": 3 },
     { "spell_id": "SP_MAHOTON", "name": "マホトーン", "mp_cost": 6, "type": "status", "element": "none", "target": "enemy_single", "status": "silence", "hit_rate": 0.65, "duration_turns": 3 },
+
     { "spell_id": "SP_RARIHO", "name": "ラリホー", "mp_cost": 4, "type": "status", "element": "none", "target": "enemy_single", "status": "sleep", "hit_rate": 0.6, "duration_turns": 3 },
     { "spell_id": "SP_RARIHOMA", "name": "ラリホーマ", "mp_cost": 10, "type": "status", "element": "none", "target": "enemy_all", "status": "sleep", "hit_rate": 0.45, "duration_turns": 3 },
+
     { "spell_id": "SP_MEDAPANI", "name": "メダパニ", "mp_cost": 6, "type": "status", "element": "none", "target": "enemy_single", "status": "confuse", "hit_rate": 0.55, "duration_turns": 3 },
     { "spell_id": "SP_MEDAPANIMA", "name": "メダパニーマ", "mp_cost": 14, "type": "status", "element": "none", "target": "enemy_all", "status": "confuse", "hit_rate": 0.4, "duration_turns": 3 },
 
+    // MP干渉
     { "spell_id": "SP_MAHOTORA", "name": "マホトラ", "mp_cost": 4, "type": "drain", "element": "none", "target": "enemy_single", "drain_mp": 18, "hit_rate": 0.8 },
-    { "spell_id": "SP_MAHOKITE", "name": "マホキテ", "mp_cost": 6, "type": "buff", "element": "none", "target": "ally_single", "buffs": [{ "stat": "mp_regen", "add": 8 }], "duration_turns": 4 },
+    { "spell_id": "SP_MAOHIMI", "name": "マホイミ", "mp_cost": 8, "type": "buff", "element": "none", "target": "ally_single", "buffs": [{ "stat": "mp_regen", "add": 8 }], "duration_turns": 4 },
 
+    // ----------------------------
+    // 特殊（探索）
+    // ----------------------------
     { "spell_id": "SP_RURA", "name": "ルーラ", "mp_cost": 8, "type": "utility", "element": "none", "target": "self", "utility": "warp_town" },
     { "spell_id": "SP_RIREMITO", "name": "リレミト", "mp_cost": 8, "type": "utility", "element": "none", "target": "self", "utility": "escape_dungeon" },
     { "spell_id": "SP_TOHEROSU", "name": "トヘロス", "mp_cost": 6, "type": "utility", "element": "none", "target": "self", "utility": "lower_encounter", "duration_steps": 30 },
