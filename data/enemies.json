@@ -1,0 +1,7221 @@
+{
+  "version": 2,
+  "count": 195,
+  "enemies": [
+    {
+      "enemy_id": "E0000",
+      "name": "スライム",
+      "family": "slime",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_000",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0001",
+      "name": "キラーパンサー",
+      "family": "beast",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_001",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0002",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_002",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0003",
+      "name": "しにがみ",
+      "family": "undead",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_003",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0004",
+      "name": "バルログ",
+      "family": "demon",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_004",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0005",
+      "name": "ならずもの",
+      "family": "humanoid",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_005",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0006",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_006",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0007",
+      "name": "おばけきのこ",
+      "family": "plant",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_007",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0008",
+      "name": "スライムベス",
+      "family": "slime",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_008",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0009",
+      "name": "グリズリー",
+      "family": "beast",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_009",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0010",
+      "name": "ブルードラゴン",
+      "family": "dragon",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_010",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0011",
+      "name": "ゾンビ",
+      "family": "undead",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_011",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0012",
+      "name": "アークデーモン",
+      "family": "demon",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_012",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0013",
+      "name": "しんえいたい",
+      "family": "humanoid",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_013",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0014",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_014",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0015",
+      "name": "マンドラゴラ",
+      "family": "plant",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_015",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0016",
+      "name": "バブルスライム",
+      "family": "slime",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_016",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0017",
+      "name": "アルミラージ",
+      "family": "beast",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_017",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0018",
+      "name": "ドラキー",
+      "family": "dragon",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_018",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0019",
+      "name": "ミイラおとこ",
+      "family": "undead",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_019",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0020",
+      "name": "デーモン",
+      "family": "demon",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_020",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0021",
+      "name": "くろいきし",
+      "family": "humanoid",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_021",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0022",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_022",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0023",
+      "name": "じんめんじゅ",
+      "family": "plant",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_023",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0024",
+      "name": "スライムつむり",
+      "family": "slime",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_024",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0025",
+      "name": "おおかみ",
+      "family": "beast",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_025",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0026",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_026",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0027",
+      "name": "がいこつけんし",
+      "family": "undead",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_027",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0028",
+      "name": "サキュバス",
+      "family": "demon",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_028",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0029",
+      "name": "バンデット",
+      "family": "humanoid",
+      "area": "north",
+      "tier": 1,
+      "flags": [],
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "def": 6,
+        "spd": 6,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 13,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_029",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0030",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_030",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0031",
+      "name": "おばけきのこ",
+      "family": "plant",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_031",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0032",
+      "name": "メタルスライム",
+      "family": "slime",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_032",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0033",
+      "name": "サーベルタイガー",
+      "family": "beast",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_033",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0034",
+      "name": "ブルードラゴン",
+      "family": "dragon",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_034",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0035",
+      "name": "スケルトン",
+      "family": "undead",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_035",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0036",
+      "name": "インプ",
+      "family": "demon",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_036",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0037",
+      "name": "まどうし",
+      "family": "humanoid",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_037",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0038",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_038",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0039",
+      "name": "マンドラゴラ",
+      "family": "plant",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_039",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0040",
+      "name": "はぐれメタル",
+      "family": "slime",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_040",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0041",
+      "name": "キラーパンサー",
+      "family": "beast",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_041",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0042",
+      "name": "ドラキー",
+      "family": "dragon",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_042",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0043",
+      "name": "しにがみ",
+      "family": "undead",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_043",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0044",
+      "name": "バルログ",
+      "family": "demon",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_044",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0045",
+      "name": "ならずもの",
+      "family": "humanoid",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_045",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0046",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_046",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0047",
+      "name": "じんめんじゅ",
+      "family": "plant",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_047",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0048",
+      "name": "キングスライム",
+      "family": "slime",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_048",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0049",
+      "name": "グリズリー",
+      "family": "beast",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_049",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0050",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_050",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0051",
+      "name": "ゾンビ",
+      "family": "undead",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_051",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0052",
+      "name": "アークデーモン",
+      "family": "demon",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_052",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0053",
+      "name": "しんえいたい",
+      "family": "humanoid",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_053",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0054",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_054",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0055",
+      "name": "おばけきのこ",
+      "family": "plant",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_055",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0056",
+      "name": "スライム",
+      "family": "slime",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_056",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0057",
+      "name": "アルミラージ",
+      "family": "beast",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_057",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0058",
+      "name": "ブルードラゴン",
+      "family": "dragon",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_058",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0059",
+      "name": "ミイラおとこ",
+      "family": "undead",
+      "area": "north",
+      "tier": 2,
+      "flags": [],
+      "stats": {
+        "hp": 40,
+        "atk": 12,
+        "def": 8,
+        "spd": 7,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 18,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_059",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0060",
+      "name": "デーモン",
+      "family": "demon",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_060",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0061",
+      "name": "くろいきし",
+      "family": "humanoid",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_061",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0062",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_062",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0063",
+      "name": "マンドラゴラ",
+      "family": "plant",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_063",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0064",
+      "name": "スライムベス",
+      "family": "slime",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_064",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0065",
+      "name": "おおかみ",
+      "family": "beast",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_065",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0066",
+      "name": "ドラキー",
+      "family": "dragon",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_066",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0067",
+      "name": "がいこつけんし",
+      "family": "undead",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_067",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0068",
+      "name": "サキュバス",
+      "family": "demon",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_068",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0069",
+      "name": "バンデット",
+      "family": "humanoid",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_069",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0070",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_070",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0071",
+      "name": "じんめんじゅ",
+      "family": "plant",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_071",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0072",
+      "name": "バブルスライム",
+      "family": "slime",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_072",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0073",
+      "name": "サーベルタイガー",
+      "family": "beast",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_073",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0074",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_074",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0075",
+      "name": "スケルトン",
+      "family": "undead",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_075",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0076",
+      "name": "インプ",
+      "family": "demon",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_076",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0077",
+      "name": "まどうし",
+      "family": "humanoid",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_077",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0078",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_078",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0079",
+      "name": "おばけきのこ",
+      "family": "plant",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_079",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0080",
+      "name": "スライムつむり",
+      "family": "slime",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_080",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0081",
+      "name": "キラーパンサー",
+      "family": "beast",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_081",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0082",
+      "name": "ブルードラゴン",
+      "family": "dragon",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_082",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0083",
+      "name": "しにがみ",
+      "family": "undead",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_083",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0084",
+      "name": "バルログ",
+      "family": "demon",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_084",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0085",
+      "name": "ならずもの",
+      "family": "humanoid",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_085",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0086",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_086",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0087",
+      "name": "マンドラゴラ",
+      "family": "plant",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_087",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0088",
+      "name": "メタルスライム",
+      "family": "slime",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_088",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0089",
+      "name": "グリズリー",
+      "family": "beast",
+      "area": "desert",
+      "tier": 3,
+      "flags": [],
+      "stats": {
+        "hp": 50,
+        "atk": 15,
+        "def": 10,
+        "spd": 8,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 23,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_089",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0090",
+      "name": "ドラキー",
+      "family": "dragon",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_090",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0091",
+      "name": "ゾンビ",
+      "family": "undead",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_091",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0092",
+      "name": "アークデーモン",
+      "family": "demon",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_092",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0093",
+      "name": "しんえいたい",
+      "family": "humanoid",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_093",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0094",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_094",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0095",
+      "name": "じんめんじゅ",
+      "family": "plant",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_095",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0096",
+      "name": "はぐれメタル",
+      "family": "slime",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_096",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0097",
+      "name": "アルミラージ",
+      "family": "beast",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_097",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0098",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_098",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0099",
+      "name": "ミイラおとこ",
+      "family": "undead",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_099",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0100",
+      "name": "デーモン",
+      "family": "demon",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_100",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0101",
+      "name": "くろいきし",
+      "family": "humanoid",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_101",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0102",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_102",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0103",
+      "name": "おばけきのこ",
+      "family": "plant",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_103",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0104",
+      "name": "キングスライム",
+      "family": "slime",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_104",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0105",
+      "name": "おおかみ",
+      "family": "beast",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_105",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0106",
+      "name": "ブルードラゴン",
+      "family": "dragon",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_106",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0107",
+      "name": "がいこつけんし",
+      "family": "undead",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_107",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0108",
+      "name": "サキュバス",
+      "family": "demon",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_108",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0109",
+      "name": "バンデット",
+      "family": "humanoid",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_109",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0110",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_110",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0111",
+      "name": "マンドラゴラ",
+      "family": "plant",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_111",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0112",
+      "name": "スライム",
+      "family": "slime",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_112",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0113",
+      "name": "サーベルタイガー",
+      "family": "beast",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_113",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0114",
+      "name": "ドラキー",
+      "family": "dragon",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_114",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0115",
+      "name": "スケルトン",
+      "family": "undead",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_115",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0116",
+      "name": "インプ",
+      "family": "demon",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_116",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0117",
+      "name": "まどうし",
+      "family": "humanoid",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_117",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0118",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_118",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0119",
+      "name": "じんめんじゅ",
+      "family": "plant",
+      "area": "desert",
+      "tier": 4,
+      "flags": [],
+      "stats": {
+        "hp": 60,
+        "atk": 18,
+        "def": 12,
+        "spd": 9,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 28,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_119",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0120",
+      "name": "スライムベス",
+      "family": "slime",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_120",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0121",
+      "name": "キラーパンサー",
+      "family": "beast",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_121",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0122",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_122",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0123",
+      "name": "しにがみ",
+      "family": "undead",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_123",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0124",
+      "name": "バルログ",
+      "family": "demon",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_124",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0125",
+      "name": "ならずもの",
+      "family": "humanoid",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_125",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0126",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_126",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0127",
+      "name": "おばけきのこ",
+      "family": "plant",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_127",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0128",
+      "name": "バブルスライム",
+      "family": "slime",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_128",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0129",
+      "name": "グリズリー",
+      "family": "beast",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_129",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0130",
+      "name": "ブルードラゴン",
+      "family": "dragon",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_130",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0131",
+      "name": "ゾンビ",
+      "family": "undead",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_131",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0132",
+      "name": "アークデーモン",
+      "family": "demon",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_132",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0133",
+      "name": "しんえいたい",
+      "family": "humanoid",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_133",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0134",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_134",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0135",
+      "name": "マンドラゴラ",
+      "family": "plant",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_135",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0136",
+      "name": "スライムつむり",
+      "family": "slime",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_136",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0137",
+      "name": "アルミラージ",
+      "family": "beast",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_137",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0138",
+      "name": "ドラキー",
+      "family": "dragon",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_138",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0139",
+      "name": "ミイラおとこ",
+      "family": "undead",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_139",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0140",
+      "name": "デーモン",
+      "family": "demon",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_140",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0141",
+      "name": "くろいきし",
+      "family": "humanoid",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_141",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0142",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_142",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0143",
+      "name": "じんめんじゅ",
+      "family": "plant",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_143",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0144",
+      "name": "メタルスライム",
+      "family": "slime",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_144",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0145",
+      "name": "おおかみ",
+      "family": "beast",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_145",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0146",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_146",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0147",
+      "name": "がいこつけんし",
+      "family": "undead",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_147",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0148",
+      "name": "サキュバス",
+      "family": "demon",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_148",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0149",
+      "name": "バンデット",
+      "family": "humanoid",
+      "area": "city",
+      "tier": 5,
+      "flags": [],
+      "stats": {
+        "hp": 70,
+        "atk": 21,
+        "def": 14,
+        "spd": 10,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 33,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_149",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0150",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_150",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0151",
+      "name": "おばけきのこ",
+      "family": "plant",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_151",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0152",
+      "name": "はぐれメタル",
+      "family": "slime",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_152",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0153",
+      "name": "サーベルタイガー",
+      "family": "beast",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_153",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0154",
+      "name": "ブルードラゴン",
+      "family": "dragon",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_154",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0155",
+      "name": "スケルトン",
+      "family": "undead",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_155",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0156",
+      "name": "インプ",
+      "family": "demon",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_156",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0157",
+      "name": "まどうし",
+      "family": "humanoid",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_157",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0158",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_158",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0159",
+      "name": "マンドラゴラ",
+      "family": "plant",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_159",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0160",
+      "name": "キングスライム",
+      "family": "slime",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_160",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0161",
+      "name": "キラーパンサー",
+      "family": "beast",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_161",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0162",
+      "name": "ドラキー",
+      "family": "dragon",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_162",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0163",
+      "name": "しにがみ",
+      "family": "undead",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_163",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0164",
+      "name": "バルログ",
+      "family": "demon",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_164",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0165",
+      "name": "ならずもの",
+      "family": "humanoid",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_165",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0166",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_166",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0167",
+      "name": "じんめんじゅ",
+      "family": "plant",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_167",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0168",
+      "name": "スライム",
+      "family": "slime",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_168",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0169",
+      "name": "グリズリー",
+      "family": "beast",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_169",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0170",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_170",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0171",
+      "name": "ゾンビ",
+      "family": "undead",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_171",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0172",
+      "name": "アークデーモン",
+      "family": "demon",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_172",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0173",
+      "name": "しんえいたい",
+      "family": "humanoid",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_173",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0174",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_174",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0175",
+      "name": "おばけきのこ",
+      "family": "plant",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_175",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0176",
+      "name": "スライムベス",
+      "family": "slime",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_176",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0177",
+      "name": "アルミラージ",
+      "family": "beast",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_177",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0178",
+      "name": "ブルードラゴン",
+      "family": "dragon",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_178",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0179",
+      "name": "ミイラおとこ",
+      "family": "undead",
+      "area": "city",
+      "tier": 6,
+      "flags": [],
+      "stats": {
+        "hp": 80,
+        "atk": 24,
+        "def": 16,
+        "spd": 11,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 38,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_179",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0180",
+      "name": "デーモン",
+      "family": "demon",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_180",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0181",
+      "name": "くろいきし",
+      "family": "humanoid",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_181",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0182",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_182",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0183",
+      "name": "マンドラゴラ",
+      "family": "plant",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_183",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0184",
+      "name": "バブルスライム",
+      "family": "slime",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_184",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0185",
+      "name": "おおかみ",
+      "family": "beast",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_185",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0186",
+      "name": "ドラキー",
+      "family": "dragon",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_186",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0187",
+      "name": "がいこつけんし",
+      "family": "undead",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_187",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0188",
+      "name": "サキュバス",
+      "family": "demon",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_188",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0189",
+      "name": "バンデット",
+      "family": "humanoid",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_189",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0190",
+      "name": "アイアンナイト",
+      "family": "machine",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_190",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0191",
+      "name": "じんめんじゅ",
+      "family": "plant",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_191",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0192",
+      "name": "スライムつむり",
+      "family": "slime",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_192",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0193",
+      "name": "サーベルタイガー",
+      "family": "beast",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_193",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    },
+    {
+      "enemy_id": "E0194",
+      "name": "グリーンドラゴン",
+      "family": "dragon",
+      "area": "airport",
+      "tier": 7,
+      "flags": [],
+      "stats": {
+        "hp": 90,
+        "atk": 27,
+        "def": 18,
+        "spd": 12,
+        "mp": 0
+      },
+      "skills": [],
+      "resists": {},
+      "exp": 43,
+      "gold": {
+        "min": 1,
+        "max": 3
+      },
+      "drops": {
+        "normal": {
+          "item_id": "IT_HERB",
+          "rate": 0.25
+        },
+        "rare": {
+          "item_id": "IT_SEED",
+          "rate": 0.015
+        }
+      },
+      "image": {
+        "base": "monster_194",
+        "variant": {}
+      },
+      "notes": "※後で name/family/area/stats/drops を調整"
+    }
+  ]
+}
