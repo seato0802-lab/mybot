@@ -8966,61 +8966,6 @@ def juggler_calc_payout(sess: dict) -> int:
     if flag == "GRAPE":  return JUGGLER_GRAPE_PAY
     return 0
 
-def _stop_filename(side: str, sym: str) -> str:
-    key = sym if sym in {"7", "BAR", "CHERRY", "GRAPE", "REPLAY"} else "BLANK"
-    return f"reel_stop_{side}_{key}.png"
-
-async def juggler_get_files(sess: dict) -> list[discord.File]:
-    files = []
-    for i, stopped in enumerate(sess["reels_stopped"]):
-        side = ["L", "C", "R"][i]
-        fname = _stop_filename(side, sess["reel_symbols"][i]) if stopped else f"reel_fast_{side}.gif"
-        data = await _jf_bytes(fname)
-        if data:
-            files.append(_jf_discord(data, fname))
-    lamp_fname = "gogolamp_on.gif" if sess["lamp_on"] else "gogolamp_off.png"
-    data = await _jf_bytes(lamp_fname)
-    if data:
-        files.append(_jf_discord(data, lamp_fname))
-    return files
-
-async def juggler_slow_files(reel_pos: int, sess: dict) -> list[discord.File]:
-    files = []
-    for i, stopped in enumerate(sess["reels_stopped"]):
-        side = ["L", "C", "R"][i]
-        if i == reel_pos and not stopped:
-            fname = f"reel_slow_{side}.gif"
-        elif stopped:
-            fname = _stop_filename(side, sess["reel_symbols"][i])
-        else:
-            fname = f"reel_fast_{side}.gif"
-        data = await _jf_bytes(fname)
-        if data:
-            files.append(_jf_discord(data, fname))
-    data = await _jf_bytes("gogolamp_off.png")
-    if data:
-        files.append(_jf_discord(data, "gogolamp_off.png"))
-    return files
-
-# ── 表示テキスト ────────────────────────────────────────
-
-def _reel_cell(sym: str) -> str:
-    return SYM_TEXT.get(sym, " ??? ")
-
-def juggler_game_text(sess: dict, extra: str = "") -> str:
-    r = sess["reel_symbols"]
-    lamp = "💡✨GOGO!✨" if sess["lamp_on"] else "　　💡　　"
-    text = (
-        f"🎰 **アイムジャグラーEX**\n{lamp}\n\n"
-        f"┌──────┬──────┬──────┐\n"
-        f"│{_reel_cell(r[0])}│{_reel_cell(r[1])}│{_reel_cell(r[2])}│  ← PAY LINE\n"
-        f"└──────┴──────┴──────┘\n\n"
-        f"💰 クレジット：**{sess['credit']:,}** 枚\n"
-    )
-    if extra:
-        text += f"\n{extra}"
-    return text
-
 def juggler_result_text(sess: dict) -> str:
     flag = sess["flag"]
     payout = sess["payout"]
@@ -9029,6 +8974,14 @@ def juggler_result_text(sess: dict) -> str:
     if payout > 0:               return f"{label}　**+{payout}枚**"
     if flag == "REPLAY":         return "↺ **リプレイ** （次ゲームのBETなし）"
     return "　ハズレ"
+
+def _juggler_sync_stats(sess: dict):
+    uid = sess["uid"]
+    st = juggler_load_stats(uid)
+    st["total_games"] = sess["total_games"]
+    st["games_since_bonus"] = sess["games_since_bonus"]
+    st["max_hamare"] = max(st.get("max_hamare", 0), sess.get("games_since_bonus", 0))
+    juggler_save_stats(uid, st)
 
 # ── GameView ────────────────────────────────────────────
 
@@ -9071,11 +9024,10 @@ class JugglerGameView(discord.ui.View):
             sess["phase"]   = "spinning"
             sess["total_games"] += 1
             sess["games_since_bonus"] += 1
-        view = _juggler_view_spinning(self.uid)
-        files = await juggler_get_files(sess)
+
+        embeds = juggler_build_embeds(sess, "**〜 回転中 〜**")
         await interaction.response.edit_message(
-            content=juggler_game_text(sess, "**〜 回転中 〜**"),
-            attachments=[], files=files, view=view)
+            content=None, embeds=embeds, view=_juggler_view_spinning(self.uid))
 
     @discord.ui.button(label="⏹ 左STOP", style=discord.ButtonStyle.danger,
                        custom_id="juggler:stop_l")
@@ -9099,7 +9051,7 @@ class JugglerGameView(discord.ui.View):
         cr = sess["credit"] if sess else 0
         await interaction.response.edit_message(
             content=f"🎰 ジャグラーを終了したのだ\n最終クレジット：{cr:,} 枚",
-            attachments=[], files=[], view=None)
+            embeds=[], view=None)
 
 def _juggler_view_spinning(uid: int) -> JugglerGameView:
     view = JugglerGameView(uid)
@@ -9134,12 +9086,11 @@ async def _juggler_stop(interaction: discord.Interaction, reel_pos: int):
     stopped_so_far = sum(sess["reels_stopped"])
 
     if stopped_so_far == 2:
-        # 最後のSTOP
+        # 最後のSTOP：低速→停止の2段演出
         await interaction.response.defer()
-        slow_files = await juggler_slow_files(reel_pos, sess)
+        slow_embeds = juggler_build_slow_embeds(reel_pos, sess)
         await interaction.edit_original_response(
-            content=juggler_game_text(sess, "**〜 最後のリール 〜**"),
-            attachments=[], files=slow_files, view=_juggler_view_spinning(uid))
+            content=None, embeds=slow_embeds, view=_juggler_view_spinning(uid))
         await asyncio.sleep(1.5)
 
         sess["reel_symbols"][reel_pos] = juggler_reel_symbol_for_stop(
@@ -9154,18 +9105,21 @@ async def _juggler_stop(interaction: discord.Interaction, reel_pos: int):
         result_str = juggler_result_text(sess)
 
         if flag in ("BIG", "REG"):
-            gacko_data = await _jf_bytes("gacko.gif")
-            if gacko_data:
-                await interaction.edit_original_response(
-                    content=juggler_game_text(sess, "💥 **ガコッ！！**"),
-                    attachments=[], files=[_jf_discord(gacko_data, "gacko.gif")], view=None)
-                await asyncio.sleep(2.0)
-            lamp_data = await _jf_bytes("gogolamp_on.gif")
-            if lamp_data:
-                await interaction.edit_original_response(
-                    content=juggler_game_text(sess, f"🎊 **{FLAG_LABEL[flag]}**"),
-                    attachments=[], files=[_jf_discord(lamp_data, "gogolamp_on.gif")], view=None)
-                await asyncio.sleep(2.0)
+            # ガコッ演出
+            gacko_embeds = juggler_build_single_embed(
+                "🎰 アイムジャグラーEX", "💥 **ガコッ！！**", "gacko.gif")
+            await interaction.edit_original_response(
+                content=None, embeds=gacko_embeds, view=None)
+            await asyncio.sleep(2.0)
+
+            # ランプ点灯
+            lamp_embeds = juggler_build_single_embed(
+                "🎰 アイムジャグラーEX",
+                f"💡✨ **{FLAG_LABEL[flag]}** ✨", "gogolamp_on.gif")
+            await interaction.edit_original_response(
+                content=None, embeds=lamp_embeds, view=None)
+            await asyncio.sleep(2.0)
+
             await _juggler_start_bonus(interaction, sess)
         else:
             if sess["payout"] > 0:
@@ -9176,32 +9130,22 @@ async def _juggler_stop(interaction: discord.Interaction, reel_pos: int):
                     await sheets_upsert_async(u)
             _juggler_sync_stats(sess)
             sess["phase"] = "idle"
-            final_files = await juggler_get_files(sess)
+            final_embeds = juggler_build_embeds(sess, result_str)
             await interaction.edit_original_response(
-                content=juggler_game_text(sess, result_str),
-                attachments=[], files=final_files, view=_juggler_view_idle(uid))
+                content=None, embeds=final_embeds, view=_juggler_view_idle(uid))
     else:
         # 1〜2番目のSTOP
         sess["reel_symbols"][reel_pos] = juggler_reel_symbol_for_stop(
             sess["flag"], reel_pos, stopped_so_far)
         sess["reels_stopped"][reel_pos] = True
-        files = await juggler_get_files(sess)
+        embeds = juggler_build_embeds(sess)
         view = _juggler_view_spinning(uid)
         for item in view.children:
             if isinstance(item, discord.ui.Button):
                 if item.custom_id == "juggler:stop_l" and sess["reels_stopped"][0]: item.disabled = True
                 elif item.custom_id == "juggler:stop_c" and sess["reels_stopped"][1]: item.disabled = True
                 elif item.custom_id == "juggler:stop_r" and sess["reels_stopped"][2]: item.disabled = True
-        await interaction.response.edit_message(
-            content=juggler_game_text(sess), attachments=[], files=files, view=view)
-
-def _juggler_sync_stats(sess: dict):
-    uid = sess["uid"]
-    st = juggler_load_stats(uid)
-    st["total_games"] = sess["total_games"]
-    st["games_since_bonus"] = sess["games_since_bonus"]
-    st["max_hamare"] = max(st.get("max_hamare", 0), sess.get("games_since_bonus", 0))
-    juggler_save_stats(uid, st)
+        await interaction.response.edit_message(content=None, embeds=embeds, view=view)
 
 # ── ボーナスゲーム ──────────────────────────────────────
 
@@ -9228,15 +9172,14 @@ async def _juggler_start_bonus(interaction: discord.Interaction, sess: dict):
 
     jac_max = JUGGLER_BIG_JAC_COUNT if bonus_type == "BIG" else JUGGLER_REG_JAC_COUNT
     bonus_fname = "bonus_big.png" if bonus_type == "BIG" else "bonus_reg.png"
-    bonus_data = await _jf_bytes(bonus_fname)
-    files = [_jf_discord(bonus_data, bonus_fname)] if bonus_data else []
-
-    await interaction.edit_original_response(
-        content=(
-            f"🎰 **{bonus_type} BONUS開始！**\n\n"
-            f"JACゲーム：0 / {jac_max} 回\n総獲得：0 枚\n"
-            f"💰 クレジット：{sess['credit']:,} 枚"),
-        attachments=[], files=files, view=JugglerBonusView(uid))
+    desc = (
+        f"JACゲーム：0 / {jac_max} 回\n"
+        f"総獲得：0 枚\n"
+        f"💰 クレジット：{sess['credit']:,} 枚"
+    )
+    embeds = juggler_build_single_embed(f"🎰 {bonus_type} BONUS開始！", desc, bonus_fname)
+    await interaction.edit_original_response(content=None, embeds=embeds,
+                                              view=JugglerBonusView(uid))
 
 class JugglerBonusView(discord.ui.View):
     def __init__(self, uid: int):
@@ -9278,29 +9221,28 @@ class JugglerBonusView(discord.ui.View):
                 return
 
         bonus_fname = "bonus_big.png" if bonus_type == "BIG" else "bonus_reg.png"
-        bonus_data = await _jf_bytes(bonus_fname)
-        files = [_jf_discord(bonus_data, bonus_fname)] if bonus_data else []
-        await interaction.response.edit_message(
-            content=(
-                f"🎰 **{bonus_type} BONUS中**\n\n"
-                f"ゲーム：{sess['big_regular_games']} G\n"
-                f"JAC：{sess['jac_count_done']} / {jac_max} 回\n"
-                f"総獲得：{sess['jac_total_pay']:,} 枚\n"
-                f"💰 クレジット：{sess['credit']:,} 枚"),
-            attachments=[], files=files, view=JugglerBonusView(self.uid))
+        desc = (
+            f"ゲーム：{sess['big_regular_games']} G\n"
+            f"JAC：{sess['jac_count_done']} / {jac_max} 回\n"
+            f"総獲得：{sess['jac_total_pay']:,} 枚\n"
+            f"💰 クレジット：{sess['credit']:,} 枚"
+        )
+        embeds = juggler_build_single_embed(f"🎰 {bonus_type} BONUS中", desc, bonus_fname)
+        await interaction.response.edit_message(content=None, embeds=embeds,
+                                                 view=JugglerBonusView(self.uid))
 
 async def _juggler_start_jac(interaction: discord.Interaction, sess: dict):
     sess["phase"] = "jac"
     sess["jac_games_played"] = 0
-    jac_data = await _jf_bytes("jac_game.png")
-    files = [_jf_discord(jac_data, "jac_game.png")] if jac_data else []
-    await interaction.response.edit_message(
-        content=(
-            f"🔔 **JAC IN！** ボーナスゲーム開始なのだ！\n\n"
-            f"残りゲーム：{JUGGLER_JAC_GAMES} / {JUGGLER_JAC_GAMES}\n"
-            f"総獲得：{sess['jac_total_pay']:,} 枚\n"
-            f"💰 クレジット：{sess['credit']:,} 枚"),
-        attachments=[], files=files, view=JugglerJacView(sess["uid"]))
+    desc = (
+        f"残りゲーム：{JUGGLER_JAC_GAMES} / {JUGGLER_JAC_GAMES}\n"
+        f"総獲得：{sess['jac_total_pay']:,} 枚\n"
+        f"💰 クレジット：{sess['credit']:,} 枚"
+    )
+    embeds = juggler_build_single_embed("🔔 JAC IN！ ボーナスゲーム開始なのだ！", desc, "jac_game.png",
+                                        color=0x00AA55)
+    await interaction.response.edit_message(content=None, embeds=embeds,
+                                             view=JugglerJacView(sess["uid"]))
 
 class JugglerJacView(discord.ui.View):
     def __init__(self, uid: int):
@@ -9334,17 +9276,17 @@ class JugglerJacView(discord.ui.View):
 
         remaining = JUGGLER_JAC_GAMES - sess["jac_games_played"]
         result_str = f"✨ **+{jac_pay}枚！**" if hit else "　ハズレ..."
-        jac_data = await _jf_bytes("jac_game.png")
-        files = [_jf_discord(jac_data, "jac_game.png")] if jac_data else []
 
         if remaining > 0:
-            await interaction.edit_original_response(
-                content=(
-                    f"🔔 **JACゲーム中**　{result_str}\n\n"
-                    f"残りゲーム：{remaining} / {JUGGLER_JAC_GAMES}\n"
-                    f"今回JAC獲得：{sess['jac_total_pay']:,} 枚\n"
-                    f"💰 クレジット：{sess['credit']:,} 枚"),
-                attachments=[], files=files, view=JugglerJacView(self.uid))
+            desc = (
+                f"{result_str}\n\n"
+                f"残りゲーム：{remaining} / {JUGGLER_JAC_GAMES}\n"
+                f"今回JAC獲得：{sess['jac_total_pay']:,} 枚\n"
+                f"💰 クレジット：{sess['credit']:,} 枚"
+            )
+            embeds = juggler_build_single_embed("🔔 JACゲーム中", desc, "jac_game.png", color=0x00AA55)
+            await interaction.edit_original_response(content=None, embeds=embeds,
+                                                      view=JugglerJacView(self.uid))
         else:
             sess["jac_count_done"] += 1
             bonus_type = sess["bonus_type"]
@@ -9353,15 +9295,15 @@ class JugglerJacView(discord.ui.View):
                 await _juggler_end_bonus_deferred(interaction, sess)
             else:
                 sess["phase"] = "bonus"
-                bonus_data = await _jf_bytes("bonus_big.png")
-                b_files = [_jf_discord(bonus_data, "bonus_big.png")] if bonus_data else []
-                await interaction.edit_original_response(
-                    content=(
-                        f"🎰 **BIG BONUS継続！**　{result_str}\n\n"
-                        f"JAC：{sess['jac_count_done']} / {jac_max} 回完了\n"
-                        f"総獲得：{sess['jac_total_pay']:,} 枚\n"
-                        f"💰 クレジット：{sess['credit']:,} 枚"),
-                    attachments=[], files=b_files, view=JugglerBonusView(self.uid))
+                desc = (
+                    f"{result_str}\n\n"
+                    f"JAC：{sess['jac_count_done']} / {jac_max} 回完了\n"
+                    f"総獲得：{sess['jac_total_pay']:,} 枚\n"
+                    f"💰 クレジット：{sess['credit']:,} 枚"
+                )
+                embeds = juggler_build_single_embed("🎰 BIG BONUS継続！", desc, "bonus_big.png")
+                await interaction.edit_original_response(content=None, embeds=embeds,
+                                                          view=JugglerBonusView(self.uid))
 
 async def _juggler_end_bonus(interaction: discord.Interaction, sess: dict):
     uid = sess["uid"]
@@ -9369,12 +9311,16 @@ async def _juggler_end_bonus(interaction: discord.Interaction, sess: dict):
     total_pay = sess["jac_total_pay"]
     juggler_log_bonus(uid, sess["machine_id"], bonus_type, total_pay, sess.get("games_since_bonus", 0))
     sess.update({"phase": "idle", "bonus_type": None, "flag": "NOTHING",
-                 "reel_symbols": ["SPIN","SPIN","SPIN"], "reels_stopped": [False,False,False], "lamp_on": False})
-    files = await juggler_get_files(sess)
-    await interaction.response.edit_message(
-        content=(f"🎊 **{bonus_type} BONUS終了！**\n\n今回のボーナス獲得：**{total_pay:,} 枚**\n\n"
-                 + juggler_game_text(sess, "▶ 次のゲームを始めるのだ")),
-        attachments=[], files=files, view=_juggler_view_idle(uid))
+                 "reel_symbols": ["SPIN","SPIN","SPIN"],
+                 "reels_stopped": [False,False,False], "lamp_on": False})
+    desc = (
+        f"今回のボーナス獲得：**{total_pay:,} 枚**\n\n"
+        f"▶ 次のゲームを始めるのだ\n"
+        f"💰 クレジット：{sess['credit']:,} 枚"
+    )
+    embeds = juggler_build_embeds(sess, f"🎊 **{bonus_type} BONUS終了！**\n{desc}")
+    await interaction.response.edit_message(content=None, embeds=embeds,
+                                             view=_juggler_view_idle(uid))
 
 async def _juggler_end_bonus_deferred(interaction: discord.Interaction, sess: dict):
     uid = sess["uid"]
@@ -9382,12 +9328,16 @@ async def _juggler_end_bonus_deferred(interaction: discord.Interaction, sess: di
     total_pay = sess["jac_total_pay"]
     juggler_log_bonus(uid, sess["machine_id"], bonus_type, total_pay, sess.get("games_since_bonus", 0))
     sess.update({"phase": "idle", "bonus_type": None, "flag": "NOTHING",
-                 "reel_symbols": ["SPIN","SPIN","SPIN"], "reels_stopped": [False,False,False], "lamp_on": False})
-    files = await juggler_get_files(sess)
-    await interaction.edit_original_response(
-        content=(f"🎊 **{bonus_type} BONUS終了！**\n\n今回のボーナス獲得：**{total_pay:,} 枚**\n\n"
-                 + juggler_game_text(sess, "▶ 次のゲームを始めるのだ")),
-        attachments=[], files=files, view=_juggler_view_idle(uid))
+                 "reel_symbols": ["SPIN","SPIN","SPIN"],
+                 "reels_stopped": [False,False,False], "lamp_on": False})
+    desc = (
+        f"今回のボーナス獲得：**{total_pay:,} 枚**\n\n"
+        f"▶ 次のゲームを始めるのだ\n"
+        f"💰 クレジット：{sess['credit']:,} 枚"
+    )
+    embeds = juggler_build_embeds(sess, f"🎊 **{bonus_type} BONUS終了！**\n{desc}")
+    await interaction.edit_original_response(content=None, embeds=embeds,
+                                              view=_juggler_view_idle(uid))
 
 # ── 台選択View ──────────────────────────────────────────
 
@@ -9428,10 +9378,9 @@ class JugglerMachineButton(discord.ui.Button):
         sess = _new_juggler_session(uid=uid, machine_id=self.machine["id"],
                                     setting=self.machine["setting"], credit=coins)
         juggler_sessions[uid] = sess
-        files = await juggler_get_files(sess)
+        embeds = juggler_build_embeds(sess, "▶ レバーを引いてゲームを始めるのだ")
         await interaction.edit_original_response(
-            content=juggler_game_text(sess, "▶ レバーを引いてゲームを始めるのだ"),
-            attachments=[], files=files, view=_juggler_view_idle(uid))
+            content=None, embeds=embeds, view=_juggler_view_idle(uid))
 
 class JugglerQuitButton(discord.ui.Button):
     def __init__(self):
@@ -9439,7 +9388,7 @@ class JugglerQuitButton(discord.ui.Button):
                          custom_id="juggler:select_quit")
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(content="終了したのだ", view=None)
+        await interaction.response.edit_message(content="終了したのだ", embeds=[], view=None)
 
 # ── エントリーView（チャンネルに常設）────────────────────
 
@@ -9468,17 +9417,6 @@ async def setup_juggler_cmd(interaction: discord.Interaction):
         return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, juggler_db_init)
-
-    await safe_send(interaction, "🔄 素材を読み込み中なのだ...", ephemeral=True)
-    failed = await juggler_preload_assets()
-    if failed:
-        lines_txt = chr(10).join(f"  ・{f}" for f in failed[:10])
-        if len(failed) > 10:
-            lines_txt += f"\n  ...他{len(failed)-10}件"
-        msg = (f"⚠️ 以下の素材の取得に失敗したのだ。\n{lines_txt}\n\n"
-               "Google Driveの共有設定（リンクを知っている全員）を確認してほしいのだ。")
-        return await interaction.followup.send(msg, ephemeral=True)
-
     embed = discord.Embed(
         title="🎰 アイムジャグラーEX",
         description=(
@@ -9491,8 +9429,9 @@ async def setup_juggler_cmd(interaction: discord.Interaction):
             f"・1JACゲーム：**{JUGGLER_JAC_PAY}枚**\n\n"
             "下のボタンを押してスタートするのだ！"),
         color=0xFFAA00)
+    embed.set_thumbnail(url=_jurl("machine_im_ex.png"))
     await interaction.channel.send(embed=embed, view=JugglerEntryView())
-    await interaction.followup.send("ジャグラー台を設置したのだ！", ephemeral=True)
+    await safe_send(interaction, "ジャグラー台を設置したのだ！", ephemeral=True)
 
 
 @bot.tree.command(name="add_juggler_machine", description="ジャグラーの台を追加するのだ（管理者のみ）")
@@ -9660,6 +9599,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
