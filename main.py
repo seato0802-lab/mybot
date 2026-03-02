@@ -1135,7 +1135,7 @@ async def _jf_bytes(filename: str) -> bytes | None:
         return None
 
 def _jf_discord(data: bytes, filename: str) -> discord.File:
-    return discord.File(_io.BytesIO(data), filename=filename)
+    return discord.File(io.BytesIO(data), filename=filename)
 
 async def juggler_preload_assets() -> list[str]:
     """全素材を事前取得。失敗したファイル名リストを返す。"""
@@ -9368,7 +9368,7 @@ class JugglerMachineSelectView(discord.ui.View):
 class JugglerMachineButton(discord.ui.Button):
     def __init__(self, uid: int, machine: dict):
         super().__init__(
-            label=f"🎰 {machine['name']}",
+            label=f"🎰 {machine['name']}（設定{machine['setting']}）",
             style=discord.ButtonStyle.primary,
             custom_id=f"juggler:machine:{machine['id']}",
         )
@@ -9519,6 +9519,7 @@ async def juggler_stats_cmd(interaction: discord.Interaction):
         f"現在のハマリ：{st['games_since_bonus']} G\n"
     )
     await safe_send(interaction, msg, ephemeral=True)
+
 # =========================================================
 # 起動イベント
 # =========================================================
@@ -9619,6 +9620,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
