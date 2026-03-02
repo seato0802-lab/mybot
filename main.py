@@ -1071,9 +1071,85 @@ def roll_debuff_zone(world: int) -> int:
 
 JUGGLER_ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "juggler_assets")
 
+# ✅ juggler_assets フォルダのパス（main.py と同じディレクトリ）
+JUGGLER_ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "juggler_assets")
+
+# ✅ Google Drive 素材URL一覧（ファイル名 -> 直接DLリンク）
+def _gdrive_url(file_id: str) -> str:
+    return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+JUGGLER_ASSET_URLS: dict[str, str] = {
+    "bonus_big.png":       _gdrive_url("1oSYG6aeb5en3-IgCzJzotRAjpqn1pONF"),
+    "bonus_reg.png":       _gdrive_url("16cv-5JXvXBvYvgw-3rEfWQCgSthWS9TG"),
+    "gacko.gif":           _gdrive_url("1MVSx0oyfiRAuryc1Y9WIY7c24lRy2GEq"),
+    "gogolamp_off.png":    _gdrive_url("1hLs4dv-U9lAuDk3942PMNFVgSZhPqnJ6"),
+    "gogolamp_on.gif":     _gdrive_url("1summOA_gFdXd8W590Q2-6wHzl_05cUNU"),
+    "jac_game.png":        _gdrive_url("1J2gsHfHZAECQPdgNORzkPIT_YRBIZDDL"),
+    "machine_im_ex.png":   _gdrive_url("14jNVAaXbkK51qrcg1lrcbXULhHMcombc"),
+    "reel_fast_C.gif":     _gdrive_url("1r4DLx2jZxPe_0nKMgrZIzmNekL-DN9ku"),
+    "reel_fast_L.gif":     _gdrive_url("1_kH1ZyPlf63-J4xbRje_eZo7_V1j4Eu7"),
+    "reel_fast_R.gif":     _gdrive_url("1pxhoE9wsDCWy2cmSjrsVOBFk8RgBMntV"),
+    "reel_slow_C.gif":     _gdrive_url("1IPG79MMlVSYbha-u6-2qgL00b0U6jHdO"),
+    "reel_slow_L.gif":     _gdrive_url("10fzueK-hzKS3cEcbyLnvl_Z9G5Da3JmF"),
+    "reel_slow_R.gif":     _gdrive_url("1W4Pa0muXHlxOkE560tzJolrEH1hIR8Ke"),
+    "reel_stop_C_7.png":      _gdrive_url("1SjGm-Ckd4Uf7Ey-KfxZQbsWveXuQ1RRK"),
+    "reel_stop_C_BAR.png":    _gdrive_url("1wnUgGxGRxqQ8sQXEVY0shblmDc_x5ZbL"),
+    "reel_stop_C_BLANK.png":  _gdrive_url("1gTQUGUdyaNUZf0oD6k7aCkRwf5ARQO_h"),
+    "reel_stop_C_CHERRY.png": _gdrive_url("1UomgUkbfqrPkyJC616xcVGPYSJAOKoH1"),
+    "reel_stop_C_GRAPE.png":  _gdrive_url("1D2D7bSwpvXAGZK-qZG3-4IM07QZxX2hY"),
+    "reel_stop_C_REPLAY.png": _gdrive_url("1RFkbduYzowaTMBcZRWmntXdtVtzgLAW1"),
+    "reel_stop_L_7.png":      _gdrive_url("1YTl_6meoFboVdR_KDuyP3UNuUGDpQPDL"),
+    "reel_stop_L_BAR.png":    _gdrive_url("1H3Lp031jbvW_ublMgWPxV23NVBPe5bsD"),
+    "reel_stop_L_BLANK.png":  _gdrive_url("1opFdvd0tpnGUpcGIth5gqiCUmbhuU_AK"),
+    "reel_stop_L_CHERRY.png": _gdrive_url("13ggibsdgV4wNGCPS38M-kapkd5T2b5en"),
+    "reel_stop_L_GRAPE.png":  _gdrive_url("1stLT-BeWKqASx853w5zydNdduWTTknj6"),
+    "reel_stop_L_REPLAY.png": _gdrive_url("16xH8kVbKTXZwoSMIAcSGbu5AFxV7rPvC"),
+    "reel_stop_R_7.png":      _gdrive_url("13MPxJkfHkafGewGFPwFHNYYprw-QB_76"),
+    "reel_stop_R_BAR.png":    _gdrive_url("1IajiGRhStzRHPB9emEnQnigNtBRk1Cm_"),
+    "reel_stop_R_BLANK.png":  _gdrive_url("1gV_Dou_t68G_M74BF8-AAkqEIesbaM2b"),
+    "reel_stop_R_CHERRY.png": _gdrive_url("1PQpT-FAlDeEv603ubKFlVLWT1H1ilPdh"),
+    "reel_stop_R_GRAPE.png":  _gdrive_url("1c91ncR3o_JYioOoABKK5TGPsQKhI_Pjb"),
+    "reel_stop_R_REPLAY.png": _gdrive_url("1PLyEdY3IRpPb-gP688YMUiwd276cFsjc"),
+}
+
 def _jf(filename: str) -> str:
     """ジャグラー素材ファイルのフルパスを返す"""
     return os.path.join(JUGGLER_ASSETS, filename)
+
+def _jf_exists(filename: str) -> bool:
+    return os.path.isfile(_jf(filename))
+
+async def juggler_download_assets() -> list[str]:
+    """
+    不足している素材をGoogle Driveから自動ダウンロードする。
+    失敗したファイル名のリストを返す（空なら全て成功）。
+    """
+    os.makedirs(JUGGLER_ASSETS, exist_ok=True)
+    failed = []
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for fname, url in JUGGLER_ASSET_URLS.items():
+            dest = _jf(fname)
+            if os.path.isfile(dest):
+                continue  # 既に存在する場合はスキップ
+            try:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        with open(dest, "wb") as f:
+                            f.write(data)
+                        print(f"[juggler] DL OK: {fname}")
+                    else:
+                        print(f"[juggler] DL failed ({resp.status}): {fname}")
+                        failed.append(fname)
+            except Exception as e:
+                print(f"[juggler] DL error {fname}: {e}")
+                failed.append(fname)
+    return failed
+
+def _juggler_check_assets() -> list[str]:
+    """ローカルに存在しない素材ファイルのリストを返す"""
+    return [f for f in JUGGLER_ASSET_URLS if not _jf_exists(f)]
 
 # ── 確率テーブル（設定別）──────────────────────────────
 # 値は「1/N の N」。設定IDをキーにする。
@@ -9812,6 +9888,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
