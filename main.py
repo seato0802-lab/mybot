@@ -1069,9 +1069,9 @@ def roll_debuff_zone(world: int) -> int:
         return 0
     return 1 if random.random() < 0.30 else 0
 
-# ✅ Google Drive 素材URL一覧
+# ✅ 素材URL（ダンジョンと同じ形式）
 def _gdrive_url(file_id: str) -> str:
-    return f"https://drive.google.com/uc?export=download&id={file_id}"
+    return f"https://drive.google.com/uc?id={file_id}"
 
 JUGGLER_ASSET_URLS: dict[str, str] = {
     "bonus_big.png":          _gdrive_url("1oSYG6aeb5en3-IgCzJzotRAjpqn1pONF"),
@@ -1107,44 +1107,94 @@ JUGGLER_ASSET_URLS: dict[str, str] = {
     "reel_stop_R_REPLAY.png": _gdrive_url("1PLyEdY3IRpPb-gP688YMUiwd276cFsjc"),
 }
 
-# ✅ メモリキャッシュ（bot起動中は再DL不要）
-_juggler_img_cache: dict[str, bytes] = {}
+def _jurl(filename: str) -> str:
+    """ファイル名からURL文字列を返す（ダンジョンの url= と同じ使い方）"""
+    return JUGGLER_ASSET_URLS.get(filename, "")
 
-async def _jf_bytes(filename: str) -> bytes | None:
-    """ファイル名に対応する画像バイトを返す（キャッシュあり）"""
-    if filename in _juggler_img_cache:
-        return _juggler_img_cache[filename]
-    url = JUGGLER_ASSET_URLS.get(filename)
-    if not url:
-        print(f"[juggler] URL未登録: {filename}")
-        return None
-    try:
-        timeout = aiohttp.ClientTimeout(total=20)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, allow_redirects=True) as resp:
-                if resp.status == 200:
-                    data = await resp.read()
-                    _juggler_img_cache[filename] = data
-                    print(f"[juggler] 取得OK: {filename} ({len(data)//1024}KB)")
-                    return data
-                else:
-                    print(f"[juggler] 取得失敗 ({resp.status}): {filename}")
-                    return None
-    except Exception as e:
-        print(f"[juggler] 取得エラー {filename}: {e}")
-        return None
+def _stop_filename(side: str, sym: str) -> str:
+    key = sym if sym in {"7", "BAR", "CHERRY", "GRAPE", "REPLAY"} else "BLANK"
+    return f"reel_stop_{side}_{key}.png"
 
-def _jf_discord(data: bytes, filename: str) -> discord.File:
-    return discord.File(io.BytesIO(data), filename=filename)
+# ── embedビルダー（ダンジョンの _build_battle_embed と同じ考え方）──
 
-async def juggler_preload_assets() -> list[str]:
-    """全素材を事前取得。失敗したファイル名リストを返す。"""
-    failed = []
-    for fname in JUGGLER_ASSET_URLS:
-        data = await _jf_bytes(fname)
-        if data is None:
-            failed.append(fname)
-    return failed
+def juggler_build_embeds(sess: dict, extra: str = "") -> list[discord.Embed]:
+    """
+    リール3枚＋ランプ をembedのset_image/set_thumbnailで表示。
+    Discord は embeds=[] に複数渡せる。
+    """
+    r = sess["reel_symbols"]
+    lamp_on = sess["lamp_on"]
+
+    # メインembedにゲーム状態テキスト＋ランプ画像
+    lamp_fname = "gogolamp_on.gif" if lamp_on else "gogolamp_off.png"
+    lamp_label = "💡✨ GOGO! ✨" if lamp_on else "　　💡　　"
+
+    sym_text = {"7": "7", "BAR": "BAR", "CHERRY": "🍒", "GRAPE": "🍇",
+                "REPLAY": "↺", "SPIN": "〜"}
+
+    desc = (
+        f"{lamp_label}\n\n"
+        f"[ {sym_text.get(r[0],'？')} | {sym_text.get(r[1],'？')} | {sym_text.get(r[2],'？')} ]  ← PAY LINE\n\n"
+        f"💰 クレジット：**{sess['credit']:,}** 枚"
+    )
+    if extra:
+        desc += f"\n\n{extra}"
+
+    main_embed = discord.Embed(title="🎰 アイムジャグラーEX", description=desc, color=0xFFAA00)
+    main_embed.set_thumbnail(url=_jurl(lamp_fname))
+
+    # リールL embed
+    sides = ["L", "C", "R"]
+    reel_embeds = []
+    for i, stopped in enumerate(sess["reels_stopped"]):
+        side = sides[i]
+        if stopped:
+            fname = _stop_filename(side, r[i])
+        else:
+            fname = f"reel_fast_{side}.gif"
+        e = discord.Embed(color=0x222233)
+        e.set_image(url=_jurl(fname))
+        reel_embeds.append(e)
+
+    return [main_embed] + reel_embeds
+
+def juggler_build_slow_embeds(reel_pos: int, sess: dict) -> list[discord.Embed]:
+    """最後のSTOP演出用（指定リールだけ低速GIF）"""
+    r = sess["reel_symbols"]
+    sym_text = {"7": "7", "BAR": "BAR", "CHERRY": "🍒", "GRAPE": "🍇",
+                "REPLAY": "↺", "SPIN": "〜"}
+
+    desc = (
+        f"　　💡　　\n\n"
+        f"[ {sym_text.get(r[0],'？')} | {sym_text.get(r[1],'？')} | {sym_text.get(r[2],'？')} ]  ← PAY LINE\n\n"
+        f"**〜 最後のリール 〜**\n"
+        f"💰 クレジット：**{sess['credit']:,}** 枚"
+    )
+    main_embed = discord.Embed(title="🎰 アイムジャグラーEX", description=desc, color=0xFFAA00)
+    main_embed.set_thumbnail(url=_jurl("gogolamp_off.png"))
+
+    sides = ["L", "C", "R"]
+    reel_embeds = []
+    for i, stopped in enumerate(sess["reels_stopped"]):
+        side = sides[i]
+        if i == reel_pos and not stopped:
+            fname = f"reel_slow_{side}.gif"
+        elif stopped:
+            fname = _stop_filename(side, r[i])
+        else:
+            fname = f"reel_fast_{side}.gif"
+        e = discord.Embed(color=0x222233)
+        e.set_image(url=_jurl(fname))
+        reel_embeds.append(e)
+
+    return [main_embed] + reel_embeds
+
+def juggler_build_single_embed(title: str, desc: str, image_fname: str,
+                                color: int = 0xFFAA00) -> list[discord.Embed]:
+    """ボーナス・JAC画面など単一画像のembed"""
+    e = discord.Embed(title=title, description=desc, color=color)
+    e.set_image(url=_jurl(image_fname))
+    return [e]
 
 # ── 確率テーブル（設定別）──────────────────────────────
 JUGGLER_PROB_TABLES: dict[int, dict[str, float]] = {
@@ -1165,16 +1215,6 @@ JUGGLER_BIG_JAC_COUNT  = 3
 JUGGLER_REG_JAC_COUNT  = 1
 JUGGLER_JAC_GAMES      = 12
 JUGGLER_BIG_BASE_GAMES = 30
-
-SYM_TEXT = {
-    "7":      "　 7  ",
-    "BAR":    "　BAR",
-    "CHERRY": "　🍒 ",
-    "GRAPE":  "　🍇 ",
-    "REPLAY": "　 ↺ ",
-    "GOGO":   "GOGO!",
-    "SPIN":   "〜〜〜",
-}
 
 FLAG_LABEL = {
     "BIG":     "🎰 BIG!!!",
@@ -9620,6 +9660,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
