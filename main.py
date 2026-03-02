@@ -9627,8 +9627,6 @@ async def setup_juggler_cmd(interaction: discord.Interaction):
     )
     await interaction.channel.send(embed=embed, view=JugglerEntryView())
     await safe_send(interaction, "ジャグラー台を設置したのだ！", ephemeral=True)
-
-
 @bot.tree.command(name="add_juggler_machine", description="ジャグラーの台を追加するのだ（管理者のみ）")
 @app_commands.describe(name="台の名前（例：マイジャグラーV）", setting="設定（1〜6）")
 async def add_juggler_machine_cmd(interaction: discord.Interaction, name: str, setting: int):
@@ -9645,6 +9643,46 @@ async def add_juggler_machine_cmd(interaction: discord.Interaction, name: str, s
     )
     await safe_send(interaction, f"台「{name}（設定{setting}）」を追加したのだ（ID: {mid}）", ephemeral=True)
 
+
+@bot.tree.command(name="delete_juggler_machine", description="ジャグラーの台を削除するのだ（管理者のみ）")
+@app_commands.describe(machine_id="削除する台のID（/juggler_machines で確認）")
+async def delete_juggler_machine_cmd(interaction: discord.Interaction, machine_id: int):
+    if not is_admin_user(interaction):
+        return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
+
+    loop = asyncio.get_running_loop()
+    deleted = await loop.run_in_executor(None, lambda: juggler_delete_machine(machine_id))
+
+    if not deleted:
+        return await safe_send(
+            interaction,
+            "削除できなかったのだ。IDが存在しないか、最後の1台は削除できないのだ",
+            ephemeral=True
+        )
+
+    # その台でプレイ中のセッションを強制終了
+    for uid, sess in list(juggler_sessions.items()):
+        if sess.get("machine_id") == machine_id:
+            juggler_sessions.pop(uid, None)
+
+    await safe_send(interaction, f"台（ID: {machine_id}）を削除したのだ", ephemeral=True)
+
+
+@bot.tree.command(name="juggler_machines", description="設置中のジャグラー台一覧を表示するのだ（管理者のみ）")
+async def juggler_machines_cmd(interaction: discord.Interaction):
+    if not is_admin_user(interaction):
+        return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
+
+    loop = asyncio.get_running_loop()
+    machines = await loop.run_in_executor(None, juggler_get_machines)
+
+    if not machines:
+        return await safe_send(interaction, "台がないのだ", ephemeral=True)
+
+    lines_txt = chr(10).join(
+        f"ID:{m['id']}\u3000{m['name']}（設定{m['setting']}）" for m in machines
+    )
+    await safe_send(interaction, f"🎰 **設置中の台一覧**\n\n{lines_txt}", ephemeral=True)
 
 @bot.tree.command(name="juggler_stats", description="ジャグラーの自分の履歴を見るのだ")
 async def juggler_stats_cmd(interaction: discord.Interaction):
@@ -9774,6 +9812,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
