@@ -1071,7 +1071,8 @@ def roll_debuff_zone(world: int) -> int:
 
 # ✅ 素材URL
 def _gdrive_url(file_id: str) -> str:
-    return f"https://drive.google.com/uc?export=download&id={file_id}"
+    # drive.usercontent.google.com はウイルスチェック確認ページを挟まず直接DLできる
+    return f"https://drive.usercontent.google.com/download?id={file_id}&export=download&authuser=0&confirm=t"
 
 JUGGLER_ASSET_URLS: dict[str, str] = {
     "bonus_big.png":          _gdrive_url("1oSYG6aeb5en3-IgCzJzotRAjpqn1pONF"),
@@ -1110,21 +1111,82 @@ JUGGLER_ASSET_URLS: dict[str, str] = {
 _juggler_cache: dict[str, bytes] = {}
 
 async def _jget(filename: str) -> bytes | None:
+    """
+    Google Driveからファイルを取得。
+    大きいファイルはウイルススキャン確認ページが返るので
+    confirmトークンを抽出して再リクエストする。
+    """
     if filename in _juggler_cache:
         return _juggler_cache[filename]
     url = JUGGLER_ASSET_URLS.get(filename)
     if not url:
         return None
+
+    # ファイルの正しいシグネチャ（先頭バイト）
+    VALID_SIGS = {
+        b"GIF8",       # GIF
+        b"\x89PNG",    # PNG
+        b"\xff\xd8\xff",  # JPEG
+    }
+
+    def _is_valid_file(data: bytes) -> bool:
+        return any(data[:4].startswith(sig) for sig in VALID_SIGS)
+
     try:
-        timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        timeout = aiohttp.ClientTimeout(total=60)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            # 1回目のリクエスト
             async with session.get(url, allow_redirects=True) as resp:
-                if resp.status == 200:
-                    data = await resp.read()
-                    _juggler_cache[filename] = data
-                    print(f"[juggler] cached: {filename} ({len(data)//1024}KB)")
-                    return data
-                print(f"[juggler] DL failed ({resp.status}): {filename}")
+                if resp.status != 200:
+                    print(f"[juggler] DL failed ({resp.status}): {filename}")
+                    return None
+                data = await resp.read()
+
+            # HTMLが返ってきた場合（ウイルススキャン確認ページ）
+            if not _is_valid_file(data):
+                text = data.decode("utf-8", errors="ignore")
+
+                # confirmトークンを探す（新旧両パターン）
+                import re as _re
+                confirm = None
+                # 新パターン: confirm=t&
+                m = _re.search(r'confirm=([0-9A-Za-z_\-]+)', text)
+                if m:
+                    confirm = m.group(1)
+                # uuid パターン
+                m2 = _re.search(r'uuid=([0-9a-f\-]+)', text)
+                uuid = m2.group(1) if m2 else None
+
+                # file_id を URL から抽出
+                file_id_m = _re.search(r'id=([^&]+)', url)
+                file_id = file_id_m.group(1) if file_id_m else None
+
+                if file_id and confirm:
+                    dl_url = f"https://drive.google.com/uc?export=download&confirm={confirm}&id={file_id}"
+                elif file_id and uuid:
+                    dl_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&authuser=0&confirm=t&uuid={uuid}"
+                elif file_id:
+                    # 最新パターン: usercontent経由
+                    dl_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&authuser=0&confirm=t"
+                else:
+                    print(f"[juggler] confirm取得失敗: {filename}")
+                    return None
+
+                async with session.get(dl_url, allow_redirects=True) as resp2:
+                    if resp2.status != 200:
+                        print(f"[juggler] confirm DL failed ({resp2.status}): {filename}")
+                        return None
+                    data = await resp2.read()
+
+            if _is_valid_file(data):
+                _juggler_cache[filename] = data
+                print(f"[juggler] cached: {filename} ({len(data)//1024}KB)")
+                return data
+            else:
+                print(f"[juggler] 無効なファイル形式: {filename} (先頭: {data[:8].hex()})")
+                return None
+
     except Exception as e:
         print(f"[juggler] DL error {filename}: {e}")
     return None
@@ -9534,6 +9596,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
