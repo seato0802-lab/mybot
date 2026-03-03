@@ -1198,13 +1198,22 @@ def _stop_filename(side: str, sym: str) -> str:
     key = sym if sym in {"7", "BAR", "CHERRY", "GRAPE", "REPLAY"} else "BLANK"
     return f"reel_stop_{side}_{key}.png"
 
+try:
+    from PIL import Image as _PILImage
+    _PILLOW_OK = True
+except ImportError:
+    _PILImage = None
+    _PILLOW_OK = False
+    print("[juggler] ⚠️ Pillowが未インストールです。pip install Pillow --break-system-packages を実行してください。")
+
 def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
                     reel_w: int = 150, reel_h: int = 190, lamp_h: int = 55, padding: int = 4) -> bytes:
     """
     3枚のリール画像（GIF or PNG）とランプ画像を横並びに合成して1枚のGIFを返す。
     GIFはフレームを維持してアニメーション合成する。
     """
-    from PIL import Image as _PILImage
+    if not _PILLOW_OK:
+        raise RuntimeError("Pillow未インストール")
     n = len(reel_bytes_list)
     total_w = reel_w * n + padding * (n - 1)
     total_h = reel_h + (padding + lamp_h if lamp_bytes else 0)
@@ -1248,30 +1257,38 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
                      append_images=composed[1:], loop=0, duration=80, optimize=False)
     return buf.getvalue()
 
-async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None) -> discord.File:
-    """合成した1枚のGIFをdiscord.Fileで返す"""
+async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None) -> discord.File | None:
+    """合成した1枚のGIFをdiscord.Fileで返す。Pillow未インストールならNone。"""
+    if not _PILLOW_OK:
+        return None
     data = await asyncio.get_running_loop().run_in_executor(
         None, _composite_slot, reel_bytes_list, lamp_bytes)
     return discord.File(io.BytesIO(data), filename="juggler.gif")
 
 async def _juggler_files(sess: dict) -> list[discord.File]:
-    """現在のリール状態を1枚に合成したdiscord.Fileリスト"""
-    reel_data = []
+    """現在のリール状態を1枚に合成したdiscord.Fileリスト。Pillow未インストール時は個別ファイル。"""
+    reel_data = []; reel_fnames = []
     for i, stopped in enumerate(sess["reels_stopped"]):
         side = ["L", "C", "R"][i]
         fname = _stop_filename(side, sess["reel_symbols"][i]) if stopped else f"reel_fast_{side}.gif"
         data = await _jget(fname)
         if data:
-            reel_data.append(data)
+            reel_data.append(data); reel_fnames.append(fname)
     lamp_fname = "gogolamp_on.gif" if sess["lamp_on"] else "gogolamp_off.png"
     lamp_data = await _jget(lamp_fname)
     if len(reel_data) == 3:
-        return [await _juggler_single_file(reel_data, lamp_data)]
+        composed = await _juggler_single_file(reel_data, lamp_data)
+        if composed:
+            return [composed]
+        # Pillowなし：個別ファイルで送信
+        result = [_jfile(d, fn) for d, fn in zip(reel_data, reel_fnames)]
+        if lamp_data: result.append(_jfile(lamp_data, lamp_fname))
+        return result
     return []
 
 async def _juggler_slow_files(reel_pos: int, sess: dict) -> list[discord.File]:
     """最後のSTOP演出用（指定リールを低速GIFにして合成）"""
-    reel_data = []
+    reel_data = []; reel_fnames = []
     for i, stopped in enumerate(sess["reels_stopped"]):
         side = ["L", "C", "R"][i]
         if i == reel_pos and not stopped:
@@ -1282,10 +1299,15 @@ async def _juggler_slow_files(reel_pos: int, sess: dict) -> list[discord.File]:
             fname = f"reel_fast_{side}.gif"
         data = await _jget(fname)
         if data:
-            reel_data.append(data)
+            reel_data.append(data); reel_fnames.append(fname)
     lamp_data = await _jget("gogolamp_off.png")
     if len(reel_data) == 3:
-        return [await _juggler_single_file(reel_data, lamp_data)]
+        composed = await _juggler_single_file(reel_data, lamp_data)
+        if composed:
+            return [composed]
+        result = [_jfile(d, fn) for d, fn in zip(reel_data, reel_fnames)]
+        if lamp_data: result.append(_jfile(lamp_data, "gogolamp_off.png"))
+        return result
     return []
 
 async def juggler_preload() -> list[str]:
@@ -9678,6 +9700,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
