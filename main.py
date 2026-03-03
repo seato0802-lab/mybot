@@ -1198,23 +1198,80 @@ def _stop_filename(side: str, sym: str) -> str:
     key = sym if sym in {"7", "BAR", "CHERRY", "GRAPE", "REPLAY"} else "BLANK"
     return f"reel_stop_{side}_{key}.png"
 
+def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
+                    reel_w: int = 150, reel_h: int = 190, lamp_h: int = 55, padding: int = 4) -> bytes:
+    """
+    3枚のリール画像（GIF or PNG）とランプ画像を横並びに合成して1枚のGIFを返す。
+    GIFはフレームを維持してアニメーション合成する。
+    """
+    from PIL import Image as _PILImage
+    n = len(reel_bytes_list)
+    total_w = reel_w * n + padding * (n - 1)
+    total_h = reel_h + (padding + lamp_h if lamp_bytes else 0)
+
+    # 各リールのフレーム取得
+    reel_frames_list = []
+    max_frames = 1
+    for rb in reel_bytes_list:
+        img = _PILImage.open(io.BytesIO(rb))
+        frames = []
+        try:
+            while True:
+                frames.append(img.copy().convert("RGBA").resize((reel_w, reel_h), _PILImage.LANCZOS))
+                img.seek(img.tell() + 1)
+        except EOFError:
+            pass
+        if not frames:
+            frames = [img.convert("RGBA").resize((reel_w, reel_h), _PILImage.LANCZOS)]
+        reel_frames_list.append(frames)
+        max_frames = max(max_frames, len(frames))
+
+    # ランプ画像
+    lamp_img = None
+    if lamp_bytes:
+        lamp_img = _PILImage.open(io.BytesIO(lamp_bytes)).convert("RGBA")
+        lamp_img = lamp_img.resize((total_w, lamp_h), _PILImage.LANCZOS)
+
+    composed = []
+    for fi in range(max_frames):
+        canvas = _PILImage.new("RGBA", (total_w, total_h), (20, 20, 28, 255))
+        for i, frames in enumerate(reel_frames_list):
+            frame = frames[fi % len(frames)]
+            x = i * (reel_w + padding)
+            canvas.paste(frame, (x, 0), frame)
+        if lamp_img:
+            canvas.paste(lamp_img, (0, reel_h + padding), lamp_img)
+        composed.append(canvas.convert("P", palette=_PILImage.ADAPTIVE, colors=256))
+
+    buf = io.BytesIO()
+    composed[0].save(buf, format="GIF", save_all=True,
+                     append_images=composed[1:], loop=0, duration=80, optimize=False)
+    return buf.getvalue()
+
+async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None) -> discord.File:
+    """合成した1枚のGIFをdiscord.Fileで返す"""
+    data = await asyncio.get_running_loop().run_in_executor(
+        None, _composite_slot, reel_bytes_list, lamp_bytes)
+    return discord.File(io.BytesIO(data), filename="juggler.gif")
+
 async def _juggler_files(sess: dict) -> list[discord.File]:
-    """現在のリール状態のdiscord.Fileリスト"""
-    result = []
+    """現在のリール状態を1枚に合成したdiscord.Fileリスト"""
+    reel_data = []
     for i, stopped in enumerate(sess["reels_stopped"]):
         side = ["L", "C", "R"][i]
         fname = _stop_filename(side, sess["reel_symbols"][i]) if stopped else f"reel_fast_{side}.gif"
         data = await _jget(fname)
         if data:
-            result.append(_jfile(data, fname))
+            reel_data.append(data)
     lamp_fname = "gogolamp_on.gif" if sess["lamp_on"] else "gogolamp_off.png"
-    data = await _jget(lamp_fname)
-    if data:
-        result.append(_jfile(data, lamp_fname))
-    return result
+    lamp_data = await _jget(lamp_fname)
+    if len(reel_data) == 3:
+        return [await _juggler_single_file(reel_data, lamp_data)]
+    return []
 
 async def _juggler_slow_files(reel_pos: int, sess: dict) -> list[discord.File]:
-    result = []
+    """最後のSTOP演出用（指定リールを低速GIFにして合成）"""
+    reel_data = []
     for i, stopped in enumerate(sess["reels_stopped"]):
         side = ["L", "C", "R"][i]
         if i == reel_pos and not stopped:
@@ -1225,11 +1282,11 @@ async def _juggler_slow_files(reel_pos: int, sess: dict) -> list[discord.File]:
             fname = f"reel_fast_{side}.gif"
         data = await _jget(fname)
         if data:
-            result.append(_jfile(data, fname))
-    data = await _jget("gogolamp_off.png")
-    if data:
-        result.append(_jfile(data, "gogolamp_off.png"))
-    return result
+            reel_data.append(data)
+    lamp_data = await _jget("gogolamp_off.png")
+    if len(reel_data) == 3:
+        return [await _juggler_single_file(reel_data, lamp_data)]
+    return []
 
 async def juggler_preload() -> list[str]:
     failed = []
@@ -1278,7 +1335,8 @@ def _new_juggler_session(uid: int, machine_id: int, setting: int, credit: int) -
         "total_games": 0, "big_count": 0, "reg_count": 0,
         "games_since_bonus": 0, "max_hamare": 0,
         "thread_id": None,   # ゲーム用スレッドID
-        "game_msg_id": None, # スレッド内のゲームメッセージID
+        "ctrl_msg_id": None, # ボタン付きテキストメッセージID（固定）
+        "img_msg_id": None,  # 画像メッセージID（GIF更新時のみ削除→再送）
     }
 
 _SYM = {"7": "7", "BAR": "BAR", "CHERRY": "🍒", "GRAPE": "🍇",
@@ -8997,19 +9055,33 @@ def juggler_calc_payout(sess: dict) -> int:
 async def _juggler_send_game(sess: dict, content: str,
                              files: list[discord.File],
                              view: discord.ui.View | None) -> None:
-    """スレッド内の古いゲームメッセージを削除して新しく送信（プレビュー表示のため）"""
+    """
+    【2メッセージ方式】
+    ① 画像メッセージ：削除→新規送信（GIFアニメーションのプレビュー表示のため）
+    ② テキスト+ボタンメッセージ：edit のみ（ボタンが動かず打ってる感が出る）
+    """
     thread = bot.get_channel(sess["thread_id"])
     if not thread:
         return
-    # 古いメッセージを削除
+
+    # ── 画像メッセージを削除して新規送信 ──
     try:
-        old_msg = await thread.fetch_message(sess["game_msg_id"])
-        await old_msg.delete()
+        old_img = await thread.fetch_message(sess["img_msg_id"])
+        await old_img.delete()
     except Exception:
         pass
-    # 新しいメッセージを送信
-    new_msg = await thread.send(content=content, files=files, view=view)
-    sess["game_msg_id"] = new_msg.id
+    if files:
+        img_msg = await thread.send(files=files)
+        sess["img_msg_id"] = img_msg.id
+
+    # ── テキスト+ボタンメッセージはeditのみ（位置を固定） ──
+    try:
+        ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
+        await ctrl_msg.edit(content=content, view=view)
+    except Exception:
+        # 初回またはメッセージが消えた場合は新規作成
+        ctrl_msg = await thread.send(content=content, view=view)
+        sess["ctrl_msg_id"] = ctrl_msg.id
 
 # ── View ────────────────────────────────────────────────
 
@@ -9078,12 +9150,20 @@ class JugglerGameView(discord.ui.View):
         await interaction.response.defer()
         thread = bot.get_channel(sess["thread_id"]) if sess else None
         if thread:
+            # 画像メッセージを削除
             try:
-                old_msg = await thread.fetch_message(sess["game_msg_id"])
-                await old_msg.delete()
+                old_img = await thread.fetch_message(sess["img_msg_id"])
+                await old_img.delete()
             except Exception:
                 pass
-            await thread.send(content=f"🎰 ジャグラーを終了したのだ\n最終クレジット：{cr:,} 枚")
+            # ボタンメッセージを終了テキストに更新
+            try:
+                ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
+                await ctrl_msg.edit(
+                    content=f"🎰 ジャグラーを終了したのだ\n最終クレジット：{cr:,} 枚",
+                    view=None)
+            except Exception:
+                pass
         # スレッドをアーカイブ
         thread = bot.get_channel(sess["thread_id"]) if sess else None
         if thread:
@@ -9406,13 +9486,15 @@ class JugglerMachineButton(discord.ui.Button):
         sess["thread_id"] = thread.id
         juggler_sessions[uid] = sess
 
-        # スレッド内にゲーム画面を投稿
+        # スレッド内にゲーム画面を投稿（画像→テキスト+ボタンの順で送信）
         files = await _juggler_files(sess)
-        game_msg = await thread.send(
+        if files:
+            img_msg = await thread.send(files=files)
+            sess["img_msg_id"] = img_msg.id
+        ctrl_msg = await thread.send(
             content=juggler_game_text(sess, "▶ レバーを引いてゲームを始めるのだ"),
-            files=files,
             view=_juggler_view_idle(uid))
-        sess["game_msg_id"] = game_msg.id
+        sess["ctrl_msg_id"] = ctrl_msg.id
 
         await interaction.edit_original_response(
             content=f"スレッドを作成したのだ！ {thread.mention} でプレイするのだ🎰")
@@ -9596,6 +9678,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
