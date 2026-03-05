@@ -1207,15 +1207,10 @@ except ImportError:
     print("[juggler] ⚠️ Pillowが未インストールです。pip install Pillow --break-system-packages を実行してください。")
 
 def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
-                    reel_w: int = 150, reel_h: int = 190, lamp_h: int = 55, padding: int = 4,
-                    reel_stop_rows: list[list[bytes]] | None = None) -> bytes:
+                    reel_w: int = 150, reel_h: int = 190, lamp_h: int = 55, padding: int = 4) -> bytes:
     """
-    reel_stop_rows: 停止リールの3行画像 [[top_bytes, mid_bytes, bot_bytes], ...]
-                    停止リール位置に対応。Noneのリールはreel_bytes_listから取得。
-    """
-    """
-    3枚のリール画像（GIF or PNG）とランプ画像を横並びに合成して1枚のGIFを返す。
-    GIFはフレームを維持してアニメーション合成する。
+    3リールを横並びに合成して1枚のGIFを返す。
+    停止画像は既に3シンボル入りなのでそのままリサイズして使用。
     """
     if not _PILLOW_OK:
         raise RuntimeError("Pillow未インストール")
@@ -1223,32 +1218,20 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
     total_w = reel_w * n + padding * (n - 1)
     total_h = reel_h + (padding + lamp_h if lamp_bytes else 0)
 
-    # 各リールのフレーム取得
     reel_frames_list = []
     max_frames = 1
-    sym_h = reel_h // 3
-    for ri, rb in enumerate(reel_bytes_list):
-        # 停止リールで3行分の画像がある場合は縦に並べて1フレームに
-        if reel_stop_rows and ri < len(reel_stop_rows) and reel_stop_rows[ri]:
-            rows = reel_stop_rows[ri]
-            canvas_r = _PILImage.new("RGBA", (reel_w, reel_h), (30,30,30,255))
-            for row_i, row_b in enumerate(rows[:3]):
-                sym_img = _PILImage.open(io.BytesIO(row_b)).convert("RGBA")
-                sym_img = sym_img.resize((reel_w, sym_h), _PILImage.LANCZOS)
-                canvas_r.paste(sym_img, (0, row_i * sym_h), sym_img)
-            reel_frames_list.append([canvas_r])
-        else:
-            img = _PILImage.open(io.BytesIO(rb))
-            frames = []
-            try:
-                while True:
-                    frames.append(img.copy().convert("RGBA").resize((reel_w, reel_h), _PILImage.LANCZOS))
-                    img.seek(img.tell() + 1)
-            except EOFError:
-                pass
-            if not frames:
-                frames = [img.convert("RGBA").resize((reel_w, reel_h), _PILImage.LANCZOS)]
-            reel_frames_list.append(frames)
+    for rb in reel_bytes_list:
+        img = _PILImage.open(io.BytesIO(rb))
+        frames = []
+        try:
+            while True:
+                frames.append(img.copy().convert("RGBA").resize((reel_w, reel_h), _PILImage.LANCZOS))
+                img.seek(img.tell() + 1)
+        except EOFError:
+            pass
+        if not frames:
+            frames = [img.convert("RGBA").resize((reel_w, reel_h), _PILImage.LANCZOS)]
+        reel_frames_list.append(frames)
         max_frames = max(max_frames, len(reel_frames_list[-1]))
 
     # ランプ画像（アスペクト比を保ってリール幅に収める・中央配置）
@@ -1288,53 +1271,31 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
                      append_images=composed[1:], loop=0, duration=80, optimize=False)
     return buf.getvalue()
 
-async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
-                               reel_stop_rows: list | None = None) -> discord.File | None:
+async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None) -> discord.File | None:
     """合成した1枚のGIFをdiscord.Fileで返す。Pillow未インストールならNone。"""
     if not _PILLOW_OK:
         return None
-    import functools
-    fn = functools.partial(_composite_slot, reel_bytes_list, lamp_bytes,
-                           reel_stop_rows=reel_stop_rows)
-    data = await asyncio.get_running_loop().run_in_executor(None, fn)
-    return discord.File(io.BytesIO(data), filename="juggler.gif")
+    try:
+        data = await asyncio.get_running_loop().run_in_executor(
+            None, _composite_slot, reel_bytes_list, lamp_bytes)
+        return discord.File(io.BytesIO(data), filename="juggler.gif")
+    except Exception as e:
+        print(f"[juggler] composite失敗: {e}")
+        import traceback as _tb; _tb.print_exc()
+        return None
 
 async def _juggler_files(sess: dict) -> list[discord.File]:
-    """現在のリール状態を1枚に合成したdiscord.Fileリスト。Pillow未インストール時は個別ファイル。"""
+    """現在のリール状態を1枚に合成したdiscord.Fileリスト。停止画像は3シンボル入り1枚。"""
     reel_data = []; reel_fnames = []
-    reel_stop_rows: list[list[bytes] | None] = []
-
     for i, stopped in enumerate(sess["reels_stopped"]):
         side = ["L", "C", "R"][i]
-        if stopped:
-            # 停止: reel_window[i] = [top_sym, mid_sym, bot_sym]
-            window_syms = sess["reel_window"][i]
-            rows_data = []
-            for sym in window_syms:
-                fname = _stop_filename(side, sym)
-                d = await _jget(fname)
-                if d: rows_data.append(d)
-            if len(rows_data) == 3:
-                # 代表データとして中段を使用（composite側で3行処理）
-                reel_data.append(rows_data[1])
-                reel_fnames.append(_stop_filename(side, window_syms[1]))
-                reel_stop_rows.append(rows_data)
-            else:
-                fname = _stop_filename(side, sess["reel_symbols"][i])
-                d = await _jget(fname)
-                reel_data.append(d or b""); reel_fnames.append(fname)
-                reel_stop_rows.append(None)
-        else:
-            fname = f"reel_fast_{side}.gif"
-            d = await _jget(fname)
-            reel_data.append(d or b""); reel_fnames.append(fname)
-            reel_stop_rows.append(None)
-
+        fname = _stop_filename(side, sess["reel_symbols"][i]) if stopped else f"reel_fast_{side}.gif"
+        d = await _jget(fname)
+        reel_data.append(d or b""); reel_fnames.append(fname)
     lamp_fname = "gogolamp_on.gif" if sess["lamp_on"] else "gogolamp_off.png"
     lamp_data = await _jget(lamp_fname)
-
     if len(reel_data) == 3 and all(reel_data):
-        composed = await _juggler_single_file(reel_data, lamp_data, reel_stop_rows)
+        composed = await _juggler_single_file(reel_data, lamp_data)
         if composed:
             return [composed]
         result = [_jfile(d, fn) for d, fn in zip(reel_data, reel_fnames) if d]
@@ -9773,7 +9734,7 @@ async def setup_juggler_cmd(interaction: discord.Interaction):
         color=0xFFAA00)
     await interaction.channel.send(embed=embed, view=JugglerEntryView())
     await interaction.followup.send("ジャグラー台を設置したのだ！", ephemeral=True)
-
+    
 # =========================================================
 # 起動イベント
 # =========================================================
@@ -9874,6 +9835,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
