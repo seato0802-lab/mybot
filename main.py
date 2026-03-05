@@ -1290,15 +1290,8 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
         composed.append(canvas)
 
     buf = io.BytesIO()
-    # RGBのままパレット変換（quantize使用で色精度向上）
-    rgb_frames = [f.convert("RGB") for f in composed]
-    if len(rgb_frames) == 1:
-        p_frame = rgb_frames[0].quantize(colors=256, method=_PILImage.Quantize.MEDIANCUT)
-        p_frame.save(buf, format="GIF")
-    else:
-        p_frames = [f.quantize(colors=256, method=_PILImage.Quantize.MEDIANCUT) for f in rgb_frames]
-        p_frames[0].save(buf, format="GIF", save_all=True,
-                         append_images=p_frames[1:], loop=0, duration=60, optimize=False)
+    # 常にPNG保存（GIFのパレット変換による色劣化を完全回避）
+    composed[-1].convert("RGB").save(buf, format="PNG")
     return buf.getvalue()
 
 async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
@@ -1311,7 +1304,7 @@ async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes |
         fn = functools.partial(_composite_slot, reel_bytes_list, lamp_bytes,
                                reel_windows=reel_windows)
         data = await asyncio.get_running_loop().run_in_executor(None, fn)
-        return discord.File(io.BytesIO(data), filename="juggler.gif")
+        return discord.File(io.BytesIO(data), filename="juggler.png")
     except Exception as e:
         print(f"[juggler] composite失敗: {e}")
         import traceback as _tb; _tb.print_exc()
@@ -10018,6 +10011,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
