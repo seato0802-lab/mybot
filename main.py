@@ -9233,13 +9233,14 @@ def juggler_roll_flag(setting: int) -> str:
 
 _REEL_SYMS = ["7", "BAR", "CHERRY", "GRAPE", "REPLAY", "BLANK"]
 # 上下段に出るシンボル（BLANKは1個のみ、他は均等）
-_COMMON = ["BAR", "GRAPE", "REPLAY", "CHERRY", "BAR", "GRAPE", "REPLAY", "CHERRY"]
+# リール配列（実際のリール順。上下はこの配列の前後から取得）
+_REEL_STRIP = ["7", "CHERRY", "GRAPE", "BLANK", "BAR", "REPLAY", "CHERRY", "BLANK", "GRAPE", "BAR", "REPLAY", "BLANK", "CHERRY", "GRAPE", "7", "BLANK", "BAR", "REPLAY", "CHERRY", "GRAPE", "BLANK"]
+_COMMON = ["BAR", "GRAPE", "REPLAY", "CHERRY", "BLANK"]
 
 def juggler_reel_window_for_stop(flag: str, reel_pos: int) -> list[str]:
     """
     停止時の [上, 中, 下] シンボルを返す。
-    中段はflagで決定、上下はランダム。
-    ファイル名: reel_stop_{side}_{top}_{mid}_{bot}.png
+    中段はflagで決定。上下はリール配列の前後から取得（同じ役が連続しないように）。
     """
     def _mid():
         if flag == "BIG":    return "7"
@@ -9249,8 +9250,18 @@ def juggler_reel_window_for_stop(flag: str, reel_pos: int) -> list[str]:
         if flag == "REPLAY": return "REPLAY"
         return random.choice(_COMMON)
     mid = _mid()
-    top = random.choice(_COMMON)
-    bot = random.choice(_COMMON)
+    # リール配列から中段の位置を探し、前後を上下に使う
+    strip = _REEL_STRIP
+    n = len(strip)
+    try:
+        idx = strip.index(mid)
+    except ValueError:
+        idx = random.randrange(n)
+    # ランダムに複数存在する場合はランダムに選ぶ
+    candidates = [i for i, s in enumerate(strip) if s == mid]
+    idx = random.choice(candidates) if candidates else idx
+    top = strip[(idx - 1) % n]
+    bot = strip[(idx + 1) % n]
     return [top, mid, bot]
 
 def juggler_reel_symbol_for_stop(flag, reel_pos, stopped_count):
@@ -9450,24 +9461,28 @@ def _juggler_view_idle(uid: int) -> JugglerGameView:
 async def _juggler_stop(interaction: discord.Interaction, reel_pos: int):
     uid = interaction.user.id
     sess = juggler_sessions.get(uid)
-    if not sess or sess["phase"] != "spinning" or sess["reels_stopped"][reel_pos]:
+    if not sess or sess["phase"] not in ("spinning",) or sess["reels_stopped"][reel_pos]:
         return
+    if all(sess["reels_stopped"]):  # 全リール停止済みなら無視
+        return
+    sess["reels_stopped"][reel_pos] = True  # 即座にフラグを立てて二重処理防止
 
     stopped_so_far = sum(sess["reels_stopped"])
 
+    # まず3シンボルを確定
+    window = juggler_reel_window_for_stop(sess["flag"], reel_pos)
+    sess["reel_window"][reel_pos] = window
+    sess["reel_symbols"][reel_pos] = window[1]
+
     if stopped_so_far == 2:
-        # 低速演出
+        # 2本目停止: 3本目だけ低速GIF表示
         slow_files = await _juggler_slow_files(reel_pos, sess)
         await _juggler_send_game(sess,
             juggler_game_text(sess, "🔄 回転中..."),
             slow_files, _juggler_view_spinning(uid))
-        await asyncio.sleep(1.5)
 
-        # 3シンボルを確定
-        window = juggler_reel_window_for_stop(sess["flag"], reel_pos)
-        sess["reel_window"][reel_pos] = window
-        sess["reel_symbols"][reel_pos] = window[1]  # 中段
-        sess["reels_stopped"][reel_pos] = True
+    elif stopped_so_far == 3:
+        # 3本目停止: 最終結果
         flag = sess["flag"]
         if flag in ("BIG","REG"): sess["lamp_on"] = True
         sess["payout"] = juggler_calc_payout(sess)
@@ -9496,12 +9511,9 @@ async def _juggler_stop(interaction: discord.Interaction, reel_pos: int):
             await _juggler_send_game(sess,
                 juggler_game_text(sess),
                 final_files, _juggler_view_idle(uid))
+
     else:
-        # 1〜2番目のSTOP: 3シンボル確定
-        window = juggler_reel_window_for_stop(sess["flag"], reel_pos)
-        sess["reel_window"][reel_pos] = window
-        sess["reel_symbols"][reel_pos] = window[1]
-        sess["reels_stopped"][reel_pos] = True
+        # 1本目停止: そのまま表示更新
         files = await _juggler_files(sess)
         view = _juggler_view_spinning(uid, sess["reels_stopped"][:])
         await _juggler_send_game(sess, juggler_game_text(sess), files, view)
@@ -10006,6 +10018,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
