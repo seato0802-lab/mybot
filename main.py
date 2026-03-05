@@ -1464,8 +1464,8 @@ def juggler_stats_text(sess: dict) -> str:
             f"📦 PAYOUT：**{sess.get('payout_total', 0):,}**")
 
 def juggler_game_text(sess: dict, extra: str = "") -> str:
-    """ボタンエリアのメッセージ（回転中・ハズレ等のみ）"""
-    return extra if extra else "　"  # 空白でも何か入れないとeditできない
+    """ボタンエリアのメッセージ（回転中・結果等のみ）"""
+    return extra if extra else "-"  # Discordはcontent空不可のためダミー文字
 
 def juggler_result_text(sess: dict) -> str:
     flag = sess["flag"]
@@ -9213,7 +9213,7 @@ async def _juggler_send_game(sess: dict, content: str,
     # ── ヘッダーメッセージ（スロット名+ランプ）を更新 ──
     try:
         header_msg = await thread.fetch_message(sess["header_msg_id"])
-        await header_msg.edit(content=f"🎰 **アイムジャグラーEX**　{lamp_str}")
+        await header_msg.edit(content=f"🎰 **{sess.get('machine_name','スロット')}**　{lamp_str}")
     except Exception:
         pass
 
@@ -9267,7 +9267,7 @@ class JugglerGameView(discord.ui.View):
         await _juggler_stop(interaction, 2)
 
     # ── row=1: レバー（中央寄せのためスペーサーで挟む）・やめる ──
-    @discord.ui.button(label="　", style=discord.ButtonStyle.secondary,
+    @discord.ui.button(label="-", style=discord.ButtonStyle.secondary,
                        custom_id="juggler:sp1", disabled=True, row=1)
     async def _sp1(self, i, b): pass
 
@@ -9626,13 +9626,14 @@ class JugglerInsertButton(discord.ui.Button):
         # セッション生成（投入額がクレジット）
         sess = _new_juggler_session(uid=uid, machine_id=self.machine["id"],
                                     setting=self.machine["setting"], credit=self.amount)
+        sess["machine_name"] = self.machine["name"]
         sess["thread_id"] = thread.id
         sess["invested"] = self.amount
         juggler_sessions[uid] = sess
 
         # スレッド内にゲーム画面を投稿
         # ① ヘッダー（スロット名・固定）
-        header_msg = await thread.send(content="🎰 **アイムジャグラーEX**　")
+        header_msg = await thread.send(content=f"🎰 **{self.machine['name']}**")
         sess["header_msg_id"] = header_msg.id
         # ② 画像 + stats
         files = await _juggler_files(sess)
@@ -9645,8 +9646,31 @@ class JugglerInsertButton(discord.ui.Button):
             view=_juggler_view_idle(uid))
         sess["ctrl_msg_id"] = ctrl_msg.id
 
+        # スレッドの一番下に役一覧を固定送信
+        role_text = (
+            f"📋 **役一覧（{self.machine['name']}）**\n"
+            f"```"
+            f"役        払い出し\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"BIG BONUS   ボーナス\n"
+            f"  JAC×{JUGGLER_BIG_JAC_COUNT}回 × {JUGGLER_JAC_GAMES}G\n"
+            f"  1JAC = {JUGGLER_JAC_PAY}枚\n"
+            f"REG BONUS   ボーナス\n"
+            f"  JAC×{JUGGLER_REG_JAC_COUNT}回 × {JUGGLER_JAC_GAMES}G\n"
+            f"  1JAC = {JUGGLER_JAC_PAY}枚\n"
+            f"ブドウ       {JUGGLER_GRAPE_PAY}枚\n"
+            f"チェリー     {JUGGLER_CHERRY_PAY}枚\n"
+            f"リプレイ    次G BETなし\n"
+            f"ハズレ       0枚\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"1G BET = {JUGGLER_BET}枚"
+            f"```"
+        )
+        await thread.send(content=role_text)
+
         await interaction.edit_original_response(
-            content=f"**{self.amount:,}枚**を投入したのだ！ {thread.mention} でプレイするのだ🎰")
+            content=f"✅ **{self.amount:,}枚**投入！ {thread.mention} でプレイするのだ",
+            view=None)
 
 class JugglerInsertCancelButton(discord.ui.Button):
     def __init__(self):
@@ -9662,7 +9686,7 @@ class JugglerEntryView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🎰 ジャグラーを始める", style=discord.ButtonStyle.primary,
+    @discord.ui.button(label="🎰 スタート", style=discord.ButtonStyle.primary,
                        custom_id="juggler:entry_start")
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
@@ -9700,7 +9724,7 @@ class JugglerMachineSelectView(discord.ui.View):
 
 class JugglerMachineButton(discord.ui.Button):
     def __init__(self, uid: int, machine: dict):
-        super().__init__(label=f"🎰 {machine['name']}（設定{machine['setting']}）",
+        super().__init__(label=f"🎰 {machine['name']}",
                          style=discord.ButtonStyle.primary,
                          custom_id=f"juggler:machine:{machine['id']}")
         self.uid = uid; self.machine = machine
@@ -9719,7 +9743,7 @@ class JugglerMachineButton(discord.ui.Button):
 
         # コイン投入画面へ（スレッド作成前に投入額を確認）
         await interaction.edit_original_response(
-            content=(f"🎰 **{self.machine['name']}**（設定{self.machine['setting']}）\n\n"
+            content=(f"🎰 **{self.machine['name']}**\n\n"
                      f"💰 所持コイン：**{coins:,}** 枚\n\n"
                      f"コインを投入するのだ！\n"
                      f"（1ゲーム {JUGGLER_BET}枚ベット）"),
@@ -9728,9 +9752,7 @@ class JugglerMachineButton(discord.ui.Button):
 # ── スラッシュコマンド ────────────────────────────────
 
 @bot.tree.command(name="setup_juggler", description="ジャグラー台を設置するのだ（管理者のみ）")
-async def setup_juggler_cmd(interaction: discord.Interaction):
-    if not is_admin_user(interaction):
-        return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
+async def setup_juggler_cmd:
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, juggler_db_init)
     await safe_send(interaction, "🔄 素材を先読み中なのだ...", ephemeral=True)
@@ -9741,68 +9763,14 @@ async def setup_juggler_cmd(interaction: discord.Interaction):
             f"⚠️ 以下の素材取得に失敗したのだ。\n{lines}\n\nGoogle Driveの共有設定を確認してほしいのだ。",
             ephemeral=True)
     embed = discord.Embed(
-        title="🎰 アイムジャグラーEX",
+        title="🎰 スロット",
         description=(
-            f"ジャグラースロットなのだ！\n\n【ルール】\n"
-            f"・1ゲームのベット：**{JUGGLER_BET}枚**\n"
-            f"・役：BIG・REG・ブドウ・チェリー・リプレイ\n"
-            f"・ブドウ：**{JUGGLER_GRAPE_PAY}枚**　チェリー：**{JUGGLER_CHERRY_PAY}枚**\n"
-            f"・BIG BONUS：JAC {JUGGLER_BIG_JAC_COUNT}回 × {JUGGLER_JAC_GAMES}G\n"
-            f"・REG BONUS：JAC {JUGGLER_REG_JAC_COUNT}回 × {JUGGLER_JAC_GAMES}G\n"
-            f"・1JACゲーム：**{JUGGLER_JAC_PAY}枚**\n\n"
-            f"下のボタンを押してスタートするのだ！"),
+            f"コインを投入して台を選び、レバーを引くのだ！\n"
+            f"1ゲームのベットは **{JUGGLER_BET}枚** なのだ。\n\n"
+            f"ボタンを押してスタートするのだ！"),
         color=0xFFAA00)
     await interaction.channel.send(embed=embed, view=JugglerEntryView())
     await interaction.followup.send("ジャグラー台を設置したのだ！", ephemeral=True)
-
-
-@bot.tree.command(name="add_juggler_machine", description="ジャグラーの台を追加するのだ（管理者のみ）")
-@app_commands.describe(name="台の名前（例：マイジャグラーV）", setting="設定（1〜6）")
-async def add_juggler_machine_cmd(interaction: discord.Interaction, name: str, setting: int):
-    if not is_admin_user(interaction): return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
-    if setting < 1 or setting > 6:    return await safe_send(interaction, "設定は1〜6で指定するのだ", ephemeral=True)
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, juggler_db_init)
-    mid = await loop.run_in_executor(None, lambda: juggler_add_machine(name, setting))
-    await safe_send(interaction, f"台「{name}（設定{setting}）」を追加したのだ（ID: {mid}）", ephemeral=True)
-
-
-@bot.tree.command(name="delete_juggler_machine", description="ジャグラーの台を削除するのだ（管理者のみ）")
-@app_commands.describe(machine_id="削除する台のID（/juggler_machines で確認）")
-async def delete_juggler_machine_cmd(interaction: discord.Interaction, machine_id: int):
-    if not is_admin_user(interaction): return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
-    loop = asyncio.get_running_loop()
-    deleted = await loop.run_in_executor(None, lambda: juggler_delete_machine(machine_id))
-    if not deleted:
-        return await safe_send(interaction, "削除できなかったのだ。IDが存在しないか、最後の1台は削除できないのだ", ephemeral=True)
-    for uid, sess in list(juggler_sessions.items()):
-        if sess.get("machine_id") == machine_id: juggler_sessions.pop(uid, None)
-    await safe_send(interaction, f"台（ID: {machine_id}）を削除したのだ", ephemeral=True)
-
-
-@bot.tree.command(name="juggler_machines", description="設置中のジャグラー台一覧を表示するのだ（管理者のみ）")
-async def juggler_machines_cmd(interaction: discord.Interaction):
-    if not is_admin_user(interaction): return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
-    loop = asyncio.get_running_loop()
-    machines = await loop.run_in_executor(None, juggler_get_machines)
-    if not machines: return await safe_send(interaction, "台がないのだ", ephemeral=True)
-    lines = chr(10).join(f"ID:{m['id']}\u3000{m['name']}（設定{m['setting']}）" for m in machines)
-    await safe_send(interaction, f"🎰 **設置中の台一覧**\n\n{lines}", ephemeral=True)
-
-
-@bot.tree.command(name="juggler_stats", description="ジャグラーの自分の履歴を見るのだ")
-async def juggler_stats_cmd(interaction: discord.Interaction):
-    await safe_defer(interaction, ephemeral=True)
-    uid = interaction.user.id
-    st = await asyncio.get_running_loop().run_in_executor(None, lambda: juggler_load_stats(uid))
-    tg, bc, rc = st["total_games"], st["big_count"], st["reg_count"]
-    await safe_send(interaction, (
-        f"🎰 **ジャグラー統計**\n\n総ゲーム数：**{tg:,} G**\n"
-        f"BIG：{bc} 回　（{'1/'+str(tg//bc) if bc>0 else '---'}）\n"
-        f"REG：{rc} 回　（{'1/'+str(tg//rc) if rc>0 else '---'}）\n"
-        f"合成確率：{'1/'+str(tg//(bc+rc)) if bc+rc>0 else '---'}\n"
-        f"最大ハマリ：{st['max_hamare']} G\n現在のハマリ：{st['games_since_bonus']} G\n"
-    ), ephemeral=True)
 
 # =========================================================
 # 起動イベント
@@ -9904,6 +9872,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
