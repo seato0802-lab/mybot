@@ -1078,9 +1078,9 @@ JUGGLER_ASSET_URLS: dict[str, str] = {
     "bonus_big.png":          _gdrive_url("1oSYG6aeb5en3-IgCzJzotRAjpqn1pONF"),
     "bonus_reg.png":          _gdrive_url("16cv-5JXvXBvYvgw-3rEfWQCgSthWS9TG"),
     "gacko.gif":              _gdrive_url("1MVSx0oyfiRAuryc1Y9WIY7c24lRy2GEq"),
-    "gogolamp_off.png":       "LOCAL",
-    "jac_game.png":           "LOCAL",
-    "gogolamp_on.gif":        "LOCAL",
+    "gogolamp_off.png":       _gdrive_url("1hLs4dv-U9lAuDk3942PMNFVgSZhPqnJ6"),
+    "jac_game.png":           _gdrive_url("1J2gsHfHZAECQPdgNORzkPIT_YRBIZDDL"),
+    "gogolamp_on.gif":        _gdrive_url("1summOA_gFdXd8W590Q2-6wHzl_05cUNU"),
     "reel.gif":               _gdrive_url("1OAwsTCB3nKMAznZJkO2Vo1EzFWPepJNe"),
     "reel_slow.gif":          _gdrive_url("1V9qBeNSnU6cHrCO8_qTNgMcYtLHyE8Zs"),
 }
@@ -9906,6 +9906,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
