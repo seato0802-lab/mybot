@@ -1251,6 +1251,43 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
             reel_frames_list.append(frames)
         max_frames = max(max_frames, len(reel_frames_list[-1]))
 
+    # ランプ画像（アスペクト比保持・中央配置）
+    lamp_img = None
+    if lamp_bytes:
+        raw_lamp = _PILImage.open(io.BytesIO(lamp_bytes)).convert("RGBA")
+        lw, lh = raw_lamp.size
+        scale = lamp_h / lh
+        new_lw = int(lw * scale)
+        if new_lw > total_w:
+            scale = total_w / lw
+            new_lw = total_w
+            lamp_h_actual = int(lh * scale)
+        else:
+            lamp_h_actual = lamp_h
+        lamp_img = raw_lamp.resize((new_lw, lamp_h_actual), _PILImage.LANCZOS)
+        total_h = col_h + padding + lamp_h_actual
+
+    # フレーム合成
+    composed = []
+    for fi in range(max_frames):
+        canvas = _PILImage.new("RGBA", (total_w, total_h), (20, 20, 28, 255))
+        for ri, frames in enumerate(reel_frames_list):
+            frame = frames[fi % len(frames)]
+            x = ri * (tile_w + padding)
+            canvas.paste(frame.convert("RGBA"), (x, 0))
+        if lamp_img:
+            lx = (total_w - lamp_img.width) // 2
+            canvas.paste(lamp_img, (lx, col_h + padding), lamp_img)
+        composed.append(canvas.convert("P", palette=_PILImage.ADAPTIVE, colors=128))
+
+    buf = io.BytesIO()
+    if len(composed) == 1:
+        composed[0].save(buf, format="GIF")
+    else:
+        composed[0].save(buf, format="GIF", save_all=True,
+                         append_images=composed[1:], loop=0, duration=60, optimize=False)
+    return buf.getvalue()
+
 async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
                                reel_windows: list | None = None) -> discord.File | None:
     """合成した1枚のGIFをdiscord.Fileで返す。Pillow未インストールならNone。"""
@@ -9805,6 +9842,55 @@ async def setup_juggler_cmd(interaction: discord.Interaction):
         color=0xFFAA00)
     await interaction.channel.send(embed=embed, view=JugglerEntryView())
     await interaction.followup.send("ジャグラー台を設置したのだ！", ephemeral=True)
+
+
+@bot.tree.command(name="add_juggler_machine", description="ジャグラーの台を追加するのだ（管理者のみ）")
+@app_commands.describe(name="台の名前（例：マイジャグラーV）", setting="設定（1〜6）")
+async def add_juggler_machine_cmd(interaction: discord.Interaction, name: str, setting: int):
+    if not is_admin_user(interaction): return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
+    if setting < 1 or setting > 6:    return await safe_send(interaction, "設定は1〜6で指定するのだ", ephemeral=True)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, juggler_db_init)
+    mid = await loop.run_in_executor(None, lambda: juggler_add_machine(name, setting))
+    await safe_send(interaction, f"台「{name}（設定{setting}）」を追加したのだ（ID: {mid}）", ephemeral=True)
+
+
+@bot.tree.command(name="delete_juggler_machine", description="ジャグラーの台を削除するのだ（管理者のみ）")
+@app_commands.describe(machine_id="削除する台のID（/juggler_machines で確認）")
+async def delete_juggler_machine_cmd(interaction: discord.Interaction, machine_id: int):
+    if not is_admin_user(interaction): return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
+    loop = asyncio.get_running_loop()
+    deleted = await loop.run_in_executor(None, lambda: juggler_delete_machine(machine_id))
+    if not deleted:
+        return await safe_send(interaction, "削除できなかったのだ。IDが存在しないか、最後の1台は削除できないのだ", ephemeral=True)
+    for uid, sess in list(juggler_sessions.items()):
+        if sess.get("machine_id") == machine_id: juggler_sessions.pop(uid, None)
+    await safe_send(interaction, f"台（ID: {machine_id}）を削除したのだ", ephemeral=True)
+
+
+@bot.tree.command(name="juggler_machines", description="設置中のジャグラー台一覧を表示するのだ（管理者のみ）")
+async def juggler_machines_cmd(interaction: discord.Interaction):
+    if not is_admin_user(interaction): return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
+    loop = asyncio.get_running_loop()
+    machines = await loop.run_in_executor(None, juggler_get_machines)
+    if not machines: return await safe_send(interaction, "台がないのだ", ephemeral=True)
+    lines = chr(10).join(f"ID:{m['id']}\u3000{m['name']}（設定{m['setting']}）" for m in machines)
+    await safe_send(interaction, f"🎰 **設置中の台一覧**\n\n{lines}", ephemeral=True)
+
+
+@bot.tree.command(name="juggler_stats", description="ジャグラーの自分の履歴を見るのだ")
+async def juggler_stats_cmd(interaction: discord.Interaction):
+    await safe_defer(interaction, ephemeral=True)
+    uid = interaction.user.id
+    st = await asyncio.get_running_loop().run_in_executor(None, lambda: juggler_load_stats(uid))
+    tg, bc, rc = st["total_games"], st["big_count"], st["reg_count"]
+    await safe_send(interaction, (
+        f"🎰 **ジャグラー統計**\n\n総ゲーム数：**{tg:,} G**\n"
+        f"BIG：{bc} 回　（{'1/'+str(tg//bc) if bc>0 else '---'}）\n"
+        f"REG：{rc} 回　（{'1/'+str(tg//rc) if rc>0 else '---'}）\n"
+        f"合成確率：{'1/'+str(tg//(bc+rc)) if bc+rc>0 else '---'}\n"
+        f"最大ハマリ：{st['max_hamare']} G\n現在のハマリ：{st['games_since_bonus']} G\n"
+    ), ephemeral=True)
     
 # =========================================================
 # 起動イベント
@@ -9906,6 +9992,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
