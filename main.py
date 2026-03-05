@@ -9752,7 +9752,9 @@ class JugglerMachineButton(discord.ui.Button):
 # ── スラッシュコマンド ────────────────────────────────
 
 @bot.tree.command(name="setup_juggler", description="ジャグラー台を設置するのだ（管理者のみ）")
-async def setup_juggler_cmd:
+async def setup_juggler_cmd(interaction: discord.Interaction):
+    if not is_admin_user(interaction):
+        return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, juggler_db_init)
     await safe_send(interaction, "🔄 素材を先読み中なのだ...", ephemeral=True)
@@ -9872,6 +9874,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
