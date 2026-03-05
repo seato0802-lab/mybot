@@ -1068,7 +1068,6 @@ def roll_debuff_zone(world: int) -> int:
     if int(world) <= 1:
         return 0
     return 1 if random.random() < 0.30 else 0
-
 # ✅ 素材URL
 def _gdrive_url(file_id: str) -> str:
     # drive.usercontent.google.com はウイルスチェック確認ページを挟まず直接DLできる
@@ -1290,8 +1289,13 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
         composed.append(canvas)
 
     buf = io.BytesIO()
-    # 常にPNG保存（GIFのパレット変換による色劣化を完全回避）
-    composed[-1].convert("RGB").save(buf, format="PNG")
+    rgb_frames = [f.convert("RGB") for f in composed]
+    if len(rgb_frames) == 1:
+        rgb_frames[0].save(buf, format="PNG")
+    else:
+        p_frames = [f.quantize(colors=256, method=_PILImage.Quantize.MEDIANCUT) for f in rgb_frames]
+        p_frames[0].save(buf, format="GIF", save_all=True,
+                         append_images=p_frames[1:], loop=0, duration=60, optimize=False)
     return buf.getvalue()
 
 async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
@@ -1304,7 +1308,7 @@ async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes |
         fn = functools.partial(_composite_slot, reel_bytes_list, lamp_bytes,
                                reel_windows=reel_windows)
         data = await asyncio.get_running_loop().run_in_executor(None, fn)
-        return discord.File(io.BytesIO(data), filename="juggler.png")
+        return discord.File(io.BytesIO(data), filename="juggler.gif")
     except Exception as e:
         print(f"[juggler] composite失敗: {e}")
         import traceback as _tb; _tb.print_exc()
@@ -10011,6 +10015,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
