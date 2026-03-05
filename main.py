@@ -1079,33 +1079,9 @@ JUGGLER_ASSET_URLS: dict[str, str] = {
     "bonus_reg.png":          _gdrive_url("16cv-5JXvXBvYvgw-3rEfWQCgSthWS9TG"),
     "gacko.gif":              _gdrive_url("1MVSx0oyfiRAuryc1Y9WIY7c24lRy2GEq"),
     "gogolamp_off.png":       _gdrive_url("1hLs4dv-U9lAuDk3942PMNFVgSZhPqnJ6"),
-    "gogolamp_on.gif":        _gdrive_url("1summOA_gFdXd8W590Q2-6wHzl_05cUNU"),
-    "jac_game.png":           _gdrive_url("1J2gsHfHZAECQPdgNORzkPIT_YRBIZDDL"),
-    "machine_im_ex.png":      _gdrive_url("14jNVAaXbkK51qrcg1lrcbXULhHMcombc"),
-    "reel_fast_C.gif":        _gdrive_url("1r4DLx2jZxPe_0nKMgrZIzmNekL-DN9ku"),
-    "reel_fast_L.gif":        _gdrive_url("1_kH1ZyPlf63-J4xbRje_eZo7_V1j4Eu7"),
-    "reel_fast_R.gif":        _gdrive_url("1pxhoE9wsDCWy2cmSjrsVOBFk8RgBMntV"),
-    "reel_slow_C.gif":        _gdrive_url("1IPG79MMlVSYbha-u6-2qgL00b0U6jHdO"),
-    "reel_slow_L.gif":        _gdrive_url("10fzueK-hzKS3cEcbyLnvl_Z9G5Da3JmF"),
-    "reel_slow_R.gif":        _gdrive_url("1W4Pa0muXHlxOkE560tzJolrEH1hIR8Ke"),
-    "reel_stop_C_7.png":      _gdrive_url("1SjGm-Ckd4Uf7Ey-KfxZQbsWveXuQ1RRK"),
-    "reel_stop_C_BAR.png":    _gdrive_url("1wnUgGxGRxqQ8sQXEVY0shblmDc_x5ZbL"),
-    "reel_stop_C_BLANK.png":  _gdrive_url("1gTQUGUdyaNUZf0oD6k7aCkRwf5ARQO_h"),
-    "reel_stop_C_CHERRY.png": _gdrive_url("1UomgUkbfqrPkyJC616xcVGPYSJAOKoH1"),
-    "reel_stop_C_GRAPE.png":  _gdrive_url("1D2D7bSwpvXAGZK-qZG3-4IM07QZxX2hY"),
-    "reel_stop_C_REPLAY.png": _gdrive_url("1RFkbduYzowaTMBcZRWmntXdtVtzgLAW1"),
-    "reel_stop_L_7.png":      _gdrive_url("1YTl_6meoFboVdR_KDuyP3UNuUGDpQPDL"),
-    "reel_stop_L_BAR.png":    _gdrive_url("1H3Lp031jbvW_ublMgWPxV23NVBPe5bsD"),
-    "reel_stop_L_BLANK.png":  _gdrive_url("1opFdvd0tpnGUpcGIth5gqiCUmbhuU_AK"),
-    "reel_stop_L_CHERRY.png": _gdrive_url("13ggibsdgV4wNGCPS38M-kapkd5T2b5en"),
-    "reel_stop_L_GRAPE.png":  _gdrive_url("1stLT-BeWKqASx853w5zydNdduWTTknj6"),
-    "reel_stop_L_REPLAY.png": _gdrive_url("16xH8kVbKTXZwoSMIAcSGbu5AFxV7rPvC"),
-    "reel_stop_R_7.png":      _gdrive_url("13MPxJkfHkafGewGFPwFHNYYprw-QB_76"),
-    "reel_stop_R_BAR.png":    _gdrive_url("1IajiGRhStzRHPB9emEnQnigNtBRk1Cm_"),
-    "reel_stop_R_BLANK.png":  _gdrive_url("1gV_Dou_t68G_M74BF8-AAkqEIesbaM2b"),
-    "reel_stop_R_CHERRY.png": _gdrive_url("1PQpT-FAlDeEv603ubKFlVLWT1H1ilPdh"),
-    "reel_stop_R_GRAPE.png":  _gdrive_url("1c91ncR3o_JYioOoABKK5TGPsQKhI_Pjb"),
-    "reel_stop_R_REPLAY.png": _gdrive_url("1PLyEdY3IRpPb-gP688YMUiwd276cFsjc"),
+    "gogolamp_on.gif":        _gdrive_url("1GOkRJRpMrIrWbBR1RkqcHfzRpvSPeEyf"),
+    "reel.gif":               _gdrive_url("1OAwsTCB3nKMAznZJkO2Vo1EzFWPepJNe"),
+    "reel_slow.gif":          _gdrive_url("1V9qBeNSnU6cHrCO8_qTNgMcYtLHyE8Zs"),
 }
 
 _juggler_cache: dict[str, bytes] = {}
@@ -1120,6 +1096,17 @@ async def _jget(filename: str) -> bytes | None:
         return _juggler_cache[filename]
     url = JUGGLER_ASSET_URLS.get(filename)
     if not url:
+        return None
+    # ローカルファイル（reel.gif / reel_slow.gif）
+    if url == "LOCAL":
+        import os as _os
+        local_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), filename)
+        if _os.path.exists(local_path):
+            with open(local_path, "rb") as _f:
+                data = _f.read()
+            _juggler_cache[filename] = data
+            return data
+        print(f"[juggler] ローカルファイルなし: {local_path}")
         return None
 
     # ファイルの正しいシグネチャ（先頭バイト）
@@ -1194,9 +1181,24 @@ async def _jget(filename: str) -> bytes | None:
 def _jfile(data: bytes, filename: str) -> discord.File:
     return discord.File(io.BytesIO(data), filename=filename)
 
-def _stop_filename(side: str, sym: str) -> str:
-    key = sym if sym in {"7", "BAR", "CHERRY", "GRAPE", "REPLAY"} else "BLANK"
-    return f"reel_stop_{side}_{key}.png"
+_VALID_SYMS = {"7", "BAR", "CHERRY", "GRAPE", "REPLAY", "BLANK"}
+
+def _sym_key(s: str) -> str:
+    """シンボル名を正規化（不明はBLANK）"""
+    return s if s in _VALID_SYMS else "BLANK"
+
+def _stop_filename(side: str, top: str, mid: str, bot: str) -> str:
+    """新フォーマット: reel_stop_{side}_{top}_{mid}_{bot}.png"""
+    return f"reel_stop_{side}_{_sym_key(top)}_{_sym_key(mid)}_{_sym_key(bot)}.png"
+
+def _parse_stop_filename(fname: str) -> tuple[str, str, str, str] | None:
+    """ファイル名から (side, top, mid, bot) を取得。パース失敗はNone。"""
+    # reel_stop_C_BLANK_7_BAR.png
+    import re
+    m = re.match(r"reel_stop_([LCR])_([A-Z0-9]+)_([A-Z0-9]+)_([A-Z0-9]+)\.png", fname)
+    if m:
+        return m.group(1), m.group(2), m.group(3), m.group(4)
+    return None
 
 try:
     from PIL import Image as _PILImage
@@ -1207,77 +1209,57 @@ except ImportError:
     print("[juggler] ⚠️ Pillowが未インストールです。pip install Pillow --break-system-packages を実行してください。")
 
 def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
-                    reel_w: int = 150, reel_h: int = 190, lamp_h: int = 55, padding: int = 4) -> bytes:
+                    tile_w: int = 150, tile_h: int = 57,
+                    lamp_h: int = 55, padding: int = 4,
+                    reel_windows=None) -> bytes:
     """
-    3リールを横並びに合成して1枚のGIFを返す。
-    停止画像は既に3シンボル入りなのでそのままリサイズして使用。
+    3リールを横並びに合成。
+    reel_windows: [[top,mid,bot], ...] 停止リールのシンボル。Noneはそのままリサイズ。
     """
     if not _PILLOW_OK:
         raise RuntimeError("Pillow未インストール")
     n = len(reel_bytes_list)
-    total_w = reel_w * n + padding * (n - 1)
-    total_h = reel_h + (padding + lamp_h if lamp_bytes else 0)
+    col_h = tile_h * 3
+    total_w = tile_w * n + padding * (n - 1)
+    total_h = col_h + (padding + lamp_h if lamp_bytes else 0)
 
     reel_frames_list = []
     max_frames = 1
-    for rb in reel_bytes_list:
-        img = _PILImage.open(io.BytesIO(rb))
-        frames = []
-        try:
-            while True:
-                frames.append(img.copy().convert("RGBA").resize((reel_w, reel_h), _PILImage.LANCZOS))
-                img.seek(img.tell() + 1)
-        except EOFError:
-            pass
-        if not frames:
-            frames = [img.convert("RGBA").resize((reel_w, reel_h), _PILImage.LANCZOS)]
-        reel_frames_list.append(frames)
+    for ri, rb in enumerate(reel_bytes_list):
+        if reel_windows and ri < len(reel_windows) and reel_windows[ri]:
+            # 停止: タイルを縦に並べて1フレームに
+            canvas_r = _PILImage.new("RGBA", (tile_w, col_h), (30,30,30,255))
+            for row_i, sym in enumerate(reel_windows[ri][:3]):
+                tile_bytes = _get_symbol_tile(sym)
+                tile_img = _PILImage.open(io.BytesIO(tile_bytes)).convert("RGBA")
+                tile_img = tile_img.resize((tile_w, tile_h), _PILImage.LANCZOS)
+                canvas_r.paste(tile_img, (0, row_i * tile_h), tile_img)
+            reel_frames_list.append([canvas_r])
+        else:
+            # 回転中GIF: col_hにリサイズ
+            img = _PILImage.open(io.BytesIO(rb))
+            frames = []
+            try:
+                while True:
+                    frames.append(img.copy().convert("RGBA").resize((tile_w, col_h), _PILImage.LANCZOS))
+                    img.seek(img.tell() + 1)
+            except EOFError:
+                pass
+            if not frames:
+                frames = [img.convert("RGBA").resize((tile_w, col_h), _PILImage.LANCZOS)]
+            reel_frames_list.append(frames)
         max_frames = max(max_frames, len(reel_frames_list[-1]))
 
-    # ランプ画像（アスペクト比を保ってリール幅に収める・中央配置）
-    lamp_img = None
-    if lamp_bytes:
-        raw_lamp = _PILImage.open(io.BytesIO(lamp_bytes)).convert("RGBA")
-        lw, lh = raw_lamp.size
-        # アスペクト比を維持しつつ lamp_h の高さに合わせてリサイズ
-        scale = lamp_h / lh
-        new_lw = int(lw * scale)
-        # total_w を超える場合は幅基準で縮小
-        if new_lw > total_w:
-            scale = total_w / lw
-            new_lw = total_w
-            lamp_h_actual = int(lh * scale)
-        else:
-            lamp_h_actual = lamp_h
-        lamp_img = raw_lamp.resize((new_lw, lamp_h_actual), _PILImage.LANCZOS)
-        # 実際のランプ高さで total_h を再計算
-        total_h = reel_h + padding + lamp_h_actual
-
-    composed = []
-    for fi in range(max_frames):
-        canvas = _PILImage.new("RGBA", (total_w, total_h), (20, 20, 28, 255))
-        for i, frames in enumerate(reel_frames_list):
-            frame = frames[fi % len(frames)]
-            x = i * (reel_w + padding)
-            canvas.paste(frame, (x, 0), frame)
-        if lamp_img:
-            # 中央配置
-            lx = (total_w - lamp_img.width) // 2
-            canvas.paste(lamp_img, (lx, reel_h + padding), lamp_img)
-        composed.append(canvas.convert("P", palette=_PILImage.ADAPTIVE, colors=256))
-
-    buf = io.BytesIO()
-    composed[0].save(buf, format="GIF", save_all=True,
-                     append_images=composed[1:], loop=0, duration=80, optimize=False)
-    return buf.getvalue()
-
-async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None) -> discord.File | None:
+async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
+                               reel_windows: list | None = None) -> discord.File | None:
     """合成した1枚のGIFをdiscord.Fileで返す。Pillow未インストールならNone。"""
     if not _PILLOW_OK:
         return None
     try:
-        data = await asyncio.get_running_loop().run_in_executor(
-            None, _composite_slot, reel_bytes_list, lamp_bytes)
+        import functools
+        fn = functools.partial(_composite_slot, reel_bytes_list, lamp_bytes,
+                               reel_windows=reel_windows)
+        data = await asyncio.get_running_loop().run_in_executor(None, fn)
         return discord.File(io.BytesIO(data), filename="juggler.gif")
     except Exception as e:
         print(f"[juggler] composite失敗: {e}")
@@ -1285,17 +1267,16 @@ async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes |
         return None
 
 async def _juggler_files(sess: dict) -> list[discord.File]:
-    """現在のリール状態を1枚に合成したdiscord.Fileリスト。停止画像は3シンボル入り1枚。"""
-    reel_data = []; reel_fnames = []
+    """現在のリール状態を1枚に合成。停止リールはタイル合成、回転はGIF。"""
+    reel_data = []; reel_fnames = []; reel_windows_arg = []
     for i, stopped in enumerate(sess["reels_stopped"]):
-        side = ["L", "C", "R"][i]
-        fname = _stop_filename(side, sess["reel_symbols"][i]) if stopped else f"reel_fast_{side}.gif"
-        d = await _jget(fname)
-        reel_data.append(d or b""); reel_fnames.append(fname)
+        d = await _jget("reel.gif")
+        reel_data.append(d or b""); reel_fnames.append("reel.gif")
+        reel_windows_arg.append(sess["reel_window"][i] if stopped else None)
     lamp_fname = "gogolamp_on.gif" if sess["lamp_on"] else "gogolamp_off.png"
     lamp_data = await _jget(lamp_fname)
     if len(reel_data) == 3 and all(reel_data):
-        composed = await _juggler_single_file(reel_data, lamp_data)
+        composed = await _juggler_single_file(reel_data, lamp_data, reel_windows_arg)
         if composed:
             return [composed]
         result = [_jfile(d, fn) for d, fn in zip(reel_data, reel_fnames) if d]
@@ -1305,24 +1286,25 @@ async def _juggler_files(sess: dict) -> list[discord.File]:
 
 async def _juggler_slow_files(reel_pos: int, sess: dict) -> list[discord.File]:
     """最後のSTOP演出用（指定リールを低速GIFにして合成）"""
-    reel_data = []; reel_fnames = []
+    reel_data = []; reel_fnames = []; reel_windows_arg = []
     for i, stopped in enumerate(sess["reels_stopped"]):
-        side = ["L", "C", "R"][i]
         if i == reel_pos and not stopped:
-            fname = f"reel_slow_{side}.gif"
+            fname = "reel_slow.gif"
+            reel_windows_arg.append(None)
         elif stopped:
-            fname = _stop_filename(side, sess["reel_symbols"][i])
+            fname = "reel.gif"
+            reel_windows_arg.append(sess["reel_window"][i])
         else:
-            fname = f"reel_fast_{side}.gif"
-        data = await _jget(fname)
-        if data:
-            reel_data.append(data); reel_fnames.append(fname)
+            fname = "reel.gif"
+            reel_windows_arg.append(None)
+        d = await _jget(fname)
+        reel_data.append(d or b""); reel_fnames.append(fname)
     lamp_data = await _jget("gogolamp_off.png")
-    if len(reel_data) == 3:
-        composed = await _juggler_single_file(reel_data, lamp_data)
+    if len(reel_data) == 3 and all(reel_data):
+        composed = await _juggler_single_file(reel_data, lamp_data, reel_windows_arg)
         if composed:
             return [composed]
-        result = [_jfile(d, fn) for d, fn in zip(reel_data, reel_fnames)]
+        result = [_jfile(d, fn) for d, fn in zip(reel_data, reel_fnames) if d]
         if lamp_data: result.append(_jfile(lamp_data, "gogolamp_off.png"))
         return result
     return []
@@ -1385,6 +1367,86 @@ def _new_juggler_session(uid: int, machine_id: int, setting: int, credit: int) -
 
 _SYM = {"7": "7", "BAR": "BAR", "CHERRY": "🍒", "GRAPE": "🍇",
         "REPLAY": "↺", "SPIN": "〜", "BLANK": "　"}
+
+# ── シンボルタイル生成（Pillow） ──────────────────────
+_SYMBOL_TILE_CACHE: dict[str, bytes] = {}  # sym_name -> PNG bytes
+
+def _make_symbol_tile(sym: str, w: int = 150, h: int = 57) -> bytes:
+    """シンボル名からタイル画像(PNG bytes)を生成してキャッシュ"""
+    import math as _math
+    from PIL import Image as _I, ImageDraw as _D, ImageFont as _F
+    import io as _io
+
+    BORDER = (255, 215, 0)
+    BW = 3
+
+    STYLES = {
+        "7":      {"bg": (160,20,20)},
+        "BAR":    {"bg": (20,40,160)},
+        "CHERRY": {"bg": (30,30,30)},
+        "GRAPE":  {"bg": (70,20,120)},
+        "REPLAY": {"bg": (20,120,60)},
+        "BLANK":  {"bg": (20,20,30)},
+        "SPIN":   {"bg": (20,20,30)},
+    }
+    style = STYLES.get(sym, {"bg": (40,40,40)})
+    img = _I.new("RGB", (w, h), style["bg"])
+    draw = _D.Draw(img)
+    draw.rectangle([0,0,w-1,h-1], outline=BORDER, width=BW)
+
+    def _font(size):
+        for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                  "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]:
+            try: return _F.truetype(p, size)
+            except: pass
+        return _F.load_default()
+
+    def _ctext(text, fg, size, dy=0):
+        f = _font(size)
+        bb = draw.textbbox((0,0), text, font=f)
+        tw, th = bb[2]-bb[0], bb[3]-bb[1]
+        draw.text(((w-tw)//2, (h-th)//2+dy), text, fill=fg, font=f)
+
+    cx, cy = w//2, h//2
+
+    if sym == "7":
+        _ctext("7", (255,220,50), 36)
+    elif sym == "BAR":
+        _ctext("BAR", (255,255,255), 28)
+    elif sym == "CHERRY":
+        r = 10
+        draw.line([(cx,cy-14),(cx-6,cy-22)], fill=(80,160,40), width=2)
+        draw.line([(cx,cy-14),(cx+6,cy-22)], fill=(80,160,40), width=2)
+        draw.ellipse([cx-18-r,cy-r,cx-18+r,cy+r], fill=(200,30,30), outline=(255,100,100))
+        draw.ellipse([cx+18-r,cy-r,cx+18+r,cy+r], fill=(200,30,30), outline=(255,100,100))
+        draw.text((4,h-14), "CHERRY", fill=(200,200,200), font=_font(10))
+    elif sym == "GRAPE":
+        r = 7
+        for px,py in [(cx-14,cy-12),(cx,cy-12),(cx+14,cy-12),(cx-7,cy+1),(cx+7,cy+1),(cx,cy+14)]:
+            draw.ellipse([px-r,py-r,px+r,py+r], fill=(160,60,200), outline=(220,150,255))
+        draw.polygon([(cx,cy-20),(cx-8,cy-28),(cx+8,cy-28)], fill=(50,150,50))
+        draw.text((8,h-14), "GRAPE", fill=(200,200,200), font=_font(10))
+    elif sym == "REPLAY":
+        r = 16
+        draw.arc([cx-r,cy-r-2,cx+r,cy+r-2], start=30, end=330, fill=(255,255,255), width=4)
+        ax = cx + int(r*_math.cos(_math.radians(30)))
+        ay = cy-2 + int(r*_math.sin(_math.radians(30)))
+        draw.polygon([(ax,ay),(ax-8,ay-4),(ax-5,ay+6)], fill=(255,255,255))
+        draw.text((8,h-14), "REPLAY", fill=(200,200,200), font=_font(10))
+    elif sym == "BLANK":
+        pass  # 空白
+    elif sym == "SPIN":
+        _ctext("〜", (80,80,80), 24)
+
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+def _get_symbol_tile(sym: str) -> bytes:
+    """シンボルタイルをキャッシュから取得（なければ生成）"""
+    if sym not in _SYMBOL_TILE_CACHE:
+        _SYMBOL_TILE_CACHE[sym] = _make_symbol_tile(sym)
+    return _SYMBOL_TILE_CACHE[sym]
 
 # ペイライン定義: [(reel, row), ...]  reel=0-2, row=0-2(上/中/下)
 PAYLINES = [
@@ -9122,7 +9184,11 @@ _REEL_SYMS = ["7", "BAR", "CHERRY", "GRAPE", "REPLAY", "BLANK"]
 _COMMON = ["BAR", "GRAPE", "REPLAY", "CHERRY", "BLANK"]
 
 def juggler_reel_window_for_stop(flag: str, reel_pos: int) -> list[str]:
-    """停止時の3シンボル [上, 中, 下] を返す。中段が入賞ライン。"""
+    """
+    停止時の [上, 中, 下] シンボルを返す。
+    中段はflagで決定、上下はランダム。
+    ファイル名: reel_stop_{side}_{top}_{mid}_{bot}.png
+    """
     def _mid():
         if flag == "BIG":    return "7"
         if flag == "REG":    return "BAR"
@@ -9138,6 +9204,10 @@ def juggler_reel_window_for_stop(flag: str, reel_pos: int) -> list[str]:
 def juggler_reel_symbol_for_stop(flag, reel_pos, stopped_count):
     """後方互換用: 中段シンボルのみ返す"""
     return juggler_reel_window_for_stop(flag, reel_pos)[1]
+
+def _stop_fname_from_window(side: str, window: list[str]) -> str:
+    """window=[top,mid,bot] からファイル名を生成"""
+    return _stop_filename(side, window[0], window[1], window[2])
 
 def juggler_calc_payout(sess: dict) -> int:
     """ペイライン判定して払い出し額とplayline_resultsを更新"""
@@ -9835,6 +9905,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
