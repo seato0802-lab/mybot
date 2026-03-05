@@ -1270,22 +1270,35 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
     # フレーム合成
     composed = []
     for fi in range(max_frames):
-        canvas = _PILImage.new("RGBA", (total_w, total_h), (20, 20, 28, 255))
+        canvas = _PILImage.new("RGB", (total_w, total_h), (20, 20, 28))
         for ri, frames in enumerate(reel_frames_list):
             frame = frames[fi % len(frames)]
             x = ri * (tile_w + padding)
-            canvas.paste(frame.convert("RGBA"), (x, 0))
+            canvas.paste(frame.convert("RGB"), (x, 0))
         if lamp_img:
             lx = (total_w - lamp_img.width) // 2
-            canvas.paste(lamp_img, (lx, col_h + padding), lamp_img)
-        composed.append(canvas.convert("P", palette=_PILImage.ADAPTIVE, colors=128))
+            # アルファ付きランプをRGBキャンバスに合成
+            lamp_rgb = _PILImage.new("RGB", canvas.size, (20, 20, 28))
+            lamp_rgb.paste(lamp_img.convert("RGB"), (lx, col_h + padding))
+            if lamp_img.mode == "RGBA":
+                mask = lamp_img.split()[3]
+                pad_mask = _PILImage.new("L", canvas.size, 0)
+                pad_mask.paste(mask, (lx, col_h + padding))
+                canvas.paste(lamp_rgb, mask=pad_mask)
+            else:
+                canvas.paste(lamp_img.convert("RGB"), (lx, col_h + padding))
+        composed.append(canvas)
 
     buf = io.BytesIO()
-    if len(composed) == 1:
-        composed[0].save(buf, format="GIF")
+    # RGBのままパレット変換（quantize使用で色精度向上）
+    rgb_frames = [f.convert("RGB") for f in composed]
+    if len(rgb_frames) == 1:
+        p_frame = rgb_frames[0].quantize(colors=256, method=_PILImage.Quantize.MEDIANCUT)
+        p_frame.save(buf, format="GIF")
     else:
-        composed[0].save(buf, format="GIF", save_all=True,
-                         append_images=composed[1:], loop=0, duration=60, optimize=False)
+        p_frames = [f.quantize(colors=256, method=_PILImage.Quantize.MEDIANCUT) for f in rgb_frames]
+        p_frames[0].save(buf, format="GIF", save_all=True,
+                         append_images=p_frames[1:], loop=0, duration=60, optimize=False)
     return buf.getvalue()
 
 async def _juggler_single_file(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
@@ -9219,7 +9232,8 @@ def juggler_roll_flag(setting: int) -> str:
     return "NOTHING"
 
 _REEL_SYMS = ["7", "BAR", "CHERRY", "GRAPE", "REPLAY", "BLANK"]
-_COMMON = ["BAR", "GRAPE", "REPLAY", "CHERRY", "BLANK"]
+# 上下段に出るシンボル（BLANKは1個のみ、他は均等）
+_COMMON = ["BAR", "GRAPE", "REPLAY", "CHERRY", "BAR", "GRAPE", "REPLAY", "CHERRY"]
 
 def juggler_reel_window_for_stop(flag: str, reel_pos: int) -> list[str]:
     """
@@ -9992,6 +10006,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
