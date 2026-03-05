@@ -1235,11 +1235,24 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
         reel_frames_list.append(frames)
         max_frames = max(max_frames, len(frames))
 
-    # ランプ画像
+    # ランプ画像（アスペクト比を保ってリール幅に収める・中央配置）
     lamp_img = None
     if lamp_bytes:
-        lamp_img = _PILImage.open(io.BytesIO(lamp_bytes)).convert("RGBA")
-        lamp_img = lamp_img.resize((total_w, lamp_h), _PILImage.LANCZOS)
+        raw_lamp = _PILImage.open(io.BytesIO(lamp_bytes)).convert("RGBA")
+        lw, lh = raw_lamp.size
+        # アスペクト比を維持しつつ lamp_h の高さに合わせてリサイズ
+        scale = lamp_h / lh
+        new_lw = int(lw * scale)
+        # total_w を超える場合は幅基準で縮小
+        if new_lw > total_w:
+            scale = total_w / lw
+            new_lw = total_w
+            lamp_h_actual = int(lh * scale)
+        else:
+            lamp_h_actual = lamp_h
+        lamp_img = raw_lamp.resize((new_lw, lamp_h_actual), _PILImage.LANCZOS)
+        # 実際のランプ高さで total_h を再計算
+        total_h = reel_h + padding + lamp_h_actual
 
     composed = []
     for fi in range(max_frames):
@@ -1249,7 +1262,9 @@ def _composite_slot(reel_bytes_list: list[bytes], lamp_bytes: bytes | None,
             x = i * (reel_w + padding)
             canvas.paste(frame, (x, 0), frame)
         if lamp_img:
-            canvas.paste(lamp_img, (0, reel_h + padding), lamp_img)
+            # 中央配置
+            lx = (total_w - lamp_img.width) // 2
+            canvas.paste(lamp_img, (lx, reel_h + padding), lamp_img)
         composed.append(canvas.convert("P", palette=_PILImage.ADAPTIVE, colors=256))
 
     buf = io.BytesIO()
@@ -9078,30 +9093,29 @@ async def _juggler_send_game(sess: dict, content: str,
                              files: list[discord.File],
                              view: discord.ui.View | None) -> None:
     """
-    【2メッセージ方式】
-    ① 画像メッセージ：削除→新規送信（GIFアニメーションのプレビュー表示のため）
-    ② テキスト+ボタンメッセージ：edit のみ（ボタンが動かず打ってる感が出る）
+    【2メッセージ方式・完全edit版】
+    ① 画像メッセージ：attachments=で上書きedit（削除なし・GIFアニメ維持）
+    ② テキスト+ボタンメッセージ：edit のみ（ボタン位置固定）
     """
     thread = bot.get_channel(sess["thread_id"])
     if not thread:
         return
 
-    # ── 画像メッセージを削除して新規送信 ──
-    try:
-        old_img = await thread.fetch_message(sess["img_msg_id"])
-        await old_img.delete()
-    except Exception:
-        pass
+    # ── 画像メッセージをeditで上書き（削除なし） ──
     if files:
-        img_msg = await thread.send(files=files)
-        sess["img_msg_id"] = img_msg.id
+        try:
+            img_msg = await thread.fetch_message(sess["img_msg_id"])
+            await img_msg.edit(attachments=files)
+        except Exception:
+            # 初回または消えた場合は新規送信
+            img_msg = await thread.send(files=files)
+            sess["img_msg_id"] = img_msg.id
 
-    # ── テキスト+ボタンメッセージはeditのみ（位置を固定） ──
+    # ── テキスト+ボタンメッセージはeditのみ ──
     try:
         ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
         await ctrl_msg.edit(content=content, view=view)
     except Exception:
-        # 初回またはメッセージが消えた場合は新規作成
         ctrl_msg = await thread.send(content=content, view=view)
         sess["ctrl_msg_id"] = ctrl_msg.id
 
@@ -9172,10 +9186,10 @@ class JugglerGameView(discord.ui.View):
         await interaction.response.defer()
         thread = bot.get_channel(sess["thread_id"]) if sess else None
         if thread:
-            # 画像メッセージを削除
+            # 画像メッセージを空に
             try:
-                old_img = await thread.fetch_message(sess["img_msg_id"])
-                await old_img.delete()
+                img_msg = await thread.fetch_message(sess["img_msg_id"])
+                await img_msg.edit(attachments=[])
             except Exception:
                 pass
             # ボタンメッセージを終了テキストに更新
@@ -9700,6 +9714,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
