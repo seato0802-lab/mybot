@@ -10097,14 +10097,26 @@ _RZ_FONT_FB = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 # Google Drive URL（"LOCAL"のままでPillow自動生成）
 REZERO_ASSET_URLS: dict[str, str] = {
-    "rz_normal.png":       "LOCAL",
-    "rz_hakugei.png":      "LOCAL",
-    "rz_battle_blue.png":  "LOCAL",
-    "rz_battle_green.png": "LOCAL",
-    "rz_battle_red.png":   "LOCAL",
-    "rz_at.png":           "LOCAL",
-    "rz_oni.png":          "LOCAL",
-    "rz_at_end.png":       "LOCAL",
+    "rz_at.png": "https://drive.usercontent.google.com/download?id=1O0plU6WU1akz3gOIjgEwIxMem-JXiZEW&export=download&confirm=t",
+    "rz_battle_blue.png": "https://drive.usercontent.google.com/download?id=1vmwnkIcml7qlJemfdmEQhlvVXIaizbUr&export=download&confirm=t",
+    "rz_battle_green.png": "https://drive.usercontent.google.com/download?id=1lE4xJ1ZGqJK9y9N0pUvmNkQLwHMrjj-K&export=download&confirm=t",
+    "rz_battle_red.png": "https://drive.usercontent.google.com/download?id=1bNkuBBBRX7ZHmKxNsZhSaT_ZYkqG3bra&export=download&confirm=t",
+    "rz_hakugei.png": "https://drive.usercontent.google.com/download?id=1Lp179H62YWWNQF6cXw_PnpzlncadnQxE&export=download&confirm=t",
+    "rz_machine_frame.png": "https://drive.usercontent.google.com/download?id=1OpdpWp-c_rDqtltKgqPYsZwj14TRkxLR&export=download&confirm=t",
+    "sym_BAR.png": "https://drive.usercontent.google.com/download?id=1GPpxi4cXItpmTKTsfSH9UjhSpQ64s6tg&export=download&confirm=t",
+    "sym_BEATRICE.png": "https://drive.usercontent.google.com/download?id=1C47M-bibvslq1tAOjyZFONVnH6Sj_ts0&export=download&confirm=t",
+    "sym_BELL.png": "https://drive.usercontent.google.com/download?id=1Cz85zWZztV2MSnkXVqIIPJKsnaFjd8N5&export=download&confirm=t",
+    "sym_BLUE7.png": "https://drive.usercontent.google.com/download?id=1HIr_8q-a60qmWaDB4eCVuY3N_a6ZONLL&export=download&confirm=t",
+    "sym_EMILIA.png": "https://drive.usercontent.google.com/download?id=1vDmOZJrSOlSDz7fyhlXVTpWsxV_qtCVI&export=download&confirm=t",
+    "sym_RED7.png": "https://drive.usercontent.google.com/download?id=111ARQBLZRf-FqygJ7bPtZkzHNKQkkmHr&export=download&confirm=t",
+    "sym_REM.png": "https://drive.usercontent.google.com/download?id=1OxgwvXktTGrEpmFPTWlGZTPn6PYb5iPA&export=download&confirm=t",
+    "sym_SCHERRY.png": "https://drive.usercontent.google.com/download?id=1usbOrKzEpKngSBFkfTfLkGYemOwI1AGa&export=download&confirm=t",
+    "sym_SUIKA.png": "https://drive.usercontent.google.com/download?id=1cZHHXDJrSDH-In_uDO7fpqoXDBi5DfkK&export=download&confirm=t",
+    "sym_WCHERRY.png": "https://drive.usercontent.google.com/download?id=1xcdTXOTWH3S1s9T1IeaiVN8cKMuhSL6O&export=download&confirm=t",
+    "rz_normal.png": "LOCAL",
+    "rz_oni.png": "LOCAL",
+    "rz_at_end.png": "LOCAL",
+    "rz_onedari.png": "LOCAL",
 }
 
 _rz_cache: dict[str, bytes] = {}
@@ -11341,6 +11353,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
