@@ -1560,10 +1560,6 @@ def juggler_db_init():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL, setting INTEGER NOT NULL DEFAULT 3,
             game_type TEXT NOT NULL DEFAULT 'juggler');
-        try:
-            cur.execute("ALTER TABLE juggler_machines ADD COLUMN game_type TEXT NOT NULL DEFAULT 'juggler'")
-        except Exception:
-            pass  # 既にカラムが存在する場合は無視
         CREATE TABLE IF NOT EXISTS juggler_stats (
             user_id INTEGER PRIMARY KEY, machine_id INTEGER DEFAULT 1,
             total_games INTEGER DEFAULT 0, big_count INTEGER DEFAULT 0,
@@ -1574,6 +1570,12 @@ def juggler_db_init():
             machine_id INTEGER, bonus_type TEXT, payout INTEGER DEFAULT 0,
             games_before INTEGER DEFAULT 0, timestamp INTEGER);
     """)
+    # game_type カラムが既存DBにない場合のみ追加（ALTER TABLE は IF NOT EXISTS 非対応のため try/except）
+    try:
+        cur.execute("ALTER TABLE juggler_machines ADD COLUMN game_type TEXT NOT NULL DEFAULT 'juggler'")
+        conn.commit()
+    except Exception:
+        pass  # 既にカラムが存在する場合は無視
     cur.execute("SELECT COUNT(*) FROM juggler_machines")
     if cur.fetchone()[0] == 0:
         cur.execute("INSERT INTO juggler_machines (name,setting) VALUES (?,?)", ("アイムジャグラーEX", 3))
@@ -10167,6 +10169,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
