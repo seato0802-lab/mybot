@@ -1068,6 +1068,7 @@ def roll_debuff_zone(world: int) -> int:
     if int(world) <= 1:
         return 0
     return 1 if random.random() < 0.30 else 0
+
 # ✅ 素材URL
 def _gdrive_url(file_id: str) -> str:
     # drive.usercontent.google.com はウイルスチェック確認ページを挟まず直接DLできる
@@ -1557,7 +1558,12 @@ def juggler_db_init():
     cur.executescript("""
         CREATE TABLE IF NOT EXISTS juggler_machines (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL, setting INTEGER NOT NULL DEFAULT 3);
+            name TEXT NOT NULL, setting INTEGER NOT NULL DEFAULT 3,
+            game_type TEXT NOT NULL DEFAULT 'juggler');
+        try:
+            cur.execute("ALTER TABLE juggler_machines ADD COLUMN game_type TEXT NOT NULL DEFAULT 'juggler'")
+        except Exception:
+            pass  # 既にカラムが存在する場合は無視
         CREATE TABLE IF NOT EXISTS juggler_stats (
             user_id INTEGER PRIMARY KEY, machine_id INTEGER DEFAULT 1,
             total_games INTEGER DEFAULT 0, big_count INTEGER DEFAULT 0,
@@ -1576,14 +1582,14 @@ def juggler_db_init():
 def juggler_get_machines() -> list[dict]:
     with _LOTTERY_DB_LOCK:
         conn = _db_connect(); cur = conn.cursor()
-        cur.execute("SELECT id, name, setting FROM juggler_machines ORDER BY id")
+        cur.execute("SELECT id, name, setting, game_type FROM juggler_machines ORDER BY id")
         rows = cur.fetchall(); conn.close()
-    return [{"id": r[0], "name": r[1], "setting": r[2]} for r in rows]
+    return [{"id": r[0], "name": r[1], "setting": r[2], "game_type": r[3]} for r in rows]
 
-def juggler_add_machine(name: str, setting: int) -> int:
+def juggler_add_machine(name: str, setting: int, game_type: str = "juggler") -> int:
     with _LOTTERY_DB_LOCK:
         conn = _db_connect(); cur = conn.cursor()
-        cur.execute("INSERT INTO juggler_machines (name,setting) VALUES (?,?)", (name, setting))
+        cur.execute("INSERT INTO juggler_machines (name,setting,game_type) VALUES (?,?,?)", (name, setting, game_type))
         mid = cur.lastrowid; conn.commit(); conn.close()
     return mid
 
@@ -9339,7 +9345,34 @@ class JugglerGameView(discord.ui.View):
         return True
 
     async def on_timeout(self):
-        juggler_sessions.pop(self.uid, None)
+        sess = juggler_sessions.pop(self.uid, None)
+        if not sess:
+            return
+        cr = sess.get("credit", 0)
+        # クレジット返還
+        if cr > 0:
+            try:
+                async with get_user_lock(self.uid):
+                    u = store.get_user(self.uid)
+                    u["coins"] = int(u.get("coins", 0)) + cr
+                    await sheets_upsert_async(u)
+            except Exception:
+                pass
+        # スレッド内に通知 → ボタン削除 → アーカイブ
+        thread = bot.get_channel(sess.get("thread_id"))
+        if thread:
+            try:
+                ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
+                msg = f"⏰ 長時間操作がなかったため終了したのだ"
+                if cr > 0:
+                    msg += f"\n✅ 返却：**{cr:,}**枚 → 所持コインに加算されたのだ"
+                await ctrl_msg.edit(content=msg, view=None)
+            except Exception:
+                pass
+            try:
+                await thread.edit(archived=True, locked=True)
+            except Exception:
+                pass
 
     # ── row=0: STOPボタン（左・中・右） ──
     @discord.ui.button(label="⬤", style=discord.ButtonStyle.danger, custom_id="juggler:stop_l", row=0)
@@ -9370,9 +9403,20 @@ class JugglerGameView(discord.ui.View):
 
         if not sess.get("replay", False):
             if sess["credit"] < JUGGLER_BET:
-                return await interaction.response.send_message(
-                    "クレジットが足りないのだ（やめるを押して残クレジットを返却し、再度投入するのだ）",
-                    ephemeral=True)
+                await interaction.response.defer()
+                # スレッド内に追加投入ビューを表示
+                async with get_user_lock(self.uid):
+                    u = store.get_user(self.uid)
+                    coins = int(u.get("coins", 0))
+                thread = bot.get_channel(sess["thread_id"])
+                if thread:
+                    add_view = JugglerAddCreditView(uid=self.uid, machine_id=sess["machine_id"],
+                                                    machine_name=sess.get("machine_name",""), coins=coins)
+                    await thread.send(
+                        content=(f"💸 クレジットが **{sess['credit']:,}**枚しかないのだ（1G = {JUGGLER_BET}枚必要）\n"
+                                 f"💰 所持コイン：**{coins:,}**枚\n追加投入するのだ！"),
+                        view=add_view)
+                return
             sess["credit"] -= JUGGLER_BET
         else:
             sess["replay"] = False
@@ -9426,6 +9470,36 @@ class JugglerGameView(discord.ui.View):
                 await thread.edit(archived=True, locked=True)
             except Exception:
                 pass
+
+
+async def _juggler_timeout_quit(uid: int):
+    """タイムアウト時にクレジット返還＋スレッドアーカイブ（やめると同じ処理）"""
+    sess = juggler_sessions.pop(uid, None)
+    if not sess:
+        return
+    cr = sess.get("credit", 0)
+    if cr > 0:
+        try:
+            async with get_user_lock(uid):
+                u = store.get_user(uid)
+                u["coins"] = int(u.get("coins", 0)) + cr
+                await sheets_upsert_async(u)
+        except Exception:
+            pass
+    thread = bot.get_channel(sess.get("thread_id"))
+    if thread:
+        try:
+            ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
+            msg = "⏰ 長時間操作がなかったため終了したのだ"
+            if cr > 0:
+                msg += f"\n✅ 返却：**{cr:,}**枚 → 所持コインに加算されたのだ"
+            await ctrl_msg.edit(content=msg, view=None)
+        except Exception:
+            pass
+        try:
+            await thread.edit(archived=True, locked=True)
+        except Exception:
+            pass
 
 def _juggler_view_spinning(uid: int, stopped: list[bool] | None = None) -> JugglerGameView:
     """回転中: STOPボタン有効、レバー無効。stopped指定で個別に無効化。"""
@@ -9543,6 +9617,9 @@ class JugglerBonusView(discord.ui.View):
     def __init__(self, uid: int):
         super().__init__(timeout=600); self.uid = uid
 
+    async def on_timeout(self):
+        await _juggler_timeout_quit(self.uid)
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.uid:
             await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
@@ -9601,6 +9678,9 @@ class JugglerJacView(discord.ui.View):
     def __init__(self, uid: int):
         super().__init__(timeout=600); self.uid = uid
 
+    async def on_timeout(self):
+        await _juggler_timeout_quit(self.uid)
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.uid:
             await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
@@ -9656,6 +9736,70 @@ async def _juggler_end_bonus_thread(sess: dict):
         files, _juggler_view_idle(uid))
 
 # ── コイン投入View ──────────────────────────────────────
+
+
+class JugglerAddCreditView(discord.ui.View):
+    """クレジット不足時にスレッド内で追加投入するView"""
+    def __init__(self, uid: int, machine_id: int, machine_name: str, coins: int):
+        super().__init__(timeout=180)
+        self.uid = uid
+        for amount in JUGGLER_INSERT_OPTIONS:
+            if amount <= coins:
+                self.add_item(JugglerAddCreditButton(
+                    uid=uid, machine_id=machine_id, machine_name=machine_name, amount=amount))
+        if coins > 0 and coins not in JUGGLER_INSERT_OPTIONS:
+            self.add_item(JugglerAddCreditButton(
+                uid=uid, machine_id=machine_id, machine_name=machine_name,
+                amount=coins, label=f"💴 全額（{coins:,}枚）"))
+        # コインが0の場合はやめるボタンのみ
+        if coins < min(JUGGLER_INSERT_OPTIONS):
+            pass  # ボタンなし → タイムアウトで自然終了
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.uid:
+            await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+            return False
+        return True
+
+
+class JugglerAddCreditButton(discord.ui.Button):
+    """スレッド内追加投入ボタン"""
+    def __init__(self, uid: int, machine_id: int, machine_name: str, amount: int, label: str = ""):
+        super().__init__(
+            label=label or f"💴 {amount:,}枚",
+            style=discord.ButtonStyle.success,
+            custom_id=f"juggler:addcredit:{machine_id}:{amount}")
+        self.uid = uid; self.machine_id = machine_id; self.machine_name = machine_name; self.amount = amount
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.uid:
+            return await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+        await interaction.response.defer()
+        uid = interaction.user.id
+        sess = juggler_sessions.get(uid)
+        if not sess:
+            return await interaction.followup.send("セッションが切れたのだ", ephemeral=True)
+
+        async with get_user_lock(uid):
+            u = store.get_user(uid)
+            coins = int(u.get("coins", 0))
+            if coins < self.amount:
+                return await interaction.followup.send(
+                    f"コインが足りないのだ（所持：{coins:,}枚）", ephemeral=True)
+            u["coins"] = coins - self.amount
+            await sheets_upsert_async(u)
+
+        sess["credit"] += self.amount
+        # このメッセージを削除
+        try:
+            await interaction.message.delete()
+        except Exception:
+            pass
+        # ゲーム画面を更新
+        files = await _juggler_files(sess)
+        await _juggler_send_game(sess,
+            juggler_game_text(sess, f"💴 {self.amount:,}枚を追加投入したのだ"),
+            files, _juggler_view_idle(uid))
 
 JUGGLER_INSERT_OPTIONS = [100, 500, 1000, 3000, 10000]  # 投入ボタンの選択肢
 
@@ -9827,19 +9971,25 @@ class JugglerMachineButton(discord.ui.Button):
 
         await interaction.response.defer(ephemeral=True)
         uid = interaction.user.id
-        u = store.get_user(uid)
-        coins = int(u.get("coins", 0))
-        if coins < JUGGLER_BET:
-            return await interaction.edit_original_response(
-                content=f"コインが足りないのだ（最低 {JUGGLER_BET}枚 必要）")
+        game_type = self.machine.get("game_type", "juggler")
 
-        # コイン投入画面へ（スレッド作成前に投入額を確認）
-        await interaction.edit_original_response(
-            content=(f"🎰 **{self.machine['name']}**\n\n"
-                     f"💰 所持コイン：**{coins:,}** 枚\n\n"
-                     f"コインを投入するのだ！\n"
-                     f"（1ゲーム {JUGGLER_BET}枚ベット）"),
-            view=JugglerInsertView(uid=uid, machine=self.machine, coins=coins))
+        # ── ゲーム種別ごとにコイン投入画面へ分岐 ──
+        # 新しいゲームを追加する場合はここに elif を追加するのだ
+        if game_type == "juggler":
+            u = store.get_user(uid)
+            coins = int(u.get("coins", 0))
+            if coins < JUGGLER_BET:
+                return await interaction.edit_original_response(
+                    content=f"コインが足りないのだ（最低 {JUGGLER_BET}枚 必要）")
+            await interaction.edit_original_response(
+                content=(f"🎰 **{self.machine['name']}**\n\n"
+                         f"💰 所持コイン：**{coins:,}** 枚\n\n"
+                         f"コインを投入するのだ！\n"
+                         f"（1ゲーム {JUGGLER_BET}枚ベット）"),
+                view=JugglerInsertView(uid=uid, machine=self.machine, coins=coins))
+        else:
+            await interaction.edit_original_response(
+                content=f"「{self.machine['name']}」はまだ準備中なのだ…")
 
 # ── スラッシュコマンド ────────────────────────────────
 
@@ -9867,15 +10017,17 @@ async def setup_juggler_cmd(interaction: discord.Interaction):
     await interaction.followup.send("ジャグラー台を設置したのだ！", ephemeral=True)
 
 
-@bot.tree.command(name="add_juggler_machine", description="ジャグラーの台を追加するのだ（管理者のみ）")
-@app_commands.describe(name="台の名前（例：マイジャグラーV）", setting="設定（1〜6）")
-async def add_juggler_machine_cmd(interaction: discord.Interaction, name: str, setting: int):
+@bot.tree.command(name="add_juggler_machine", description="スロット台を追加するのだ（管理者のみ）")
+@app_commands.describe(name="台の名前（例：マイジャグラーV）", setting="設定（1〜6）",
+                       game_type="ゲーム種別（juggler など、省略でjuggler）")
+async def add_juggler_machine_cmd(interaction: discord.Interaction, name: str, setting: int,
+                                  game_type: str = "juggler"):
     if not is_admin_user(interaction): return await safe_send(interaction, "管理者のみ使えるのだ", ephemeral=True)
     if setting < 1 or setting > 6:    return await safe_send(interaction, "設定は1〜6で指定するのだ", ephemeral=True)
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, juggler_db_init)
-    mid = await loop.run_in_executor(None, lambda: juggler_add_machine(name, setting))
-    await safe_send(interaction, f"台「{name}（設定{setting}）」を追加したのだ（ID: {mid}）", ephemeral=True)
+    mid = await loop.run_in_executor(None, lambda: juggler_add_machine(name, setting, game_type))
+    await safe_send(interaction, f"台「{name}」（{game_type}）を追加したのだ（ID: {mid}）", ephemeral=True)
 
 
 @bot.tree.command(name="delete_juggler_machine", description="ジャグラーの台を削除するのだ（管理者のみ）")
@@ -10015,6 +10167,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
