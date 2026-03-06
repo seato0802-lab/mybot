@@ -10084,1420 +10084,996 @@ async def juggler_stats_cmd(interaction: discord.Interaction):
 # =========================================================
 # re:ゼロから始める異世界生活 スロット 追加コード
 # =========================================================
-# このコードを juggler_addition.py の末尾に追加してください。
-# on_ready() の VIEWS_READY ブロック内に追加：
-#   bot.add_view(RezeroEntryView())
-#
-# /setup_juggler コマンドでリゼロ台を追加できます：
-#   /add_juggler_machine name:リゼロ setting:3 game_type:rezero
+# 「# 起動イベント」の直前に挿入してください。
+# 台追加: /add_juggler_machine name:re:ゼロ setting:3 game_type:rezero
 # =========================================================
 
-import random as _rz_random
+import random as _rz_rand
 import io as _rz_io
+import functools as _rz_ft
 
-# ── 素材URL ─────────────────────────────────────────────
-
-def _rz_gdrive_url(file_id: str) -> str:
-    return f"https://drive.usercontent.google.com/download?id={file_id}&export=download&authuser=0&confirm=t"
-
+# ── Google Drive URL（"LOCAL"のままにするとPillowで自動生成） ──
 REZERO_ASSET_URLS: dict[str, str] = {
-    "rz_reel.gif":        "LOCAL",
-    "rz_reel_slow.gif":   "LOCAL",
-    "rz_normal.png":      "LOCAL",
-    "rz_hakugei.png":     "LOCAL",
-    "rz_battle_blue.png": "LOCAL",
-    "rz_battle_green.png":"LOCAL",
-    "rz_battle_red.png":  "LOCAL",
-    "rz_at.png":          "LOCAL",
-    "rz_oni.png":         "LOCAL",
-    "rz_at_end.png":      "LOCAL",
+    "rz_reel.gif":         "LOCAL",
+    "rz_reel_slow.gif":    "LOCAL",
+    "rz_normal.png":       "LOCAL",
+    "rz_hakugei.png":      "LOCAL",
+    "rz_battle_blue.png":  "LOCAL",
+    "rz_battle_green.png": "LOCAL",
+    "rz_battle_red.png":   "LOCAL",
+    "rz_at.png":           "LOCAL",
+    "rz_oni.png":          "LOCAL",
+    "rz_at_end.png":       "LOCAL",
 }
 
 _rz_cache: dict[str, bytes] = {}
 
-async def _rzget(filename: str) -> bytes | None:
-    if filename in _rz_cache:
-        return _rz_cache[filename]
-    url = REZERO_ASSET_URLS.get(filename)
-    if not url:
-        return None
-    if url == "LOCAL":
-        data = _rz_make_local(filename)
-        if data:
-            _rz_cache[filename] = data
-        return data
-    # Google Drive取得（juggler と同じロジック）
-    try:
-        import aiohttp
-        timeout = aiohttp.ClientTimeout(total=60)
-        headers = {"User-Agent": "Mozilla/5.0"}
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-            async with session.get(url) as resp:
-                data = await resp.read()
-        ct = resp.headers.get("Content-Type","")
-        if "html" in ct:
-            import re as _re
-            m = _re.search(rb'confirm=([0-9A-Za-z_\-]+)', data)
-            if m:
-                confirm = m.group(1).decode()
-                new_url = url + f"&confirm={confirm}"
-                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                    async with session.get(new_url) as resp2:
-                        data = await resp2.read()
-        _rz_cache[filename] = data
-        return data
-    except Exception as e:
-        print(f"[rezero] 素材取得失敗 {filename}: {e}")
-        return None
+# ── Pillow画像生成 ───────────────────────────────────────
 
-def _rz_file(data: bytes, filename: str) -> discord.File:
-    return discord.File(io.BytesIO(data), filename=filename)
-
-# ── ローカル素材生成（Pillow） ───────────────────────────
-
-def _rz_make_local(filename: str) -> bytes | None:
+def _rz_make_image(filename: str) -> bytes:
     try:
         from PIL import Image, ImageDraw, ImageFont
-        import io as _io
-    except ImportError:
-        return None
-
-    def font(size):
-        for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                  "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]:
-            try: return ImageFont.truetype(p, size)
-            except: pass
-        return ImageFont.load_default()
-
-    W, H = 458, 171  # 150*3+8, 57*3
-
-    def gradient(img, top_color, bot_color):
-        draw = ImageDraw.Draw(img)
-        for y in range(H):
-            t = y / H
-            r = int(top_color[0]*(1-t) + bot_color[0]*t)
-            g = int(top_color[1]*(1-t) + bot_color[1]*t)
-            b = int(top_color[2]*(1-t) + bot_color[2]*t)
-            draw.line([(0,y),(W,y)], fill=(r,g,b))
-        return draw
-
-    def text_center(draw, text, y, fsize, color):
-        f = font(fsize)
-        bb = draw.textbbox((0,0), text, font=f)
-        tw = bb[2]-bb[0]
-        draw.text(((W-tw)//2+2, y+2), text, fill=(0,0,0), font=f)
-        draw.text(((W-tw)//2, y), text, fill=color, font=f)
-
-    buf = _io.BytesIO()
-
-    if filename == "rz_normal.png":
-        img = Image.new("RGB", (W, H))
-        draw = gradient(img, (10,10,50), (20,20,80))
-        draw.rectangle([2,2,W-3,H-3], outline=(100,150,255), width=2)
-        text_center(draw, "re:ゼロ スロット", H//2-20, 28, (180,200,255))
-        text_center(draw, "ポイントを貯めて白鯨を討伐するのだ！", H//2+15, 14, (150,170,220))
-        img.save(buf, "PNG"); return buf.getvalue()
-
-    elif filename == "rz_hakugei.png":
-        img = Image.new("RGB", (W, H))
-        draw = gradient(img, (0,20,60), (0,50,120))
-        draw.rectangle([2,2,W-3,H-3], outline=(100,200,255), width=2)
-        text_center(draw, "⚔ 白鯨攻略戦", H//2-25, 30, (100,220,255))
-        text_center(draw, "準備中 — ベルを揃えよ！", H//2+15, 16, (180,230,255))
-        img.save(buf, "PNG"); return buf.getvalue()
-
-    elif filename == "rz_battle_blue.png":
-        img = Image.new("RGB", (W, H))
-        draw = gradient(img, (0,30,100), (0,60,160))
-        draw.rectangle([2,2,W-3,H-3], outline=(80,120,255), width=3)
-        text_center(draw, "⚔ 白鯨攻略戦", H//2-25, 30, (150,200,255))
-        text_center(draw, "🔵 白鯨出現！", H//2+15, 18, (180,220,255))
-        img.save(buf, "PNG"); return buf.getvalue()
-
-    elif filename == "rz_battle_green.png":
-        img = Image.new("RGB", (W, H))
-        draw = gradient(img, (0,60,30), (0,120,60))
-        draw.rectangle([2,2,W-3,H-3], outline=(80,255,120), width=3)
-        text_center(draw, "⚔ 白鯨攻略戦", H//2-25, 30, (150,255,180))
-        text_center(draw, "🟢 チャンス！", H//2+15, 18, (180,255,200))
-        img.save(buf, "PNG"); return buf.getvalue()
-
-    elif filename == "rz_battle_red.png":
-        img = Image.new("RGB", (W, H))
-        draw = gradient(img, (100,0,0), (180,20,20))
-        draw.rectangle([2,2,W-3,H-3], outline=(255,80,80), width=3)
-        text_center(draw, "⚔ 白鯨攻略戦", H//2-25, 30, (255,180,180))
-        text_center(draw, "🔴 激アツ！！", H//2+15, 18, (255,200,200))
-        img.save(buf, "PNG"); return buf.getvalue()
-
-    elif filename == "rz_at.png":
-        img = Image.new("RGB", (W, H))
-        draw = gradient(img, (80,0,100), (140,20,160))
-        draw.rectangle([2,2,W-3,H-3], outline=(220,100,255), width=3)
-        text_center(draw, "🌟 ゼロからっしゅ！", H//2-25, 28, (255,200,255))
-        text_center(draw, "AT突入！コインを増やすのだ！", H//2+15, 15, (220,180,255))
-        img.save(buf, "PNG"); return buf.getvalue()
-
-    elif filename == "rz_oni.png":
-        img = Image.new("RGB", (W, H))
-        draw = gradient(img, (150,0,0), (200,50,0))
-        draw.rectangle([2,2,W-3,H-3], outline=(255,150,0), width=3)
-        text_center(draw, "👹 鬼がかったやり方！！", H//2-25, 26, (255,220,100))
-        text_center(draw, "鬼モード突入！全抽選が激アツ！", H//2+15, 15, (255,200,150))
-        img.save(buf, "PNG"); return buf.getvalue()
-
-    elif filename == "rz_at_end.png":
-        img = Image.new("RGB", (W, H))
-        draw = gradient(img, (20,20,20), (50,50,80))
-        draw.rectangle([2,2,W-3,H-3], outline=(150,150,200), width=2)
-        text_center(draw, "AT終了", H//2-20, 32, (200,200,255))
-        text_center(draw, "また死に戻るのだ…", H//2+18, 16, (160,160,200))
-        img.save(buf, "PNG"); return buf.getvalue()
-
-    # リールGIF はジャグラーと共通のシンボルタイル方式
-    elif filename in ("rz_reel.gif", "rz_reel_slow.gif"):
-        slow = (filename == "rz_reel_slow.gif")
-        return _rz_make_reel_gif(slow=slow)
-
-    return None
-
-def _rz_make_reel_gif(slow: bool = False) -> bytes:
-    """リゼロ用リールGIF生成"""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        import io as _io
     except ImportError:
         return b""
-
-    SYMBOLS = ["BELL","REPLAY","WEAK_CHERRY","STRONG_CHERRY","SUIKA","BLANK"]
-    COLORS = {
-        "BELL":          ((220,180,0),   "BELL",    (0,0,0)),
-        "REPLAY":        ((0,180,220),   "REPLAY",  (255,255,255)),
-        "WEAK_CHERRY":   ((180,0,0),     "弱チェ",  (255,200,200)),
-        "STRONG_CHERRY": ((220,0,0),     "強チェ",  (255,255,0)),
-        "SUIKA":         ((0,150,30),    "SUIKA",   (255,255,255)),
-        "BLANK":         ((20,20,20),    "BLANK",   (80,80,80)),
-    }
-    TW, TH = 150, 57
-    STRIP_H = TH * 3
+    import random as _r, math as _m, io as _io
+    W, H = 480, 180
 
     def font(size):
-        for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                  "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]:
+        for p in [
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Bold.otf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ]:
             try: return ImageFont.truetype(p, size)
             except: pass
         return ImageFont.load_default()
 
-    def make_tile(sym):
-        bg, label, tc = COLORS[sym]
-        img = Image.new("RGBA", (TW, TH), bg+(255,))
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([1,1,TW-2,TH-2], outline=(200,200,200,180), width=1)
-        f = font(18)
-        bb = draw.textbbox((0,0), label, font=f)
-        tw,th = bb[2]-bb[0], bb[3]-bb[1]
-        draw.text(((TW-tw)//2, (TH-th)//2), label, fill=tc, font=f)
-        return img
+    def grad(draw, colors):
+        for y in range(H):
+            t = y / H
+            for i in range(len(colors)-1):
+                y0,c0=colors[i]; y1,c1=colors[i+1]
+                if y0<=t<=y1:
+                    s=(t-y0)/(y1-y0)
+                    draw.line([(0,y),(W,y)],fill=(int(c0[0]*(1-s)+c1[0]*s),int(c0[1]*(1-s)+c1[1]*s),int(c0[2]*(1-s)+c1[2]*s))); break
 
-    # 全シンボルの長いストリップ
-    strip_imgs = [make_tile(s) for s in SYMBOLS]
-    TOTAL_STRIP = len(SYMBOLS) * TH
-    strip = Image.new("RGBA", (TW, TOTAL_STRIP))
-    for i, img in enumerate(strip_imgs):
-        strip.paste(img, (0, i*TH))
+    def ctext(draw, text, y, fsize, color, shadow=(0,0,0)):
+        f=font(fsize); bb=draw.textbbox((0,0),text,font=f)
+        x=(W-(bb[2]-bb[0]))//2
+        draw.text((x+2,y+2),text,font=f,fill=shadow)
+        draw.text((x,y),text,font=f,fill=color)
 
-    n_frames = 18 if not slow else 12
-    dur = 50 if not slow else 100
-    frames = []
-    for fi in range(n_frames):
-        offset = (fi * TH * len(SYMBOLS) // n_frames) % TOTAL_STRIP
-        canvas = Image.new("RGBA", (TW, STRIP_H))
-        for row in range(4):
-            y_src = (offset + row * TH) % TOTAL_STRIP
-            tile = strip.crop((0, y_src, TW, y_src + TH)) if y_src + TH <= TOTAL_STRIP else \
-                   Image.new("RGBA", (TW, TH))
-            canvas.paste(tile, (0, row * TH - TH))
-        frames.append(canvas.convert("P", palette=Image.ADAPTIVE, colors=64))
+    def border(draw, color, w=3):
+        for i in range(w): draw.rectangle([i,i,W-1-i,H-1-i],outline=color)
 
-    buf = _io.BytesIO()
-    frames[0].save(buf, format="GIF", save_all=True, append_images=frames[1:],
-                   loop=0, duration=dur, optimize=False)
+    buf=_io.BytesIO(); _r.seed(42)
+
+    if filename=="rz_normal.png":
+        img=Image.new("RGB",(W,H)); draw=ImageDraw.Draw(img)
+        grad(draw,[(0,(5,5,30)),(0.5,(10,20,60)),(1,(5,10,40))])
+        for _ in range(40):
+            x,y=_r.randint(0,W),_r.randint(0,H); r=_r.randint(1,2)
+            draw.ellipse([x-r,y-r,x+r,y+r],fill=(200,210,255))
+        border(draw,(80,120,220),3)
+        ctext(draw,"Re:ゼロから始める異世界生活",20,16,(180,200,255))
+        draw.rectangle([20,60,W-20,90],outline=(100,140,255),width=2)
+        ctext(draw,"◆  POINT  GAUGE  ◆",95,14,(120,160,240))
+        ctext(draw,"500pt到達で白鯨攻略戦へ！",125,14,(150,180,240))
+        img.save(buf,"PNG")
+
+    elif filename=="rz_hakugei.png":
+        img=Image.new("RGB",(W,H)); draw=ImageDraw.Draw(img)
+        grad(draw,[(0,(0,10,40)),(0.4,(0,30,80)),(1,(0,20,60))])
+        for i in range(5):
+            y=60+i*20
+            for x in range(0,W,4):
+                wy=y+int(6*_m.sin((x+i*30)*0.08))
+                draw.ellipse([x,wy,x+2,wy+2],fill=(60+i*10,140+i*10,200))
+        border(draw,(100,200,255),3)
+        ctext(draw,"⚔  白鯨攻略戦",15,32,(100,220,255),(0,40,100))
+        ctext(draw,"【  準  備  中  】",65,16,(180,230,255),(0,60,120))
+        ctext(draw,"BELLNAVI  ×  5",100,16,(220,240,255),(0,60,120))
+        ctext(draw,"レア役で撃破ストックGET！",135,14,(150,200,240))
+        img.save(buf,"PNG")
+
+    elif filename=="rz_battle_blue.png":
+        img=Image.new("RGB",(W,H)); draw=ImageDraw.Draw(img)
+        grad(draw,[(0,(0,20,80)),(0.5,(0,50,140)),(1,(0,30,100))])
+        for i in range(3):
+            for x in range(0,W,8):
+                wy=30+i*50+int(8*_m.sin((x+i*20)*0.06))
+                draw.ellipse([x,wy,x+3,wy+1],fill=(40,100+i*20,180))
+        border(draw,(80,160,255),3)
+        ctext(draw,"⚔  WHITE  WHALE  BATTLE  ⚔",18,15,(150,210,255))
+        ctext(draw,"🔵  BATTLE  START  🔵",52,28,(200,230,255),(0,30,120))
+        ctext(draw,"撃破せよ！",110,16,(180,220,255))
+        ctext(draw,"Beating  Rate  ??%",140,14,(140,190,240))
+        img.save(buf,"PNG")
+
+    elif filename=="rz_battle_green.png":
+        img=Image.new("RGB",(W,H)); draw=ImageDraw.Draw(img)
+        grad(draw,[(0,(0,50,20)),(0.5,(0,120,50)),(1,(0,80,30))])
+        for i in range(4):
+            for x in range(0,W,6):
+                wy=20+i*40+int(6*_m.sin((x+i*15)*0.07))
+                draw.ellipse([x,wy,x+2,wy+2],fill=(60,180+i*10,80))
+        border(draw,(100,255,140),3)
+        ctext(draw,"⚔  WHITE  WHALE  BATTLE  ⚔",18,15,(180,255,200))
+        ctext(draw,"🟢  CHANCE  UP！  🟢",52,28,(200,255,220),(0,60,30))
+        ctext(draw,"撃破期待大！",110,16,(220,255,230))
+        ctext(draw,"Beating  Rate  ↑↑↑",140,14,(180,240,200))
+        img.save(buf,"PNG")
+
+    elif filename=="rz_battle_red.png":
+        img=Image.new("RGB",(W,H)); draw=ImageDraw.Draw(img)
+        grad(draw,[(0,(100,0,0)),(0.4,(180,20,20)),(1,(120,10,10))])
+        for i in range(20):
+            x=_r.randint(0,W); y=_r.randint(0,H); r=_r.randint(2,8)
+            draw.ellipse([x-r,y-r,x+r,y+r],fill=(255,_r.randint(50,150),0))
+        border(draw,(255,80,80),4)
+        ctext(draw,"⚔  WHITE  WHALE  BATTLE  ⚔",18,15,(255,200,200))
+        ctext(draw,"🔴  SUPER  CHANCE！  🔴",52,28,(255,220,220),(80,0,0))
+        ctext(draw,"激アツ！！撃破確定濃厚！！",110,16,(255,200,200))
+        ctext(draw,"PUSH  YOUR  LUCK  ！！",140,14,(255,180,180))
+        img.save(buf,"PNG")
+
+    elif filename=="rz_at.png":
+        img=Image.new("RGB",(W,H)); draw=ImageDraw.Draw(img)
+        grad(draw,[(0,(60,0,80)),(0.5,(120,20,160)),(1,(80,0,110))])
+        for _ in range(30):
+            x,y=_r.randint(0,W),_r.randint(0,H)
+            draw.ellipse([x-2,y-2,x+2,y+2],fill=(255,220,255))
+            draw.line([(x-5,y),(x+5,y)],fill=(255,200,255),width=1)
+            draw.line([(x,y-5),(x,y+5)],fill=(255,200,255),width=1)
+        border(draw,(220,100,255),4)
+        ctext(draw,"🌟  ゼロからっしゅ  🌟",15,28,(255,220,255),(60,0,100))
+        ctext(draw,"AT  BONUS  START！",65,16,(255,200,255))
+        ctext(draw,"純増  +10枚/G",95,16,(240,180,255))
+        ctext(draw,"スイカでG数上乗せ！強チェリーでループ！",130,13,(220,180,255))
+        img.save(buf,"PNG")
+
+    elif filename=="rz_oni.png":
+        img=Image.new("RGB",(W,H)); draw=ImageDraw.Draw(img)
+        grad(draw,[(0,(150,0,0)),(0.3,(200,50,0)),(0.7,(180,30,0)),(1,(120,0,0))])
+        for i in range(25):
+            x=_r.randint(0,W)
+            for h in range(0,_r.randint(20,60),3):
+                y=H-h+_r.randint(-3,3); r=max(1,8-h//8)
+                draw.ellipse([x-r,y-r,x+r,y+r],fill=(255,max(0,200-h*3),0))
+        draw.polygon([(60,10),(80,50),(40,50)],fill=(200,0,0))
+        draw.polygon([(W-60,10),(W-40,50),(W-80,50)],fill=(200,0,0))
+        border(draw,(255,150,0),4)
+        ctext(draw,"👹  鬼がかったやり方！！  👹",38,15,(255,220,100),(80,0,0))
+        ctext(draw,"ONI  MODE",68,32,(255,200,50),(120,30,0))
+        ctext(draw,"スイカ上乗せ30G以上確定！！",115,15,(255,210,100))
+        ctext(draw,"全抽選が激アツ！！",145,14,(255,200,150))
+        img.save(buf,"PNG")
+
+    elif filename=="rz_at_end.png":
+        img=Image.new("RGB",(W,H)); draw=ImageDraw.Draw(img)
+        grad(draw,[(0,(10,10,20)),(0.5,(25,25,50)),(1,(10,10,20))])
+        border(draw,(100,100,160),2)
+        ctext(draw,"AT  BONUS  END",20,30,(180,180,220),(0,0,10))
+        ctext(draw,"また死に戻るのだ…",80,16,(160,160,210))
+        ctext(draw,"次の挑戦を待っているのだ",120,14,(130,130,190))
+        img.save(buf,"PNG")
+
+    elif filename in ("rz_reel.gif","rz_reel_slow.gif"):
+        return _rz_make_reel_gif(filename=="rz_reel_slow.gif")
+
     return buf.getvalue()
 
-async def rezero_preload() -> list[str]:
-    """起動時に素材を先読みする。失敗したファイル名リストを返す"""
-    failed = []
+
+def _rz_make_reel_gif(slow: bool=False) -> bytes:
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return b""
+    import io as _io
+    TW, TH = 150, 57
+    SYMS = [
+        ("BELL",    (220,180,0),  "BELL",      (10,10,10)),
+        ("REPLAY",  (0,160,200),  "REPLAY",    (255,255,255)),
+        ("WCHERRY", (180,0,0),    "弱チェリー", (255,220,220)),
+        ("BLANK",   (15,15,20),   "",           (80,80,80)),
+        ("SUIKA",   (0,140,30),   "SUIKA",     (255,255,255)),
+        ("SCHERRY", (210,0,0),    "強チェリー", (255,255,0)),
+        ("BLANK",   (15,15,20),   "",           (80,80,80)),
+        ("REPLAY",  (0,160,200),  "REPLAY",    (255,255,255)),
+        ("BELL",    (220,180,0),  "BELL",      (10,10,10)),
+        ("SUIKA",   (0,140,30),   "SUIKA",     (255,255,255)),
+        ("WCHERRY", (180,0,0),    "弱チェリー", (255,220,220)),
+        ("BLANK",   (15,15,20),   "",           (80,80,80)),
+        ("BELL",    (220,180,0),  "BELL",      (10,10,10)),
+        ("REPLAY",  (0,160,200),  "REPLAY",    (255,255,255)),
+        ("SCHERRY", (210,0,0),    "強チェリー", (255,255,0)),
+        ("BLANK",   (15,15,20),   "",           (80,80,80)),
+        ("SUIKA",   (0,140,30),   "SUIKA",     (255,255,255)),
+        ("BELL",    (220,180,0),  "BELL",      (10,10,10)),
+        ("WCHERRY", (180,0,0),    "弱チェリー", (255,220,220)),
+        ("BLANK",   (15,15,20),   "",           (80,80,80)),
+        ("REPLAY",  (0,160,200),  "REPLAY",    (255,255,255)),
+    ]
+    def gf(size):
+        for p in ["/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
+            try: return ImageFont.truetype(p,size)
+            except: pass
+        return ImageFont.load_default()
+    tiles=[]
+    for _,bg,label,tc in SYMS:
+        img=Image.new("RGB",(TW,TH),bg); draw=ImageDraw.Draw(img)
+        draw.rectangle([1,1,TW-2,TH-2],outline=(200,200,200),width=1)
+        draw.rectangle([3,3,TW-4,TH-4],outline=(150,150,150),width=1)
+        if label:
+            f=gf(16 if len(label)<=6 else 13)
+            bb=draw.textbbox((0,0),label,font=f); tw2,th2=bb[2]-bb[0],bb[3]-bb[1]
+            draw.text(((TW-tw2)//2+1,(TH-th2)//2+1),label,fill=(0,0,0),font=f)
+            draw.text(((TW-tw2)//2,(TH-th2)//2),label,fill=tc,font=f)
+        tiles.append(img)
+    n=len(tiles); strip_h=n*TH
+    strip=Image.new("RGB",(TW,strip_h))
+    for i,t in enumerate(tiles): strip.paste(t,(0,i*TH))
+    visible_h=TH*3; n_frames=10 if slow else 18; dur=100 if slow else 55
+    frames=[]
+    for fi in range(n_frames):
+        offset=(fi*TH*n//n_frames)%strip_h
+        frame=Image.new("RGB",(TW,visible_h),(10,10,15))
+        for row in range(4):
+            src_y=(offset+row*TH)%strip_h; end_y=min(src_y+TH,strip_h)
+            piece=strip.crop((0,src_y,TW,end_y))
+            if piece.height<TH:
+                p2=Image.new("RGB",(TW,TH),(10,10,15)); p2.paste(piece,(0,0)); piece=p2
+            dst_y=row*TH-TH+(offset%TH)
+            if 0<=dst_y<visible_h: frame.paste(piece,(0,dst_y))
+        frames.append(frame.quantize(colors=64,method=Image.Quantize.MEDIANCUT))
+    buf=_io.BytesIO()
+    frames[0].save(buf,"GIF",save_all=True,append_images=frames[1:],loop=0,duration=dur,optimize=False)
+    return buf.getvalue()
+
+
+async def _rzget(filename: str) -> bytes | None:
+    if filename in _rz_cache: return _rz_cache[filename]
+    url=REZERO_ASSET_URLS.get(filename,"LOCAL")
+    if url=="LOCAL":
+        # ★ executor でブロッキング処理を非同期化
+        data=await asyncio.get_running_loop().run_in_executor(None,_rz_make_image,filename)
+        if data: _rz_cache[filename]=data
+        return data or None
+    try:
+        import aiohttp
+        timeout=aiohttp.ClientTimeout(total=60); headers={"User-Agent":"Mozilla/5.0"}
+        async with aiohttp.ClientSession(timeout=timeout,headers=headers) as s:
+            async with s.get(url) as resp: data=await resp.read()
+        ct=resp.headers.get("Content-Type","")
+        if "html" in ct:
+            import re as _re; m=_re.search(rb'confirm=([0-9A-Za-z_\-]+)',data)
+            if m:
+                async with aiohttp.ClientSession(timeout=timeout,headers=headers) as s:
+                    async with s.get(url+f"&confirm={m.group(1).decode()}") as r2: data=await r2.read()
+        _rz_cache[filename]=data; return data
+    except Exception as e:
+        print(f"[rezero] DL失敗 {filename}: {e}"); return None
+
+def _rzfile(data:bytes,filename:str)->discord.File:
+    return discord.File(_rz_io.BytesIO(data),filename=filename)
+
+async def rezero_preload()->list[str]:
+    failed=[]
     for fn in REZERO_ASSET_URLS:
-        d = await _rzget(fn)
-        if not d:
-            failed.append(fn)
+        d=await _rzget(fn)
+        if not d: failed.append(fn)
     return failed
 
 # ── 確率テーブル ─────────────────────────────────────────
-
-REZERO_BET = 30  # 1G消費コイン（ジャグラーと同じ）
-
-REZERO_PROB_TABLES: dict[int, dict[str, float]] = {
-    1: {"STRONG_CHERRY": 1/200, "WEAK_CHERRY": 1/40,  "SUIKA": 1/20, "BELL": 1/4,   "REPLAY": 1/7.3},
-    2: {"STRONG_CHERRY": 1/190, "WEAK_CHERRY": 1/38,  "SUIKA": 1/20, "BELL": 1/4,   "REPLAY": 1/7.3},
-    3: {"STRONG_CHERRY": 1/180, "WEAK_CHERRY": 1/36,  "SUIKA": 1/20, "BELL": 1/4,   "REPLAY": 1/7.3},
-    4: {"STRONG_CHERRY": 1/170, "WEAK_CHERRY": 1/34,  "SUIKA": 1/20, "BELL": 1/4,   "REPLAY": 1/7.3},
-    5: {"STRONG_CHERRY": 1/160, "WEAK_CHERRY": 1/32,  "SUIKA": 1/20, "BELL": 1/4,   "REPLAY": 1/7.3},
-    6: {"STRONG_CHERRY": 1/150, "WEAK_CHERRY": 1/30,  "SUIKA": 1/20, "BELL": 1/4,   "REPLAY": 1/7.3},
+REZERO_BET=30
+REZERO_PROB={
+    1:{"SCHERRY":1/200,"WCHERRY":1/40,"SUIKA":1/20,"BELL":1/4,"REPLAY":1/7.3},
+    2:{"SCHERRY":1/190,"WCHERRY":1/38,"SUIKA":1/20,"BELL":1/4,"REPLAY":1/7.3},
+    3:{"SCHERRY":1/180,"WCHERRY":1/36,"SUIKA":1/20,"BELL":1/4,"REPLAY":1/7.3},
+    4:{"SCHERRY":1/170,"WCHERRY":1/34,"SUIKA":1/20,"BELL":1/4,"REPLAY":1/7.3},
+    5:{"SCHERRY":1/160,"WCHERRY":1/32,"SUIKA":1/20,"BELL":1/4,"REPLAY":1/7.3},
+    6:{"SCHERRY":1/150,"WCHERRY":1/30,"SUIKA":1/20,"BELL":1/4,"REPLAY":1/7.3},
 }
+REZERO_PAYOUT={"BELL":30,"REPLAY":0,"WCHERRY":20,"SCHERRY":20,"SUIKA":60,"BLANK":0}
+REZERO_POINTS={"BELL":20,"REPLAY":5,"WCHERRY":50,"SCHERRY":100,"SUIKA":80,"BLANK":1}
+REZERO_POINT_MAX=500
+REZERO_BASE_RATE={1:50,2:52,3:55,4:58,5:63,6:70}
+REZERO_ICON_INFO={"":("なし","⬛",0),"white":("白","⬜",3),"blue":("青","🟦",8),
+                  "yellow":("黄","🟨",12),"green":("緑","🟩",18),"red":("赤","🟥",28),"oni":("鬼アツ","🔶",45)}
+FLAG_LABEL_RZ={"BELL":"🔔 ベル！","REPLAY":"🔄 リプレイ！","WCHERRY":"🍒 弱チェリー！",
+               "SCHERRY":"🍒🍒 強チェリー！！","SUIKA":"🍉 スイカ！","BLANK":"　"}
 
-# 払い出し（コイン枚数）
-REZERO_PAYOUT = {
-    "BELL":          30,
-    "REPLAY":        30,
-    "WEAK_CHERRY":   20,
-    "STRONG_CHERRY": 20,
-    "SUIKA":         60,
-    "BLANK":          0,
-}
+# ── セッション ───────────────────────────────────────────
+rezero_sessions:dict[int,dict]={}
 
-# ポイント加算量
-REZERO_POINTS = {
-    "BELL":          20,
-    "REPLAY":         5,
-    "WEAK_CHERRY":   50,
-    "STRONG_CHERRY": 100,
-    "SUIKA":         80,
-    "BLANK":          1,
-}
+def _new_rz_sess(uid:int,machine_id:int,setting:int,credit:int)->dict:
+    return {"uid":uid,"machine_id":machine_id,"setting":setting,"credit":credit,
+            "phase":"idle","flag":"BLANK",
+            "reels_stopped":[False,False,False],"reel_window":[None,None,None],
+            "replay":False,"points":0,"icon_color":"",
+            "base_rate":REZERO_BASE_RATE.get(setting,50),"final_rate":REZERO_BASE_RATE.get(setting,50),
+            "hakugei_stocks":0,"bell_count":0,"battle_num":0,"battles_won":0,
+            "attack_count":0,"attacker_log":[],"bg_color":"blue",
+            "at_games":0,"at_total_pay":0,"loop_stocks":0,"oni_mode":False,
+            "onedari_step":0,"onedari_games":0,"total_games":0,"at_count":0,"games_since_at":0,
+            "machine_name":"","thread_id":None,"header_msg_id":None,"img_msg_id":None,"ctrl_msg_id":None}
 
-# ポイント上限（→ 白鯨攻略戦）
-REZERO_POINT_MAX = 500
-
-# 設定別ベース撃破率（%）
-REZERO_BASE_HAKUGEI_RATE = {1: 50, 2: 52, 3: 55, 4: 58, 5: 63, 6: 70}
-
-# おねだりAttack G数振り分け
-REZERO_ONEDARI_TABLE = [
-    (30,  30), (50,  30), (80,  20), (100, 15), (200, 5),
-]
-
-# スイカ上乗せ振り分け
-REZERO_SUIKA_UP_NORMAL = [(10,40),(20,30),(30,20),(50,8),(100,2)]
-REZERO_SUIKA_UP_ONI    = [(30,50),(50,35),(100,15)]
-
-# アイコン色名と表示
-REZERO_ICON_COLORS = {
-    "": ("なし", "⬛", 0),
-    "white":  ("白",   "⬜", 3),
-    "blue":   ("青",   "🟦", 8),
-    "yellow": ("黄",   "🟨", 12),
-    "green":  ("緑",   "🟩", 18),
-    "red":    ("赤",   "🟥", 28),
-    "oni":    ("鬼アツ","🔶", 45),
-}
-
-# ── セッション管理 ───────────────────────────────────────
-
-rezero_sessions: dict[int, dict] = {}
-
-def _new_rezero_session(uid: int, machine_id: int, setting: int, credit: int) -> dict:
-    return {
-        "uid": uid, "machine_id": machine_id, "setting": setting, "credit": credit,
-        "phase": "idle",
-        "flag": "BLANK",
-        "points": 0,
-        "icon_color": "",
-        "base_hakugei_rate": REZERO_BASE_HAKUGEI_RATE.get(setting, 50),
-        "final_hakugei_rate": REZERO_BASE_HAKUGEI_RATE.get(setting, 50),
-        "hakugei_stocks": 0,
-        "bell_count": 0,
-        "battle_num": 0,
-        "battles_won": 0,
-        "attack_count": 0,
-        "bg_color": "blue",
-        "attacker_log": [],
-        "at_games": 0,
-        "at_total_pay": 0,
-        "loop_stocks": 0,
-        "oni_mode": False,
-        "onedari_step": 0,
-        "onedari_games": 0,
-        "replay": False,
-        "total_games": 0,
-        "at_count": 0,
-        "games_since_at": 0,
-        "machine_name": "",
-        "thread_id": None,
-        "header_msg_id": None,
-        "img_msg_id": None,
-        "ctrl_msg_id": None,
-        "payout": 0,
-    }
-
-# ── 抽選関数 ─────────────────────────────────────────────
-
-def rezero_roll_flag(setting: int) -> str:
-    p = REZERO_PROB_TABLES.get(setting, REZERO_PROB_TABLES[3])
-    r = _rz_random.random()
-    for flag in ["STRONG_CHERRY","WEAK_CHERRY","SUIKA","BELL","REPLAY"]:
-        if r < p[flag]:
-            return flag
-        r -= p[flag]
+# ── 抽選 ─────────────────────────────────────────────────
+def _rz_roll(setting:int)->str:
+    p=REZERO_PROB.get(setting,REZERO_PROB[3]); r=_rz_rand.random()
+    for flag in ["SCHERRY","WCHERRY","SUIKA","BELL","REPLAY"]:
+        if r<p[flag]: return flag
+        r-=p[flag]
     return "BLANK"
 
-def rezero_roll_icon(setting: int) -> str:
-    """1000pt到達時のアイコン色抽選（設定が高いほど良い色）"""
-    weights = {
-        1: [("oni",1),("red",2),("green",5),("yellow",10),("blue",20),("white",62)],
-        2: [("oni",1),("red",3),("green",7),("yellow",12),("blue",22),("white",55)],
-        3: [("oni",2),("red",4),("green",9),("yellow",14),("blue",24),("white",47)],
-        4: [("oni",3),("red",6),("green",12),("yellow",16),("blue",25),("white",38)],
-        5: [("oni",4),("red",9),("green",15),("yellow",18),("blue",26),("white",28)],
-        6: [("oni",6),("red",13),("green",18),("yellow",20),("blue",25),("white",18)],
-    }
-    table = weights.get(setting, weights[3])
-    r = _rz_random.randint(1, 100)
-    acc = 0
-    for color, w in table:
-        acc += w
-        if r <= acc:
-            return color
+def _rz_roll_icon(setting:int)->str:
+    table=[("oni",2),("red",4),("green",9),("yellow",14),("blue",24),("white",47)]
+    if setting>=6: table=[("oni",6),("red",13),("green",18),("yellow",20),("blue",25),("white",18)]
+    elif setting<=1: table=[("oni",1),("red",2),("green",5),("yellow",10),("blue",20),("white",62)]
+    r=_rz_rand.randint(1,100); acc=0
+    for color,w in table:
+        acc+=w
+        if r<=acc: return color
     return "white"
 
-def rezero_roll_icon_up(color: str) -> int:
-    """アイコン色から撃破率UP量を抽選"""
-    base, _ , _ = REZERO_ICON_COLORS.get(color, ("", "⬛", 0))
-    guaranteed = REZERO_ICON_COLORS[color][2] if color else 0
-    # ループ抽選（1%ずつ追加）
-    extra = 0
-    loop_rate = {"": 0, "white": 33, "blue": 50, "yellow": 60, "green": 70, "red": 80, "oni": 99}
-    lr = loop_rate.get(color, 0)
-    while _rz_random.randint(1,100) <= lr and extra < 30:
-        extra += 1
-    return guaranteed + extra
+def _rz_roll_icon_up(color:str)->int:
+    guaranteed=REZERO_ICON_INFO.get(color,("","⬛",0))[2]
+    lr={"":0,"white":33,"blue":50,"yellow":60,"green":70,"red":80,"oni":99}.get(color,0)
+    extra=0
+    while _rz_rand.randint(1,100)<=lr and extra<30: extra+=1
+    return guaranteed+extra
 
-def rezero_roll_bg_color() -> str:
-    r = _rz_random.random()
-    if r < 0.02: return "rainbow"
-    if r < 0.10: return "red"
-    if r < 0.30: return "green"
+def _rz_roll_bg()->str:
+    r=_rz_rand.random()
+    if r<0.02: return "rainbow"
+    if r<0.10: return "red"
+    if r<0.30: return "green"
     return "blue"
 
-def rezero_roll_attacker() -> str:
-    chars = ["スバル","レム","ラム","クルシュ","ヴィルヘルム"]
-    weights = [25, 30, 25, 15, 5]
-    return _rz_random.choices(chars, weights=weights)[0]
+def _rz_roll_attacker()->str:
+    return _rz_rand.choices(["スバル","レム","ラム","クルシュ","ヴィルヘルム"],weights=[25,30,25,15,5])[0]
 
-def rezero_roll_battle(rate: int) -> bool:
-    """撃破率%で白鯨撃破判定"""
-    return _rz_random.randint(1, 100) <= rate
+def _rz_roll_stock(flag:str)->bool:
+    return _rz_rand.random()<{"SCHERRY":0.95,"SUIKA":0.05,"WCHERRY":0.02}.get(flag,0)
 
-def rezero_roll_stock(flag: str) -> bool:
-    """バトル中レア役での撃破ストック抽選"""
-    if flag == "STRONG_CHERRY": return _rz_random.random() < 0.95
-    if flag == "SUIKA":         return _rz_random.random() < 0.05
-    if flag == "WEAK_CHERRY":   return _rz_random.random() < 0.02
-    return False
+def _rz_roll_onedari()->int:
+    return _rz_rand.choices([30,50,80,100,200],weights=[30,30,20,15,5])[0]
 
-def rezero_roll_onedari(step: int) -> int:
-    """おねだりAttack 各ステップのG数上乗せ抽選"""
-    choices, weights = zip(*REZERO_ONEDARI_TABLE)
-    return _rz_random.choices(choices, weights=weights)[0]
+def _rz_roll_suika_up(oni:bool)->int:
+    if oni: return _rz_rand.choices([30,50,100],weights=[50,35,15])[0]
+    return _rz_rand.choices([10,20,30,50,100],weights=[40,30,20,8,2])[0]
 
-def rezero_roll_suika_up(oni_mode: bool) -> int:
-    """スイカ上乗せG数抽選"""
-    table = REZERO_SUIKA_UP_ONI if oni_mode else REZERO_SUIKA_UP_NORMAL
-    choices, weights = zip(*table)
-    return _rz_random.choices(choices, weights=weights)[0]
+# ── リール配列 ───────────────────────────────────────────
+_RZ_STRIP=["BELL","REPLAY","WCHERRY","BLANK","SUIKA","SCHERRY","BLANK","REPLAY",
+           "BELL","SUIKA","WCHERRY","BLANK","BELL","REPLAY","SCHERRY","BLANK",
+           "SUIKA","BELL","WCHERRY","BLANK","REPLAY"]
 
-def rezero_roll_oni_mode() -> bool:
-    """AT中の鬼モード移行抽選（約5%）"""
-    return _rz_random.random() < 0.05
+def _rz_reel_window(center_sym:str)->list[str]:
+    n=len(_RZ_STRIP)
+    cands=[i for i,s in enumerate(_RZ_STRIP) if s==center_sym]
+    if not cands: cands=list(range(n))
+    idx=_rz_rand.choice(cands)
+    return [_RZ_STRIP[(idx-1)%n],center_sym,_RZ_STRIP[(idx+1)%n]]
 
-# ── リール配列・ウィンドウ ───────────────────────────────
+# ── シンボルタイル ───────────────────────────────────────
+_RZ_TILE_CACHE:dict[str,bytes]={}
 
-_RZ_REEL_STRIP = [
-    "BELL","REPLAY","WEAK_CHERRY","BLANK","SUIKA",
-    "BELL","REPLAY","BLANK","STRONG_CHERRY","BELL",
-    "REPLAY","WEAK_CHERRY","BLANK","SUIKA","BELL",
-    "REPLAY","BLANK","WEAK_CHERRY","BELL","REPLAY","BLANK"
-]
-
-def _rz_reel_window(flag: str) -> list[str]:
-    """停止時の[上,中,下]シンボルを返す"""
-    strip = _RZ_REEL_STRIP
-    n = len(strip)
-    candidates = [i for i,s in enumerate(strip) if s == flag]
-    if not candidates:
-        candidates = list(range(n))
-    idx = _rz_random.choice(candidates)
-    return [strip[(idx-1)%n], flag, strip[(idx+1)%n]]
-
-# ── シンボルタイル生成 ───────────────────────────────────
-
-_RZ_TILE_CACHE: dict[str, bytes] = {}
-
-def _rz_make_tile(sym: str, w: int=150, h: int=57) -> bytes:
+def _rz_make_tile(sym:str)->bytes:
     try:
-        from PIL import Image, ImageDraw, ImageFont
-        import io as _io
-    except ImportError:
-        return b""
-    bg_map = {
-        "BELL":          (220,180,0),
-        "REPLAY":        (0,170,210),
-        "WEAK_CHERRY":   (170,0,0),
-        "STRONG_CHERRY": (210,0,0),
-        "SUIKA":         (0,140,30),
-        "BLANK":         (20,20,20),
-    }
-    label_map = {
-        "BELL": "BELL", "REPLAY": "REPLAY",
-        "WEAK_CHERRY": "弱チェリー", "STRONG_CHERRY": "強チェリー",
-        "SUIKA": "SUIKA", "BLANK": "",
-    }
-    tc_map = {
-        "BELL":(0,0,0), "REPLAY":(255,255,255),
-        "WEAK_CHERRY":(255,220,220), "STRONG_CHERRY":(255,255,0),
-        "SUIKA":(255,255,255), "BLANK":(80,80,80),
-    }
-    bg = bg_map.get(sym, (30,30,30))
-    label = label_map.get(sym, sym)
-    tc = tc_map.get(sym, (255,255,255))
-    img = Image.new("RGBA", (w, h), bg+(255,))
-    draw = ImageDraw.Draw(img)
-    draw.rectangle([1,1,w-2,h-2], outline=(200,200,200,150), width=1)
+        from PIL import Image,ImageDraw,ImageFont
+    except ImportError: return b""
+    import io as _io; TW,TH=150,57
+    BG={"BELL":(220,180,0),"REPLAY":(0,160,200),"WCHERRY":(180,0,0),"SCHERRY":(210,0,0),"SUIKA":(0,140,30),"BLANK":(15,15,20)}
+    LBL={"BELL":"BELL","REPLAY":"REPLAY","WCHERRY":"弱チェリー","SCHERRY":"強チェリー","SUIKA":"SUIKA","BLANK":""}
+    TC={"BELL":(10,10,10),"REPLAY":(255,255,255),"WCHERRY":(255,220,220),"SCHERRY":(255,255,0),"SUIKA":(255,255,255),"BLANK":(80,80,80)}
+    img=Image.new("RGB",(TW,TH),BG.get(sym,(30,30,30))); draw=ImageDraw.Draw(img)
+    draw.rectangle([1,1,TW-2,TH-2],outline=(200,200,200),width=1)
+    draw.rectangle([3,3,TW-4,TH-4],outline=(150,150,150),width=1)
+    label=LBL.get(sym,""); tc=TC.get(sym,(255,255,255))
     if label:
-        for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                  "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]:
-            try:
-                fnt = ImageFont.truetype(p, 16)
-                break
-            except: fnt = ImageFont.load_default()
-        bb = draw.textbbox((0,0), label, font=fnt)
-        tw,th = bb[2]-bb[0], bb[3]-bb[1]
-        draw.text(((w-tw)//2, (h-th)//2), label, fill=tc, font=fnt)
-    buf = _io.BytesIO()
-    img.save(buf, "PNG")
-    return buf.getvalue()
+        for p in ["/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
+            try: f=ImageFont.truetype(p,16 if len(label)<=6 else 13); break
+            except: f=ImageFont.load_default()
+        bb=draw.textbbox((0,0),label,font=f); tw,th=bb[2]-bb[0],bb[3]-bb[1]
+        draw.text(((TW-tw)//2+1,(TH-th)//2+1),label,fill=(0,0,0),font=f)
+        draw.text(((TW-tw)//2,(TH-th)//2),label,fill=tc,font=f)
+    buf=_io.BytesIO(); img.save(buf,"PNG"); return buf.getvalue()
 
-def _rz_get_tile(sym: str) -> bytes:
-    if sym not in _RZ_TILE_CACHE:
-        _RZ_TILE_CACHE[sym] = _rz_make_tile(sym)
+def _rz_tile(sym:str)->bytes:
+    if sym not in _RZ_TILE_CACHE: _RZ_TILE_CACHE[sym]=_rz_make_tile(sym)
     return _RZ_TILE_CACHE[sym]
 
 # ── 画像合成 ─────────────────────────────────────────────
-
-def _rz_composite(reel_bytes_list: list[bytes], reel_windows=None,
-                  tile_w:int=150, tile_h:int=57, padding:int=4) -> bytes:
-    """3リール合成。reel_windows指定で停止表示。"""
+def _rz_composite(reel_data_list:list[bytes],windows:list)->bytes:
     try:
         from PIL import Image
-        import io as _io
-    except ImportError:
-        return b""
-    n = len(reel_bytes_list)
-    col_h = tile_h * 3
-    total_w = tile_w * n + padding * (n - 1)
-    total_h = col_h
-
-    reel_frames_list = []
-    max_frames = 1
-    for ri, rb in enumerate(reel_bytes_list):
-        if reel_windows and ri < len(reel_windows) and reel_windows[ri]:
-            canvas_r = Image.new("RGBA", (tile_w, col_h), (30,30,30,255))
-            for row_i, sym in enumerate(reel_windows[ri][:3]):
-                tile_bytes = _rz_get_tile(sym)
-                tile_img = Image.open(_io.BytesIO(tile_bytes)).convert("RGBA")
-                tile_img = tile_img.resize((tile_w, tile_h), Image.LANCZOS)
-                canvas_r.paste(tile_img, (0, row_i * tile_h), tile_img)
-            reel_frames_list.append([canvas_r])
+    except ImportError: return b""
+    import io as _io
+    TW,TH,PAD=150,57,4; col_h=TH*3; n=len(reel_data_list); total_w=TW*n+PAD*(n-1)
+    cols=[]; max_frames=1
+    for rb,win in zip(reel_data_list,windows):
+        if win:
+            canvas=Image.new("RGB",(TW,col_h),(20,20,30))
+            for row,sym in enumerate(win[:3]):
+                tb=_rz_tile(sym)
+                if tb:
+                    t=Image.open(_io.BytesIO(tb)).convert("RGB").resize((TW,TH),Image.LANCZOS)
+                    canvas.paste(t,(0,row*TH))
+            cols.append([canvas])
         else:
-            img = Image.open(_io.BytesIO(rb))
-            frames = []
+            if not rb: cols.append([Image.new("RGB",(TW,col_h),(20,20,30))]); continue
+            gif=Image.open(_io.BytesIO(rb)); frames=[]
             try:
-                while True:
-                    frames.append(img.copy().convert("RGBA").resize((tile_w, col_h), Image.LANCZOS))
-                    img.seek(img.tell() + 1)
-            except EOFError:
-                pass
-            if not frames:
-                frames = [img.convert("RGBA").resize((tile_w, col_h), Image.LANCZOS)]
-            reel_frames_list.append(frames)
-        max_frames = max(max_frames, len(reel_frames_list[-1]))
-
-    composed = []
+                while True: frames.append(gif.copy().convert("RGB").resize((TW,col_h),Image.LANCZOS)); gif.seek(gif.tell()+1)
+            except EOFError: pass
+            if not frames: frames=[gif.convert("RGB").resize((TW,col_h),Image.LANCZOS)]
+            cols.append(frames); max_frames=max(max_frames,len(frames))
+    composed=[]
     for fi in range(max_frames):
-        canvas = Image.new("RGB", (total_w, total_h), (20,20,28))
-        for ri, frames in enumerate(reel_frames_list):
-            frame = frames[fi % len(frames)].convert("RGB")
-            canvas.paste(frame, (ri*(tile_w+padding), 0))
+        canvas=Image.new("RGB",(total_w,col_h),(15,15,20))
+        for ri,frames in enumerate(cols):
+            canvas.paste(frames[fi%len(frames)].convert("RGB"),(ri*(TW+PAD),0))
         composed.append(canvas)
-
-    buf = _io.BytesIO()
-    if len(composed) == 1:
-        composed[0].save(buf, "PNG")
+    buf=_io.BytesIO()
+    if len(composed)==1: composed[0].save(buf,"PNG")
     else:
-        p_frames = [f.quantize(colors=256, method=Image.Quantize.MEDIANCUT) for f in composed]
-        p_frames[0].save(buf, "GIF", save_all=True, append_images=p_frames[1:],
-                         loop=0, duration=60, optimize=False)
+        pf=[f.quantize(colors=64,method=Image.Quantize.MEDIANCUT) for f in composed]
+        pf[0].save(buf,"GIF",save_all=True,append_images=pf[1:],loop=0,duration=60,optimize=False)
     return buf.getvalue()
 
-async def _rz_single_file(reel_bytes_list, reel_windows=None) -> discord.File | None:
+async def _rz_files(sess:dict)->list[discord.File]:
+    stopped=sess.get("reels_stopped",[False,False,False])
+    windows=sess.get("reel_window",[None,None,None])
+    any_spin=any(not s for s in stopped)
+    reel_data=[]; win_arg=[]
+    for i,s in enumerate(stopped):
+        if s: reel_data.append(b""); win_arg.append(windows[i])
+        else: d=await _rzget("rz_reel.gif"); reel_data.append(d or b""); win_arg.append(None)
     try:
-        import functools
-        fn = functools.partial(_rz_composite, reel_bytes_list, reel_windows)
-        data = await asyncio.get_running_loop().run_in_executor(None, fn)
-        ext = "png" if len(set(len(f) for f in reel_bytes_list if f)==1 or [0]) <= 1 else "gif"
-        # 停止状態はすべてPNG
-        all_stopped = reel_windows and all(w for w in reel_windows)
-        fname = "rezero.png" if all_stopped else "rezero.gif"
-        return discord.File(io.BytesIO(data), filename=fname)
+        data=await asyncio.get_running_loop().run_in_executor(
+            None,_rz_ft.partial(_rz_composite,reel_data,win_arg))
+        if data:
+            ext="gif" if any_spin else "png"
+            return [discord.File(_rz_io.BytesIO(data),filename=f"rezero.{ext}")]
     except Exception as e:
         print(f"[rezero] composite失敗: {e}")
-        import traceback; traceback.print_exc()
-        return None
-
-async def _rz_files(sess: dict) -> list[discord.File]:
-    """現在のリール状態を合成して返す"""
-    reel_data = []
-    reel_windows_arg = []
-    for i, stopped in enumerate(sess.get("reels_stopped",[False,False,False])):
-        d = await _rzget("rz_reel.gif")
-        reel_data.append(d or b"")
-        reel_windows_arg.append(sess.get("reel_window",[None,None,None])[i] if stopped else None)
-    if all(reel_data):
-        f = await _rz_single_file(reel_data, reel_windows_arg)
-        if f: return [f]
     return []
 
 # ── メッセージ更新 ───────────────────────────────────────
-
-async def _rz_send_game(sess: dict, content: str, files: list, view):
-    thread = bot.get_channel(sess["thread_id"])
-    if not thread:
-        return
+async def _rz_send(sess:dict,content:str,files:list,view):
+    thread=bot.get_channel(sess["thread_id"])
+    if not thread: return
+    phase_label={"idle":"","spinning":"🔄","hakugei_prep":"⚔️準備中",
+                 "hakugei_challenge":"⚔️チャレンジ",
+                 "hakugei_battle":f"⚔️第{sess.get('battle_num',1)}戦",
+                 "onedari":"🎀おねだり","at":"🌟ゼロからっしゅ"}.get(sess["phase"],"")
+    oni="👹" if sess.get("oni_mode") else ""
     try:
-        header_msg = await thread.fetch_message(sess["header_msg_id"])
-        lamp_str = "👹" if sess.get("oni_mode") else ""
-        phase_str = {
-            "idle":"", "spinning":"🔄", "hakugei_prep":"⚔️準備中",
-            "hakugei_challenge":"⚔️チャレンジ", "hakugei_battle":f"⚔️第{sess.get('battle_num',1)}戦",
-            "onedari":"🎀おねだり", "at":"🌟ゼロからっしゅ",
-        }.get(sess["phase"], "")
-        await header_msg.edit(content=f"🎰 **{sess.get('machine_name','re:ゼロ')}** {phase_str} {lamp_str}")
-    except Exception:
-        pass
+        hm=await thread.fetch_message(sess["header_msg_id"])
+        await hm.edit(content=f"🎰 **{sess.get('machine_name','re:ゼロ')}** {phase_label} {oni}")
+    except Exception: pass
     try:
         if files:
             if sess.get("img_msg_id"):
-                img_msg = await thread.fetch_message(sess["img_msg_id"])
-                await img_msg.edit(content=content, attachments=[], files=files)
+                im=await thread.fetch_message(sess["img_msg_id"]); await im.edit(content=content,attachments=[],files=files)
             else:
-                img_msg = await thread.send(content=content, files=files)
-                sess["img_msg_id"] = img_msg.id
+                im=await thread.send(content=content,files=files); sess["img_msg_id"]=im.id
         else:
             if sess.get("img_msg_id"):
-                img_msg = await thread.fetch_message(sess["img_msg_id"])
-                await img_msg.edit(content=content, attachments=[])
-    except Exception:
-        pass
+                im=await thread.fetch_message(sess["img_msg_id"]); await im.edit(content=content,attachments=[])
+    except Exception: pass
     try:
         if sess.get("ctrl_msg_id"):
-            ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
-            await ctrl_msg.edit(content="　", view=view)
+            cm=await thread.fetch_message(sess["ctrl_msg_id"]); await cm.edit(content="　",view=view)
         else:
-            ctrl_msg = await thread.send(content="　", view=view)
-            sess["ctrl_msg_id"] = ctrl_msg.id
-    except Exception:
-        pass
+            cm=await thread.send(content="　",view=view); sess["ctrl_msg_id"]=cm.id
+    except Exception: pass
 
-def _rz_game_text(sess: dict, extra: str = "") -> str:
-    pt_bar = "█" * (sess["points"] * 10 // REZERO_POINT_MAX) + "░" * (10 - sess["points"] * 10 // REZERO_POINT_MAX)
-    lines = [
-        f"💰 クレジット：**{sess['credit']:,}**　|　🎯 {sess['total_games']}G　|　AT：{sess['at_count']}回",
-        f"📊 ポイント：{sess['points']}/{REZERO_POINT_MAX} [{pt_bar}]",
-    ]
-    if extra:
-        lines.append(extra)
+def _rz_game_text(sess:dict,extra:str="")->str:
+    pct=sess["points"]*10//REZERO_POINT_MAX; bar="█"*pct+"░"*(10-pct)
+    lines=[f"💰 クレジット：**{sess['credit']:,}**　🎯 {sess['total_games']}G　AT：{sess['at_count']}回",
+           f"📊 ポイント：{sess['points']}/{REZERO_POINT_MAX} [{bar}]"]
+    if extra: lines.append(extra)
     return "\n".join(lines)
 
-def _rz_at_text(sess: dict, extra: str = "") -> str:
-    oni = "👹鬼モード " if sess.get("oni_mode") else ""
-    lines = [
-        f"🌟 **ゼロからっしゅ** {oni}",
-        f"残りG数：**{sess['at_games']}G**　|　獲得：**{sess['at_total_pay']:,}**枚",
-        f"💰 クレジット：**{sess['credit']:,}**　|　ループストック：{sess.get('loop_stocks',0)}個",
-    ]
-    if extra:
-        lines.append(extra)
+def _rz_at_text(sess:dict,extra:str="")->str:
+    oni="👹 " if sess.get("oni_mode") else ""
+    lines=[f"🌟 ゼロからっしゅ {oni}残り**{sess['at_games']}G**",
+           f"獲得：**{sess['at_total_pay']:,}**枚　💰クレジット：**{sess['credit']:,}**",
+           f"ループストック：{sess.get('loop_stocks',0)}個"]
+    if extra: lines.append(extra)
     return "\n".join(lines)
 
-# ── タイムアウト共通処理 ─────────────────────────────────
-
-async def _rz_timeout_quit(uid: int):
-    sess = rezero_sessions.pop(uid, None)
+# ── タイムアウト・終了 ────────────────────────────────────
+async def _rz_timeout_quit(uid:int):
+    sess=rezero_sessions.pop(uid,None)
     if not sess: return
-    cr = sess.get("credit", 0)
-    if cr > 0:
+    cr=sess.get("credit",0)
+    if cr>0:
         try:
             async with get_user_lock(uid):
-                u = store.get_user(uid)
-                u["coins"] = int(u.get("coins", 0)) + cr
-                await sheets_upsert_async(u)
-        except Exception:
-            pass
-    thread = bot.get_channel(sess.get("thread_id"))
+                u=store.get_user(uid); u["coins"]=int(u.get("coins",0))+cr; await sheets_upsert_async(u)
+        except Exception: pass
+    thread=bot.get_channel(sess.get("thread_id"))
     if thread:
         try:
-            ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
-            msg = "⏰ 長時間操作がなかったため終了したのだ"
-            if cr > 0:
-                msg += f"\n✅ 返却：**{cr:,}**枚 → 所持コインに加算されたのだ"
-            await ctrl_msg.edit(content=msg, view=None)
-        except Exception:
-            pass
-        try:
-            await thread.edit(archived=True, locked=True)
-        except Exception:
-            pass
+            cm=await thread.fetch_message(sess["ctrl_msg_id"])
+            msg="⏰ 長時間操作がなかったため終了したのだ"
+            if cr>0: msg+=f"\n✅ 返却：**{cr:,}**枚 → 所持コインに加算されたのだ"
+            await cm.edit(content=msg,view=None)
+        except Exception: pass
+        try: await thread.edit(archived=True,locked=True)
+        except Exception: pass
 
-async def _rz_quit(uid: int, interaction: discord.Interaction):
-    """やめる処理"""
-    sess = rezero_sessions.pop(uid, None)
-    cr = sess["credit"] if sess else 0
-    if sess and cr > 0:
+async def _rz_quit(uid:int):
+    sess=rezero_sessions.pop(uid,None)
+    cr=sess["credit"] if sess else 0
+    if sess and cr>0:
         async with get_user_lock(uid):
-            u = store.get_user(uid)
-            u["coins"] = int(u.get("coins", 0)) + cr
-            await sheets_upsert_async(u)
-    thread = bot.get_channel(sess["thread_id"]) if sess else None
+            u=store.get_user(uid); u["coins"]=int(u.get("coins",0))+cr; await sheets_upsert_async(u)
+    thread=bot.get_channel(sess["thread_id"]) if sess else None
     if thread:
         try:
-            img_msg = await thread.fetch_message(sess["img_msg_id"])
-            await img_msg.edit(attachments=[])
+            im=await thread.fetch_message(sess["img_msg_id"]); await im.edit(attachments=[])
         except Exception: pass
         try:
-            ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
-            await ctrl_msg.edit(
-                content=f"✅ 返却：**{cr:,}**枚 → 所持コインに加算されたのだ", view=None)
+            cm=await thread.fetch_message(sess["ctrl_msg_id"])
+            await cm.edit(content=f"✅ 返却：**{cr:,}**枚 → 所持コインに加算されたのだ",view=None)
         except Exception: pass
-        try:
-            await thread.edit(archived=True, locked=True)
+        try: await thread.edit(archived=True,locked=True)
         except Exception: pass
 
-# ── Views ────────────────────────────────────────────────
-
+# ── View ─────────────────────────────────────────────────
 class RezeroGameView(discord.ui.View):
-    """通常遊技ビュー（レバー + STOP×3）"""
-    def __init__(self, uid: int):
-        super().__init__(timeout=300)
-        self.uid = uid
-
+    def __init__(self,uid:int): super().__init__(timeout=300); self.uid=uid
     async def on_timeout(self): await _rz_timeout_quit(self.uid)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.uid:
-            await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
-            return False
+    async def interaction_check(self,i:discord.Interaction)->bool:
+        if i.user.id!=self.uid:
+            await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    @discord.ui.button(label="⬤", style=discord.ButtonStyle.danger, custom_id="rz:stop_l", row=0)
-    async def stop_l(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(); await _rz_stop(interaction, 0)
+    @discord.ui.button(label="⬤",style=discord.ButtonStyle.danger,custom_id="rz:stop_l",row=0)
+    async def stop_l(self,i:discord.Interaction,b): await i.response.defer(); await _rz_stop(i,0)
+    @discord.ui.button(label="⬤",style=discord.ButtonStyle.danger,custom_id="rz:stop_c",row=0)
+    async def stop_c(self,i:discord.Interaction,b): await i.response.defer(); await _rz_stop(i,1)
+    @discord.ui.button(label="⬤",style=discord.ButtonStyle.danger,custom_id="rz:stop_r",row=0)
+    async def stop_r(self,i:discord.Interaction,b): await i.response.defer(); await _rz_stop(i,2)
 
-    @discord.ui.button(label="⬤", style=discord.ButtonStyle.danger, custom_id="rz:stop_c", row=0)
-    async def stop_c(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(); await _rz_stop(interaction, 1)
+    @discord.ui.button(label="-",style=discord.ButtonStyle.secondary,custom_id="rz:sp1",disabled=True,row=1)
+    async def _sp1(self,i,b): pass
 
-    @discord.ui.button(label="⬤", style=discord.ButtonStyle.danger, custom_id="rz:stop_r", row=0)
-    async def stop_r(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(); await _rz_stop(interaction, 2)
-
-    @discord.ui.button(label="-", style=discord.ButtonStyle.secondary,
-                       custom_id="rz:sp1", disabled=True, row=1)
-    async def _sp1(self, i, b): pass
-
-    @discord.ui.button(label="🎰 レバー", style=discord.ButtonStyle.success, custom_id="rz:lever", row=1)
-    async def lever(self, interaction: discord.Interaction, button: discord.ui.Button):
-        sess = rezero_sessions.get(self.uid)
-        if not sess:
-            return await interaction.response.send_message("セッションが切れたのだ", ephemeral=True)
-        if not sess.get("replay", False):
-            if sess["credit"] < REZERO_BET:
+    @discord.ui.button(label="🎰 レバー",style=discord.ButtonStyle.success,custom_id="rz:lever",row=1)
+    async def lever(self,interaction:discord.Interaction,b):
+        sess=rezero_sessions.get(self.uid)
+        if not sess: return await interaction.response.send_message("セッションが切れたのだ",ephemeral=True)
+        if not sess.get("replay"):
+            if sess["credit"]<REZERO_BET:
                 await interaction.response.defer()
                 async with get_user_lock(self.uid):
-                    u = store.get_user(self.uid)
-                    coins = int(u.get("coins", 0))
-                thread = bot.get_channel(sess["thread_id"])
+                    u=store.get_user(self.uid); coins=int(u.get("coins",0))
+                thread=bot.get_channel(sess["thread_id"])
                 if thread:
-                    add_view = RezeroAddCreditView(uid=self.uid, coins=coins)
                     await thread.send(
-                        content=(f"💸 クレジットが **{sess['credit']:,}**枚しかないのだ\n"
-                                 f"💰 所持コイン：**{coins:,}**枚\n追加投入するのだ！"),
-                        view=add_view)
+                        content=f"💸 クレジットが **{sess['credit']:,}**枚しかないのだ\n💰 所持コイン：**{coins:,}**枚\n追加投入するのだ！",
+                        view=RezeroAddCreditView(uid=self.uid,coins=coins))
                 return
-            sess["credit"] -= REZERO_BET
+            sess["credit"]-=REZERO_BET
         else:
-            sess["replay"] = False
-
-        flag = rezero_roll_flag(sess["setting"])
-        sess["flag"] = flag
-        sess["reels_stopped"] = [False, False, False]
-        sess["reel_window"] = [None, None, None]
-        sess["phase"] = "spinning"
-        sess["total_games"] += 1
-        sess["games_since_at"] += 1
+            sess["replay"]=False
+        sess["flag"]=_rz_roll(sess["setting"])
+        sess["reels_stopped"]=[False,False,False]
+        sess["reel_window"]=[None,None,None]
+        sess["phase"]="spinning"
+        sess["total_games"]+=1; sess["games_since_at"]+=1
         await interaction.response.defer()
-        files = await _rz_files(sess)
-        view = _rz_view_spinning(self.uid)
-        await _rz_send_game(sess, _rz_game_text(sess, "🔄 回転中..."), files, view)
+        files=await _rz_files(sess)
+        await _rz_send(sess,_rz_game_text(sess,"🔄 回転中..."),files,_rz_view_spinning(self.uid))
 
-    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary, custom_id="rz:quit", row=1)
-    async def quit_game(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await _rz_quit(self.uid, interaction)
+    @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit",row=1)
+    async def quit_game(self,interaction:discord.Interaction,b):
+        await interaction.response.defer(); await _rz_quit(self.uid)
 
 
-class RezeroSpinningView(discord.ui.View):
-    """回転中ビュー（STOPのみ）"""
-    def __init__(self, uid: int, stopped: list = None):
-        super().__init__(timeout=300)
-        self.uid = uid
-        stopped = stopped or [False, False, False]
-        for item in self.children:
-            if isinstance(item, discord.ui.Button):
-                if item.custom_id == "rz:stop_l": item.disabled = stopped[0]
-                elif item.custom_id == "rz:stop_c": item.disabled = stopped[1]
-                elif item.custom_id == "rz:stop_r": item.disabled = stopped[2]
+def _rz_view_idle(uid:int)->RezeroGameView:
+    return RezeroGameView(uid)
 
-    async def on_timeout(self): await _rz_timeout_quit(self.uid)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.uid:
-            await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(label="⬤", style=discord.ButtonStyle.danger, custom_id="rz:stop_l", row=0)
-    async def stop_l(self, i, b): await i.response.defer(); await _rz_stop(i, 0)
-
-    @discord.ui.button(label="⬤", style=discord.ButtonStyle.danger, custom_id="rz:stop_c", row=0)
-    async def stop_c(self, i, b): await i.response.defer(); await _rz_stop(i, 1)
-
-    @discord.ui.button(label="⬤", style=discord.ButtonStyle.danger, custom_id="rz:stop_r", row=0)
-    async def stop_r(self, i, b): await i.response.defer(); await _rz_stop(i, 2)
-
-
-def _rz_view_idle(uid): return RezeroGameView(uid)
-def _rz_view_spinning(uid, stopped=None):
-    v = RezeroGameView(uid)
-    stopped = stopped or [False,False,False]
+def _rz_view_spinning(uid:int,stopped:list=None)->RezeroGameView:
+    """★ 回転中ビュー: レバー無効・停止済みSTOPボタン無効"""
+    v=RezeroGameView(uid); stopped=stopped or [False,False,False]
+    cid={"rz:stop_l":0,"rz:stop_c":1,"rz:stop_r":2}
     for item in v.children:
-        if not isinstance(item, discord.ui.Button): continue
-        if item.custom_id == "rz:lever": item.disabled = True
-        elif item.custom_id == "rz:stop_l": item.disabled = stopped[0]
-        elif item.custom_id == "rz:stop_c": item.disabled = stopped[1]
-        elif item.custom_id == "rz:stop_r": item.disabled = stopped[2]
+        if not isinstance(item,discord.ui.Button): continue
+        if item.custom_id=="rz:lever": item.disabled=True
+        elif item.custom_id in cid: item.disabled=stopped[cid[item.custom_id]]
     return v
 
 
-async def _rz_stop(interaction: discord.Interaction, reel_pos: int):
-    uid = interaction.user.id
-    sess = rezero_sessions.get(uid)
-    if not sess or sess["phase"] != "spinning" or sess["reels_stopped"][reel_pos]:
+# ── ★ STOP処理（ジャグラーと同じ構造に修正） ────────────
+async def _rz_stop(interaction:discord.Interaction,reel_pos:int):
+    uid=interaction.user.id
+    sess=rezero_sessions.get(uid)
+    # ★ ガード: phase が "spinning" でなければ即リターン
+    if not sess or sess["phase"]!="spinning": return
+    # ★ 既に止まっているリールは無視
+    if sess["reels_stopped"][reel_pos]: return
+    # ★ 全リール停止済みなら無視
+    if all(sess["reels_stopped"]): return
+
+    # ★ 即座にフラグ（二重押し防止）
+    sess["reels_stopped"][reel_pos]=True
+    stopped_so_far=sum(sess["reels_stopped"])
+
+    # 中段シンボル確定（中リール=役対応、左右=ランダム）
+    flag=sess["flag"]
+    center_sym=flag if reel_pos==1 else _rz_rand.choice(_RZ_STRIP)
+    sess["reel_window"][reel_pos]=_rz_reel_window(center_sym)
+
+    if stopped_so_far<3:
+        # まだ回転中リールがある → 表示更新
+        files=await _rz_files(sess)
+        await _rz_send(sess,_rz_game_text(sess,"🔄 回転中..."),files,
+                       _rz_view_spinning(uid,sess["reels_stopped"][:]))
         return
-    if all(sess["reels_stopped"]):
-        return
-    sess["reels_stopped"][reel_pos] = True
-    stopped_so_far = sum(sess["reels_stopped"])
 
-    flag = sess["flag"]
-    window = _rz_reel_window(flag if reel_pos == 1 else _RZ_REEL_STRIP[_rz_random.randrange(len(_RZ_REEL_STRIP))])
-    if reel_pos == 1:
-        window = _rz_reel_window(flag)
-    sess["reel_window"][reel_pos] = window
+    # ─── 3本停止 → 結果確定 ─────────────────────────────
+    sess["phase"]="idle"
+    payout=REZERO_PAYOUT.get(flag,0); pts=REZERO_POINTS.get(flag,1)
+    if flag=="REPLAY": sess["replay"]=True
+    else: sess["credit"]+=payout
+    sess["points"]+=pts
+    role_msg=FLAG_LABEL_RZ.get(flag,"")
+    if payout>0: role_msg+=f"　+{payout}枚"
+    pt_msg=f"✨ +{pts}pt → {sess['points']}/{REZERO_POINT_MAX}"
+    files=await _rz_files(sess)
 
-    if stopped_so_far < 3:
-        files = await _rz_files(sess)
-        view = _rz_view_spinning(uid, sess["reels_stopped"][:])
-        await _rz_send_game(sess, _rz_game_text(sess, "🔄 回転中..."), files, view)
-        return
-
-    # 3本停止 → 結果処理
-    sess["phase"] = "idle"
-    payout = REZERO_PAYOUT.get(flag, 0)
-    pts = REZERO_POINTS.get(flag, 1)
-
-    if flag == "REPLAY":
-        sess["replay"] = True
-        payout = 0  # リプレイは次G無料（コイン消費なし）
+    if sess["points"]>=REZERO_POINT_MAX:
+        sess["points"]=0
+        sess["icon_color"]=_rz_roll_icon(sess["setting"])
+        base=REZERO_BASE_RATE.get(sess["setting"],50); up=_rz_roll_icon_up(sess["icon_color"])
+        sess["base_rate"]=base; sess["final_rate"]=min(95,base+up)
+        sess["hakugei_stocks"]=0; sess["bell_count"]=0; sess["battle_num"]=0; sess["battles_won"]=0
+        sess["phase"]="hakugei_prep"
+        await _rz_send(sess,f"⚔️ **白鯨攻略戦突入！！**\n{pt_msg}",files,None)
+        await asyncio.sleep(1.0); await _rz_start_prep(uid)
     else:
-        sess["credit"] += payout
-        sess["payout"] = payout
-
-    # ポイント加算（500pt到達で白鯨へ）
-    sess["points"] += pts
-    extra_msg = f"✨ +{pts}pt → {sess['points']}/{REZERO_POINT_MAX}"
-
-    flag_labels = {
-        "BELL":"🔔 ベル！", "REPLAY":"🔄 リプレイ！",
-        "WEAK_CHERRY":"🍒 弱チェリー！", "STRONG_CHERRY":"🍒🍒 強チェリー！！",
-        "SUIKA":"🍉 スイカ！", "BLANK":"　",
-    }
-    role_msg = flag_labels.get(flag,"")
-    if payout > 0:
-        role_msg += f"　+{payout}枚"
-
-    files = await _rz_files(sess)
-
-    if sess["points"] >= REZERO_POINT_MAX:
-        # 白鯨攻略戦へ
-        sess["points"] = 0
-        sess["phase"] = "hakugei_prep"
-        sess["bell_count"] = 0
-        sess["hakugei_stocks"] = 0
-        sess["battle_num"] = 0
-        sess["battles_won"] = 0
-        # アイコン抽選（1000pt到達イメージ→今回は500ptで突入）
-        sess["icon_color"] = rezero_roll_icon(sess["setting"])
-        # ベース撃破率 + アイコンUP
-        base = REZERO_BASE_HAKUGEI_RATE.get(sess["setting"], 50)
-        up = rezero_roll_icon_up(sess["icon_color"])
-        sess["base_hakugei_rate"] = base
-        sess["final_hakugei_rate"] = min(95, base + up)
-        await _rz_send_game(sess,
-            f"⚔️ **白鯨攻略戦突入！！**\n{extra_msg}",
-            files, None)
-        await asyncio.sleep(1.0)
-        await _rz_start_hakugei_prep(uid)
-    else:
-        await _rz_send_game(sess,
-            _rz_game_text(sess, f"{role_msg}\n{extra_msg}"),
-            files, _rz_view_idle(uid))
+        await _rz_send(sess,_rz_game_text(sess,f"{role_msg}\n{pt_msg}"),files,_rz_view_idle(uid))
 
 
 # ── 白鯨攻略戦 ───────────────────────────────────────────
-
-async def _rz_start_hakugei_prep(uid: int):
-    """準備中フェーズ開始"""
-    sess = rezero_sessions.get(uid)
+async def _rz_start_prep(uid:int):
+    sess=rezero_sessions.get(uid)
     if not sess: return
-    sess["phase"] = "hakugei_prep"
-    sess["bell_count"] = 0
-    img_data = await _rzget("rz_hakugei.png")
-    files = [_rz_file(img_data, "rz_hakugei.png")] if img_data else []
-    _, icon_emoji, _ = REZERO_ICON_COLORS.get(sess["icon_color"], ("","⬛",0))
-    text = (f"⚔️ **白鯨攻略戦【準備中】**\n"
-            f"ベルナビ：{'✅'*sess['bell_count']}{'⬜'*(5-sess['bell_count'])} ({sess['bell_count']}/5)\n"
-            f"撃破率：**{sess['final_hakugei_rate']}%**　アイコン：{icon_emoji}\n"
-            f"撃破ストック：{sess['hakugei_stocks']}個")
-    await _rz_send_game(sess, text, files, RezeroPrepView(uid))
+    sess["phase"]="hakugei_prep"; sess["bell_count"]=0
+    img=await _rzget("rz_hakugei.png"); files=[_rzfile(img,"rz_hakugei.png")] if img else []
+    _,ico,_=REZERO_ICON_INFO.get(sess["icon_color"],("","⬛",0))
+    text=(f"⚔️ **白鯨攻略戦【準備中】**\n"
+          f"ベルナビ：{'✅'*sess['bell_count']}{'⬜'*(5-sess['bell_count'])} ({sess['bell_count']}/5)\n"
+          f"撃破率：**{sess['final_rate']}%**　アイコン：{ico}\n"
+          f"撃破ストック：{sess['hakugei_stocks']}個")
+    await _rz_send(sess,text,files,RezeroPrepView(uid))
 
 
 class RezeroPrepView(discord.ui.View):
-    """白鯨準備中ビュー"""
-    def __init__(self, uid: int):
-        super().__init__(timeout=300); self.uid = uid
-
+    def __init__(self,uid:int): super().__init__(timeout=300); self.uid=uid
     async def on_timeout(self): await _rz_timeout_quit(self.uid)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.uid:
-            await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
-            return False
+    async def interaction_check(self,i:discord.Interaction)->bool:
+        if i.user.id!=self.uid:
+            await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    @discord.ui.button(label="🔔 ベルを揃える", style=discord.ButtonStyle.primary, custom_id="rz:bell")
-    async def bell(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🔔 ベルを揃える",style=discord.ButtonStyle.primary,custom_id="rz:bell")
+    async def bell(self,interaction:discord.Interaction,b):
         await interaction.response.defer()
-        sess = rezero_sessions.get(self.uid)
-        if not sess or sess["phase"] != "hakugei_prep": return
-        sess["bell_count"] += 1
-        # ベル消費（ポイント追加なし）
-        if not sess.get("replay", False) and sess["credit"] >= REZERO_BET:
-            sess["credit"] -= REZERO_BET
-            sess["credit"] += REZERO_PAYOUT["BELL"]  # ベル払い出し（実質0消費）
-        # レア役抽選（ストック獲得）
-        roll = rezero_roll_flag(sess["setting"])
-        stock_msg = ""
-        if rezero_roll_stock(roll):
-            sess["hakugei_stocks"] = min(3, sess["hakugei_stocks"] + 1)
-            stock_msg = f"\n💥 撃破ストック獲得！({sess['hakugei_stocks']}個)"
-
-        img_data = await _rzget("rz_hakugei.png")
-        files = [_rz_file(img_data, "rz_hakugei.png")] if img_data else []
-        _, icon_emoji, _ = REZERO_ICON_COLORS.get(sess["icon_color"], ("","⬛",0))
-
-        if sess["bell_count"] >= 5:
-            # 撃破率チャレンジへ
-            sess["phase"] = "hakugei_challenge"
-            text = (f"⚔️ **白鯨攻略戦【撃破率チャレンジ】**\n"
-                    f"ベースレート：**{sess['base_hakugei_rate']}%**\n"
-                    f"アイコン：{icon_emoji}  → 最終撃破率：**{sess['final_hakugei_rate']}%**\n"
-                    f"撃破ストック：{sess['hakugei_stocks']}個{stock_msg}")
-            await _rz_send_game(sess, text, files, RezeroChallengeView(self.uid))
+        sess=rezero_sessions.get(self.uid)
+        if not sess or sess["phase"]!="hakugei_prep": return
+        sess["bell_count"]+=1
+        if sess["credit"]>=REZERO_BET: sess["credit"]-=REZERO_BET; sess["credit"]+=REZERO_PAYOUT["BELL"]
+        stock_msg=""
+        if _rz_roll_stock(_rz_roll(sess["setting"])):
+            sess["hakugei_stocks"]=min(3,sess["hakugei_stocks"]+1)
+            stock_msg=f"\n💥 撃破ストック獲得！({sess['hakugei_stocks']}個)"
+        img=await _rzget("rz_hakugei.png"); files=[_rzfile(img,"rz_hakugei.png")] if img else []
+        _,ico,_=REZERO_ICON_INFO.get(sess["icon_color"],("","⬛",0))
+        if sess["bell_count"]>=5:
+            sess["phase"]="hakugei_challenge"
+            text=(f"⚔️ **白鯨攻略戦【撃破率チャレンジ】**\n"
+                  f"ベース：**{sess['base_rate']}%**　アイコン：{ico}\n"
+                  f"→ 最終撃破率：**{sess['final_rate']}%**\n"
+                  f"撃破ストック：{sess['hakugei_stocks']}個{stock_msg}")
+            await _rz_send(sess,text,files,RezeroChallengeView(self.uid))
         else:
-            text = (f"⚔️ **白鯨攻略戦【準備中】**\n"
-                    f"ベルナビ：{'✅'*sess['bell_count']}{'⬜'*(5-sess['bell_count'])} ({sess['bell_count']}/5)\n"
-                    f"撃破率：**{sess['final_hakugei_rate']}%**　アイコン：{icon_emoji}\n"
-                    f"撃破ストック：{sess['hakugei_stocks']}個{stock_msg}")
-            await _rz_send_game(sess, text, files, RezeroPrepView(self.uid))
+            text=(f"⚔️ **白鯨攻略戦【準備中】**\n"
+                  f"ベルナビ：{'✅'*sess['bell_count']}{'⬜'*(5-sess['bell_count'])} ({sess['bell_count']}/5)\n"
+                  f"撃破率：**{sess['final_rate']}%**　アイコン：{ico}\n"
+                  f"撃破ストック：{sess['hakugei_stocks']}個{stock_msg}")
+            await _rz_send(sess,text,files,RezeroPrepView(self.uid))
 
 
 class RezeroChallengeView(discord.ui.View):
-    """撃破率チャレンジビュー"""
-    def __init__(self, uid: int):
-        super().__init__(timeout=300); self.uid = uid
-
+    def __init__(self,uid:int): super().__init__(timeout=300); self.uid=uid
     async def on_timeout(self): await _rz_timeout_quit(self.uid)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.uid:
-            await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
-            return False
+    async def interaction_check(self,i:discord.Interaction)->bool:
+        if i.user.id!=self.uid:
+            await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    @discord.ui.button(label="⚡ バトル開始！", style=discord.ButtonStyle.danger, custom_id="rz:challenge")
-    async def challenge(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="⚡ バトル開始！",style=discord.ButtonStyle.danger,custom_id="rz:challenge")
+    async def start(self,interaction:discord.Interaction,b):
         await interaction.response.defer()
-        sess = rezero_sessions.get(self.uid)
-        if not sess or sess["phase"] != "hakugei_challenge": return
-        sess["phase"] = "hakugei_battle"
-        sess["battle_num"] = 1
-        sess["battles_won"] = 0
-        sess["attack_count"] = 0
-        sess["attacker_log"] = []
-        sess["bg_color"] = rezero_roll_bg_color()
-        # 背景色がrainbowならAT確定（フラグ）
-        if sess["bg_color"] == "rainbow":
-            sess["hakugei_stocks"] = 3  # 全撃破確定
+        sess=rezero_sessions.get(self.uid)
+        if not sess or sess["phase"]!="hakugei_challenge": return
+        sess["phase"]="hakugei_battle"; sess["battle_num"]=1; sess["battles_won"]=0
+        sess["attack_count"]=0; sess["attacker_log"]=[]
+        sess["bg_color"]=_rz_roll_bg()
+        if sess["bg_color"]=="rainbow": sess["hakugei_stocks"]=3
         await _rz_show_battle(self.uid)
 
 
-async def _rz_show_battle(uid: int):
-    sess = rezero_sessions.get(uid)
+async def _rz_show_battle(uid:int):
+    sess=rezero_sessions.get(uid)
     if not sess: return
-    bg = sess["bg_color"]
-    img_key = {"blue":"rz_battle_blue.png","green":"rz_battle_green.png",
-               "red":"rz_battle_red.png","rainbow":"rz_battle_red.png"}.get(bg, "rz_battle_blue.png")
-    img_data = await _rzget(img_key)
-    files = [_rz_file(img_data, img_key)] if img_data else []
-    bg_emoji = {"blue":"🔵","green":"🟢","red":"🔴","rainbow":"🌈"}.get(bg,"🔵")
-    remaining = "🐋"*3
-    won = sess["battles_won"]
-    remaining = "✅"*won + "🐋"*(3-won)
-    log_str = ""
-    for i, (attacker, result) in enumerate(sess["attacker_log"]):
-        log_str += f"\n  {i+1}st: {attacker} {'✅' if result else '❌'}" if i==0 else \
-                   f"\n  {i+1}nd: {attacker} {'✅' if result else '❌'}" if i==1 else \
-                   f"\n  {i+1}rd: {attacker} {'✅' if result else '❌'}"
-    text = (f"⚔️ **白鯨攻略戦 第{sess['battle_num']}戦** {bg_emoji}\n"
-            f"撃破率：**{sess['final_hakugei_rate']}%**　ストック：{sess['hakugei_stocks']}個\n"
-            f"残り白鯨：{remaining}{log_str}")
-    await _rz_send_game(sess, text, files, RezeroBattleView(uid))
+    bg=sess["bg_color"]
+    img_key={"blue":"rz_battle_blue.png","green":"rz_battle_green.png",
+             "red":"rz_battle_red.png","rainbow":"rz_battle_red.png"}.get(bg,"rz_battle_blue.png")
+    img=await _rzget(img_key); files=[_rzfile(img,img_key)] if img else []
+    bg_e={"blue":"🔵","green":"🟢","red":"🔴","rainbow":"🌈"}.get(bg,"🔵")
+    won=sess["battles_won"]; remain="✅"*won+"🐋"*(3-won)
+    log=""
+    for i,(att,res) in enumerate(sess["attacker_log"]):
+        nm=["1st","2nd","3rd"][min(i,2)]; log+=f"\n  {nm}: {att} {'💥' if res else '❌'}"
+    text=(f"⚔️ **白鯨攻略戦 第{sess['battle_num']}戦** {bg_e}\n"
+          f"撃破率：**{sess['final_rate']}%**　ストック：{sess['hakugei_stocks']}個\n"
+          f"残り白鯨：{remain}{log}")
+    await _rz_send(sess,text,files,RezeroBattleView(uid))
 
 
 class RezeroBattleView(discord.ui.View):
-    """バトルビュー（攻撃ボタン）"""
-    def __init__(self, uid: int):
-        super().__init__(timeout=300); self.uid = uid
-
+    def __init__(self,uid:int): super().__init__(timeout=300); self.uid=uid
     async def on_timeout(self): await _rz_timeout_quit(self.uid)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.uid:
-            await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
-            return False
+    async def interaction_check(self,i:discord.Interaction)->bool:
+        if i.user.id!=self.uid:
+            await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    @discord.ui.button(label="⚔️ 攻撃！", style=discord.ButtonStyle.danger, custom_id="rz:attack")
-    async def attack(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="⚔️ 攻撃！",style=discord.ButtonStyle.danger,custom_id="rz:attack")
+    async def attack(self,interaction:discord.Interaction,b):
         await interaction.response.defer()
-        sess = rezero_sessions.get(self.uid)
-        if not sess or sess["phase"] != "hakugei_battle": return
-        sess["attack_count"] += 1
-        attacker = rezero_roll_attacker()
-        # ヴィルヘルムは撃破確定
-        if attacker == "ヴィルヘルム":
-            if sess["hakugei_stocks"] < 3:
-                sess["hakugei_stocks"] = min(3, sess["hakugei_stocks"] + 1)
-        # レア役抽選（ストック）
-        roll = rezero_roll_flag(sess["setting"])
-        if rezero_roll_stock(roll) and sess["hakugei_stocks"] < 3:
-            sess["hakugei_stocks"] = min(3, sess["hakugei_stocks"] + 1)
-        sess["attacker_log"].append((attacker, False))  # 仮
+        sess=rezero_sessions.get(self.uid)
+        if not sess or sess["phase"]!="hakugei_battle": return
+        sess["attack_count"]+=1; attacker=_rz_roll_attacker()
+        if attacker=="ヴィルヘルム": sess["hakugei_stocks"]=min(3,sess["hakugei_stocks"]+1)
+        if _rz_roll_stock(_rz_roll(sess["setting"])) and sess["hakugei_stocks"]<3:
+            sess["hakugei_stocks"]=min(3,sess["hakugei_stocks"]+1)
+        sess["attacker_log"].append((attacker,False))
+        if sess["attack_count"]>=3:
+            if sess["hakugei_stocks"]>0: won=True; sess["hakugei_stocks"]-=1
+            else: won=_rz_rand.randint(1,100)<=sess["final_rate"]
+            sess["attacker_log"][-1]=(attacker,won); await _rz_battle_result(self.uid,won)
+        else: await _rz_show_battle(self.uid)
 
-        if sess["attack_count"] >= 3:
-            # 撃破判定
-            rate = sess["final_hakugei_rate"]
-            # ストックがあれば撃破確定
-            if sess["hakugei_stocks"] > 0:
-                won = True
-                sess["hakugei_stocks"] -= 1
-            else:
-                won = rezero_roll_battle(rate)
-            sess["attacker_log"][-1] = (attacker, won)
-            await _rz_battle_result(self.uid, won)
-        else:
-            sess["attacker_log"][-1] = (attacker, False)
-            sess["bg_color"] = rezero_roll_bg_color() if sess["attack_count"] == 1 else sess["bg_color"]
-            await _rz_show_battle(self.uid)
-
-    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary, custom_id="rz:quit_battle", row=1)
-    async def quit_game(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await _rz_quit(self.uid, interaction)
+    @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_battle",row=1)
+    async def quit_game(self,interaction:discord.Interaction,b):
+        await interaction.response.defer(); await _rz_quit(self.uid)
 
 
-async def _rz_battle_result(uid: int, won: bool):
-    sess = rezero_sessions.get(uid)
+async def _rz_battle_result(uid:int,won:bool):
+    sess=rezero_sessions.get(uid)
     if not sess: return
     if won:
-        sess["battles_won"] += 1
-        if sess["battles_won"] >= 3:
-            # AT突入！
-            bg_data = await _rzget("rz_at.png")
-            files = [_rz_file(bg_data, "rz_at.png")] if bg_data else []
-            await _rz_send_game(sess,
-                "🌟 **白鯨3体撃破！！ゼロからっしゅ突入！！**",
-                files, None)
-            await asyncio.sleep(1.5)
-            await _rz_start_onedari(uid)
+        sess["battles_won"]+=1
+        if sess["battles_won"]>=3:
+            img=await _rzget("rz_at.png"); files=[_rzfile(img,"rz_at.png")] if img else []
+            await _rz_send(sess,"🌟 **白鯨3体撃破！！ゼロからっしゅ突入！！**",files,None)
+            await asyncio.sleep(1.5); await _rz_start_onedari(uid)
         else:
-            # 次バトルへ
-            sess["battle_num"] += 1
-            sess["attack_count"] = 0
-            sess["attacker_log"] = []
-            sess["bg_color"] = rezero_roll_bg_color()
-            img_data = await _rzget("rz_battle_blue.png")
-            files = [_rz_file(img_data, "rz_battle_blue.png")] if img_data else []
-            await _rz_send_game(sess,
-                f"💥 **第{sess['battles_won']}体撃破！** 次のバトルへ！\n残り：{'✅'*sess['battles_won']}{'🐋'*(3-sess['battles_won'])}",
-                files, None)
-            await asyncio.sleep(1.0)
-            await _rz_show_battle(uid)
+            sess["battle_num"]+=1; sess["attack_count"]=0; sess["attacker_log"]=[]; sess["bg_color"]=_rz_roll_bg()
+            img=await _rzget("rz_battle_blue.png"); files=[_rzfile(img,"rz_battle_blue.png")] if img else []
+            await _rz_send(sess,f"💥 **第{sess['battles_won']}体撃破！** 次のバトルへ！\n残り：{'✅'*sess['battles_won']}{'🐋'*(3-sess['battles_won'])}",files,None)
+            await asyncio.sleep(1.0); await _rz_show_battle(uid)
     else:
-        # 敗北
-        if sess["battle_num"] == 1:
-            # 死に戻り抽選 (3.1%)
-            if _rz_random.random() < 0.031:
-                img_data = await _rzget("rz_battle_red.png")
-                files = [_rz_file(img_data, "rz_battle_red.png")] if img_data else []
-                await _rz_send_game(sess, "🔄 **死に戻り！！3戦目へ強制突入！！**", files, None)
-                await asyncio.sleep(1.5)
-                sess["battle_num"] = 3
-                sess["attack_count"] = 0
-                sess["attacker_log"] = []
-                sess["bg_color"] = "red"
-                await _rz_show_battle(uid)
-                return
-        # 通常終了
-        sess["phase"] = "idle"
-        files = await _rz_files(sess)
-        await _rz_send_game(sess,
-            _rz_game_text(sess, "💀 白鯨に敗北…また来い！"),
-            files, _rz_view_idle(uid))
+        if sess["battle_num"]==1 and _rz_rand.random()<0.031:
+            img=await _rzget("rz_battle_red.png"); files=[_rzfile(img,"rz_battle_red.png")] if img else []
+            await _rz_send(sess,"🔄 **死に戻り！！3戦目へ強制突入！！**",files,None)
+            await asyncio.sleep(1.5)
+            sess["battle_num"]=3; sess["attack_count"]=0; sess["attacker_log"]=[]; sess["bg_color"]="red"
+            await _rz_show_battle(uid)
+        else:
+            sess["phase"]="idle"; files=await _rz_files(sess)
+            await _rz_send(sess,_rz_game_text(sess,"💀 白鯨に敗北…また来い！"),files,_rz_view_idle(uid))
 
 
 # ── おねだりAttack ────────────────────────────────────────
-
-async def _rz_start_onedari(uid: int):
-    sess = rezero_sessions.get(uid)
+async def _rz_start_onedari(uid:int):
+    sess=rezero_sessions.get(uid)
     if not sess: return
-    sess["phase"] = "onedari"
-    sess["onedari_step"] = 0
-    sess["onedari_games"] = 0
-    sess["at_count"] += 1
-    sess["games_since_at"] = 0
-    img_data = await _rzget("rz_at.png")
-    files = [_rz_file(img_data, "rz_at.png")] if img_data else []
-    text = ("🎀 **おねだりAttack！**\n"
-            "エミリア「ねえ、一緒にいてくれる？」\n"
-            f"獲得G数：**{sess['onedari_games']}G**\nあと{5-sess['onedari_step']}回！")
-    await _rz_send_game(sess, text, files, RezeroOnedariView(uid))
+    sess["phase"]="onedari"; sess["onedari_step"]=0; sess["onedari_games"]=0
+    sess["at_count"]+=1; sess["games_since_at"]=0
+    img=await _rzget("rz_at.png"); files=[_rzfile(img,"rz_at.png")] if img else []
+    text=("🎀 **おねだりAttack！**\nエミリア「ねえ、一緒にいてくれる？」\n"
+          f"獲得G数：**{sess['onedari_games']}G**\nあと{5-sess['onedari_step']}回！")
+    await _rz_send(sess,text,files,RezeroOnedariView(uid))
 
 
 class RezeroOnedariView(discord.ui.View):
-    """おねだりAttackビュー"""
-    def __init__(self, uid: int):
-        super().__init__(timeout=300); self.uid = uid
-
+    def __init__(self,uid:int): super().__init__(timeout=300); self.uid=uid
     async def on_timeout(self): await _rz_timeout_quit(self.uid)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.uid:
-            await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
-            return False
+    async def interaction_check(self,i:discord.Interaction)->bool:
+        if i.user.id!=self.uid:
+            await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    @discord.ui.button(label="✨ もっと！", style=discord.ButtonStyle.primary, custom_id="rz:onedari")
-    async def onedari(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="✨ もっと！",style=discord.ButtonStyle.primary,custom_id="rz:onedari")
+    async def onedari(self,interaction:discord.Interaction,b):
         await interaction.response.defer()
-        sess = rezero_sessions.get(self.uid)
-        if not sess or sess["phase"] != "onedari": return
-        sess["onedari_step"] += 1
-        add_g = rezero_roll_onedari(sess["onedari_step"])
-        sess["onedari_games"] += add_g
-        img_data = await _rzget("rz_at.png")
-        files = [_rz_file(img_data, "rz_at.png")] if img_data else []
-        if sess["onedari_step"] >= 5:
-            sess["at_games"] = sess["onedari_games"]
-            sess["at_total_pay"] = 0
-            sess["oni_mode"] = False
-            await _rz_send_game(sess,
-                f"🌟 **初期G数確定！ {sess['at_games']}G！**",
-                files, None)
-            await asyncio.sleep(1.0)
-            sess["phase"] = "at"
-            await _rz_send_game(sess, _rz_at_text(sess), files, RezeroATView(self.uid))
+        sess=rezero_sessions.get(self.uid)
+        if not sess or sess["phase"]!="onedari": return
+        sess["onedari_step"]+=1; add_g=_rz_roll_onedari(); sess["onedari_games"]+=add_g
+        img=await _rzget("rz_at.png"); files=[_rzfile(img,"rz_at.png")] if img else []
+        if sess["onedari_step"]>=5:
+            sess["at_games"]=sess["onedari_games"]; sess["at_total_pay"]=0; sess["oni_mode"]=False; sess["phase"]="at"
+            await _rz_send(sess,f"🌟 **初期G数確定！ {sess['at_games']}G！**",files,None)
+            await asyncio.sleep(1.0); await _rz_send(sess,_rz_at_text(sess),files,RezeroATView(self.uid))
         else:
-            text = ("🎀 **おねだりAttack！**\n"
-                    f"✨ +{add_g}G！\n"
-                    f"獲得G数：**{sess['onedari_games']}G**\nあと{5-sess['onedari_step']}回！")
-            await _rz_send_game(sess, text, files, RezeroOnedariView(self.uid))
+            text=(f"🎀 **おねだりAttack！**\n✨ +{add_g}G！\n"
+                  f"獲得G数：**{sess['onedari_games']}G**\nあと{5-sess['onedari_step']}回！")
+            await _rz_send(sess,text,files,RezeroOnedariView(self.uid))
 
 
 # ── AT「ゼロからっしゅ」 ──────────────────────────────────
-
 class RezeroATView(discord.ui.View):
-    """AT中ビュー"""
-    def __init__(self, uid: int):
-        super().__init__(timeout=300); self.uid = uid
-
+    def __init__(self,uid:int): super().__init__(timeout=300); self.uid=uid
     async def on_timeout(self): await _rz_timeout_quit(self.uid)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.uid:
-            await interaction.response.send_message("これはあなたのゲームではないのだ", ephemeral=True)
-            return False
+    async def interaction_check(self,i:discord.Interaction)->bool:
+        if i.user.id!=self.uid:
+            await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    @discord.ui.button(label="🎰 回す", style=discord.ButtonStyle.success, custom_id="rz:at_spin")
-    async def at_spin(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🎰 回す",style=discord.ButtonStyle.success,custom_id="rz:at_spin")
+    async def at_spin(self,interaction:discord.Interaction,b):
         await interaction.response.defer()
-        sess = rezero_sessions.get(self.uid)
-        if not sess or sess["phase"] != "at": return
-        if sess["credit"] < REZERO_BET:
+        sess=rezero_sessions.get(self.uid)
+        if not sess or sess["phase"]!="at": return
+        if sess["credit"]<REZERO_BET:
             async with get_user_lock(self.uid):
-                u = store.get_user(self.uid)
-                coins = int(u.get("coins", 0))
-            thread = bot.get_channel(sess["thread_id"])
-            if thread:
-                await thread.send(
-                    content=(f"💸 クレジットが足りないのだ\n"
-                             f"💰 所持コイン：**{coins:,}**枚\n追加投入するのだ！"),
-                    view=RezeroAddCreditView(uid=self.uid, coins=coins))
+                u=store.get_user(self.uid); coins=int(u.get("coins",0))
+            thread=bot.get_channel(sess["thread_id"])
+            if thread: await thread.send(
+                content=f"💸 クレジットが足りないのだ\n💰 所持コイン：**{coins:,}**枚\n追加投入するのだ！",
+                view=RezeroAddCreditView(uid=self.uid,coins=coins))
             return
-        sess["credit"] -= REZERO_BET
-        sess["total_games"] += 1
-
-        # AT中役抽選（ベル高確率）
-        p = REZERO_PROB_TABLES.get(sess["setting"], REZERO_PROB_TABLES[3]).copy()
-        p["BELL"] = 1/3  # AT中ベル確率UP
-        r = _rz_random.random()
-        flag = "BLANK"
-        for f in ["STRONG_CHERRY","WEAK_CHERRY","SUIKA","BELL","REPLAY"]:
-            if r < p[f]: flag = f; break
-            r -= p[f]
-
-        payout = REZERO_PAYOUT.get(flag, 0)
-        if payout > 0:
-            sess["credit"] += payout
-            sess["at_total_pay"] += payout
-
-        extra_msg = ""
-        oni_triggered = False
-
-        # スイカ → 上乗せ
-        if flag == "SUIKA":
-            up_g = rezero_roll_suika_up(sess["oni_mode"])
-            sess["at_games"] += up_g
-            extra_msg = f"🍉 スイカ！ **+{up_g}G上乗せ！**"
-            if up_g >= 20 and not sess["oni_mode"]:
-                sess["oni_mode"] = True
-                oni_triggered = True
-        # 強チェリー → ループストック
-        elif flag == "STRONG_CHERRY":
-            if sess["loop_stocks"] < 3:
-                sess["loop_stocks"] += 1
-            extra_msg = f"🍒🍒 強チェリー！ **ループストック+1！** ({sess['loop_stocks']}個)"
-        # 弱チェリー → 小上乗せ
-        elif flag == "WEAK_CHERRY":
-            up_g = _rz_random.choice([5, 10])
-            sess["at_games"] += up_g
-            extra_msg = f"🍒 弱チェリー！ +{up_g}G！"
-        # 鬼モード移行抽選（通常時）
-        elif not sess["oni_mode"] and rezero_roll_oni_mode():
-            sess["oni_mode"] = True
-            oni_triggered = True
-
-        sess["at_games"] -= 1
-        flag_labels = {"BELL":"🔔 ベル", "REPLAY":"🔄 リプレイ",
-                       "SUIKA":"🍉 スイカ", "STRONG_CHERRY":"🍒🍒 強チェリー",
-                       "WEAK_CHERRY":"🍒 弱チェリー", "BLANK":"　"}
-        role_msg = flag_labels.get(flag, "")
-        if payout > 0: role_msg += f" +{payout}枚"
-
-        img_key = "rz_oni.png" if oni_triggered else "rz_at.png"
-        img_data = await _rzget(img_key)
-        files = [_rz_file(img_data, img_key)] if img_data else []
-
-        if oni_triggered:
-            await _rz_send_game(sess, "👹 **鬼がかったやり方！！鬼モード突入！**", files, None)
-            await asyncio.sleep(1.5)
-            img_data2 = await _rzget("rz_at.png")
-            files = [_rz_file(img_data2, "rz_at.png")] if img_data2 else []
-
-        if sess["at_games"] <= 0:
-            # AT終了
-            if sess["loop_stocks"] > 0:
-                sess["loop_stocks"] -= 1
-                await _rz_send_game(sess,
-                    f"🔄 **ループストック発動！** (残{sess['loop_stocks']}個)\nもう1セット！",
-                    files, None)
-                await asyncio.sleep(1.0)
-                await _rz_start_onedari(self.uid)
+        sess["credit"]-=REZERO_BET; sess["total_games"]+=1
+        p=REZERO_PROB.get(sess["setting"],REZERO_PROB[3]).copy(); p["BELL"]=1/3
+        r=_rz_rand.random(); flag="BLANK"
+        for fl in ["SCHERRY","WCHERRY","SUIKA","BELL","REPLAY"]:
+            if r<p[fl]: flag=fl; break
+            r-=p[fl]
+        payout=REZERO_PAYOUT.get(flag,0)
+        if payout: sess["credit"]+=payout; sess["at_total_pay"]+=payout
+        extra=""; oni_new=False
+        if flag=="SUIKA":
+            up=_rz_roll_suika_up(sess["oni_mode"]); sess["at_games"]+=up; extra=f"🍉 スイカ！ **+{up}G上乗せ！**"
+            if up>=20 and not sess["oni_mode"]: sess["oni_mode"]=True; oni_new=True
+        elif flag=="SCHERRY":
+            if sess["loop_stocks"]<3: sess["loop_stocks"]+=1
+            extra=f"🍒🍒 強チェリー！ **ループストック+1！** ({sess['loop_stocks']}個)"
+        elif flag=="WCHERRY":
+            up=_rz_rand.choice([5,10]); sess["at_games"]+=up; extra=f"🍒 弱チェリー！ +{up}G！"
+        elif not sess["oni_mode"] and _rz_rand.random()<0.05:
+            sess["oni_mode"]=True; oni_new=True
+        sess["at_games"]-=1
+        role_msg=FLAG_LABEL_RZ.get(flag,"")
+        if payout: role_msg+=f" +{payout}枚"
+        img_key="rz_oni.png" if oni_new else "rz_at.png"
+        img=await _rzget(img_key); files=[_rzfile(img,img_key)] if img else []
+        if oni_new:
+            await _rz_send(sess,"👹 **鬼がかったやり方！！鬼モード突入！**",files,None); await asyncio.sleep(1.5)
+            img2=await _rzget("rz_at.png"); files=[_rzfile(img2,"rz_at.png")] if img2 else []
+        if sess["at_games"]<=0:
+            if sess["loop_stocks"]>0:
+                sess["loop_stocks"]-=1
+                await _rz_send(sess,f"🔄 **ループストック発動！** (残{sess['loop_stocks']}個)\nもう1セット！",files,None)
+                await asyncio.sleep(1.0); await _rz_start_onedari(self.uid)
             else:
-                sess["phase"] = "idle"
-                end_data = await _rzget("rz_at_end.png")
-                end_files = [_rz_file(end_data, "rz_at_end.png")] if end_data else []
-                await _rz_send_game(sess,
-                    f"💫 AT終了！ 総獲得：**{sess['at_total_pay']:,}**枚\n"
-                    f"クレジット：**{sess['credit']:,}**枚",
-                    end_files, None)
-                await asyncio.sleep(1.5)
-                reel_files = await _rz_files(sess)
-                await _rz_send_game(sess, _rz_game_text(sess), reel_files, _rz_view_idle(self.uid))
+                sess["phase"]="idle"
+                img_end=await _rzget("rz_at_end.png"); end_files=[_rzfile(img_end,"rz_at_end.png")] if img_end else []
+                await _rz_send(sess,f"💫 AT終了！ 総獲得：**{sess['at_total_pay']:,}**枚\nクレジット：**{sess['credit']:,}**枚",end_files,None)
+                await asyncio.sleep(1.5); rf=await _rz_files(sess); await _rz_send(sess,_rz_game_text(sess),rf,_rz_view_idle(self.uid))
         else:
-            msg_parts = [_rz_at_text(sess, role_msg)]
-            if extra_msg: msg_parts.append(extra_msg)
-            await _rz_send_game(sess, "\n".join(msg_parts), files, RezeroATView(self.uid))
+            parts=[_rz_at_text(sess,role_msg)]
+            if extra: parts.append(extra)
+            await _rz_send(sess,"\n".join(parts),files,RezeroATView(self.uid))
 
-    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary, custom_id="rz:at_quit", row=1)
-    async def quit_game(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await _rz_quit(self.uid, interaction)
+    @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:at_quit",row=1)
+    async def quit_game(self,interaction:discord.Interaction,b):
+        await interaction.response.defer(); await _rz_quit(self.uid)
 
 
-# ── 追加投入ビュー ───────────────────────────────────────
-
-REZERO_INSERT_OPTIONS = [100, 500, 1000, 3000, 10000]
+# ── 追加投入 ─────────────────────────────────────────────
+REZERO_INSERT_OPTIONS=[100,500,1000,3000,10000]
 
 class RezeroAddCreditView(discord.ui.View):
-    def __init__(self, uid: int, coins: int):
-        super().__init__(timeout=180)
-        self.uid = uid
-        for amount in REZERO_INSERT_OPTIONS:
-            if amount <= coins:
-                self.add_item(RezeroAddCreditButton(uid=uid, amount=amount))
-        if coins > 0 and coins not in REZERO_INSERT_OPTIONS:
-            self.add_item(RezeroAddCreditButton(uid=uid, amount=coins,
-                                                label=f"💴 全額（{coins:,}枚）"))
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.uid:
-            await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
-            return False
+    def __init__(self,uid:int,coins:int):
+        super().__init__(timeout=180); self.uid=uid
+        for amt in REZERO_INSERT_OPTIONS:
+            if amt<=coins: self.add_item(RezeroAddCreditBtn(uid,amt))
+        if 0<coins and coins not in REZERO_INSERT_OPTIONS:
+            self.add_item(RezeroAddCreditBtn(uid,coins,f"💴 全額（{coins:,}枚）"))
+    async def interaction_check(self,i:discord.Interaction)->bool:
+        if i.user.id!=self.uid:
+            await i.response.send_message("これはあなたの操作ではないのだ",ephemeral=True); return False
         return True
 
-
-class RezeroAddCreditButton(discord.ui.Button):
-    def __init__(self, uid: int, amount: int, label: str = ""):
-        super().__init__(label=label or f"💴 {amount:,}枚",
-                         style=discord.ButtonStyle.success,
+class RezeroAddCreditBtn(discord.ui.Button):
+    def __init__(self,uid:int,amount:int,label:str=""):
+        super().__init__(label=label or f"💴 {amount:,}枚",style=discord.ButtonStyle.success,
                          custom_id=f"rz:addcredit:{amount}")
-        self.uid = uid; self.amount = amount
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.uid:
-            return await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+        self.uid=uid; self.amount=amount
+    async def callback(self,interaction:discord.Interaction):
+        if interaction.user.id!=self.uid:
+            return await interaction.response.send_message("これはあなたの操作ではないのだ",ephemeral=True)
         await interaction.response.defer()
-        uid = interaction.user.id
-        sess = rezero_sessions.get(uid)
-        if not sess:
-            return await interaction.followup.send("セッションが切れたのだ", ephemeral=True)
-        async with get_user_lock(uid):
-            u = store.get_user(uid)
-            coins = int(u.get("coins", 0))
-            if coins < self.amount:
-                return await interaction.followup.send(
-                    f"コインが足りないのだ（所持：{coins:,}枚）", ephemeral=True)
-            u["coins"] = coins - self.amount
-            await sheets_upsert_async(u)
-        sess["credit"] += self.amount
-        try:
-            await interaction.message.delete()
+        sess=rezero_sessions.get(self.uid)
+        if not sess: return await interaction.followup.send("セッションが切れたのだ",ephemeral=True)
+        async with get_user_lock(self.uid):
+            u=store.get_user(self.uid); coins=int(u.get("coins",0))
+            if coins<self.amount:
+                return await interaction.followup.send(f"コインが足りないのだ（所持：{coins:,}枚）",ephemeral=True)
+            u["coins"]=coins-self.amount; await sheets_upsert_async(u)
+        sess["credit"]+=self.amount
+        try: await interaction.message.delete()
         except Exception: pass
-        files = await _rz_files(sess)
-        current_view = _rz_view_idle(uid) if sess["phase"] == "idle" else RezeroATView(uid)
-        await _rz_send_game(sess,
-            _rz_game_text(sess, f"💴 {self.amount:,}枚を追加投入したのだ"),
-            files, current_view)
+        files=await _rz_files(sess)
+        view=RezeroATView(self.uid) if sess.get("phase")=="at" else _rz_view_idle(self.uid)
+        await _rz_send(sess,_rz_game_text(sess,f"💴 {self.amount:,}枚を追加投入したのだ"),files,view)
 
 
-# ── 台選択ビュー（JugglerEntryView から呼ばれる） ────────
-
+# ── コイン投入 ───────────────────────────────────────────
 class RezeroInsertView(discord.ui.View):
-    """リゼロ台のコイン投入ビュー"""
-    def __init__(self, uid: int, machine: dict, coins: int):
-        super().__init__(timeout=60)
-        self.uid = uid
-        for amount in REZERO_INSERT_OPTIONS:
-            if amount <= coins:
-                self.add_item(RezeroInsertButton(uid=uid, machine=machine, amount=amount))
-        if coins > 0 and coins not in REZERO_INSERT_OPTIONS:
-            self.add_item(RezeroInsertButton(uid=uid, machine=machine, amount=coins,
-                                             label=f"💴 全額（{coins:,}枚）"))
+    def __init__(self,uid:int,machine:dict,coins:int):
+        super().__init__(timeout=60); self.uid=uid
+        for amt in REZERO_INSERT_OPTIONS:
+            if amt<=coins: self.add_item(RezeroInsertBtn(uid,machine,amt))
+        if 0<coins and coins not in REZERO_INSERT_OPTIONS:
+            self.add_item(RezeroInsertBtn(uid,machine,coins,f"💴 全額（{coins:,}枚）"))
 
-
-class RezeroInsertButton(discord.ui.Button):
-    def __init__(self, uid: int, machine: dict, amount: int, label: str = ""):
-        super().__init__(label=label or f"💴 {amount:,}枚",
-                         style=discord.ButtonStyle.success,
+class RezeroInsertBtn(discord.ui.Button):
+    def __init__(self,uid:int,machine:dict,amount:int,label:str=""):
+        super().__init__(label=label or f"💴 {amount:,}枚",style=discord.ButtonStyle.success,
                          custom_id=f"rz:insert:{machine['id']}:{amount}")
-        self.uid = uid; self.machine = machine; self.amount = amount
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.uid:
-            return await interaction.response.send_message("これはあなたの操作ではないのだ", ephemeral=True)
+        self.uid=uid; self.machine=machine; self.amount=amount
+    async def callback(self,interaction:discord.Interaction):
+        if interaction.user.id!=self.uid:
+            return await interaction.response.send_message("これはあなたの操作ではないのだ",ephemeral=True)
         await interaction.response.defer(ephemeral=True)
-        uid = interaction.user.id
+        uid=interaction.user.id
         async with get_user_lock(uid):
-            u = store.get_user(uid)
-            coins = int(u.get("coins", 0))
-            if coins < self.amount:
-                return await interaction.edit_original_response(
-                    content=f"コインが足りないのだ（所持：{coins:,}枚）")
-            u["coins"] = coins - self.amount
-            await sheets_upsert_async(u)
-
-        channel = interaction.channel
-        thread_name = f"🎰 {interaction.user.display_name}のリゼロ"
+            u=store.get_user(uid); coins=int(u.get("coins",0))
+            if coins<self.amount:
+                return await interaction.edit_original_response(content=f"コインが足りないのだ（所持：{coins:,}枚）")
+            u["coins"]=coins-self.amount; await sheets_upsert_async(u)
+        channel=interaction.channel; name=f"🎰 {interaction.user.display_name}のリゼロ"
         try:
-            thread = await channel.create_thread(
-                name=thread_name, type=discord.ChannelType.private_thread,
-                invitable=False, auto_archive_duration=60)
+            thread=await channel.create_thread(name=name,type=discord.ChannelType.private_thread,
+                                               invitable=False,auto_archive_duration=60)
             await thread.add_user(interaction.user)
         except discord.Forbidden:
-            thread = await channel.create_thread(
-                name=thread_name, type=discord.ChannelType.public_thread,
-                auto_archive_duration=60)
-
-        sess = _new_rezero_session(uid=uid, machine_id=self.machine["id"],
-                                   setting=self.machine["setting"], credit=self.amount)
-        sess["machine_name"] = self.machine["name"]
-        sess["thread_id"] = thread.id
-        rezero_sessions[uid] = sess
-
-        header_msg = await thread.send(content=f"🎰 **{self.machine['name']}**")
-        sess["header_msg_id"] = header_msg.id
-        files = await _rz_files(sess)
+            thread=await channel.create_thread(name=name,type=discord.ChannelType.public_thread,auto_archive_duration=60)
+        sess=_new_rz_sess(uid=uid,machine_id=self.machine["id"],setting=self.machine["setting"],credit=self.amount)
+        sess["machine_name"]=self.machine["name"]; sess["thread_id"]=thread.id; rezero_sessions[uid]=sess
+        hm=await thread.send(content=f"🎰 **{self.machine['name']}**"); sess["header_msg_id"]=hm.id
+        files=await _rz_files(sess)
         if files:
-            img_msg = await thread.send(content=_rz_game_text(sess), files=files)
-            sess["img_msg_id"] = img_msg.id
-        ctrl_msg = await thread.send(
-            content="▶ レバーを引いてゲームを始めるのだ",
-            view=_rz_view_idle(uid))
-        sess["ctrl_msg_id"] = ctrl_msg.id
-        await interaction.edit_original_response(
-            content=f"✅ **{self.machine['name']}** スレッドを開いたのだ！")
+            im=await thread.send(content=_rz_game_text(sess),files=files)
+        else:
+            im=await thread.send(content=_rz_game_text(sess))
+        sess["img_msg_id"]=im.id
+        cm=await thread.send(content="▶ レバーを引いてゲームを始めるのだ",view=_rz_view_idle(uid))
+        sess["ctrl_msg_id"]=cm.id
+        await interaction.edit_original_response(content=f"✅ **{self.machine['name']}** スレッドを開いたのだ！")
+        
 # =========================================================
 # 起動イベント
 # =========================================================
@@ -11598,6 +11174,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
