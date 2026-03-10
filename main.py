@@ -10501,16 +10501,22 @@ def _rz_make_reel(flag: str) -> bytes:
         "BLANK":  ((12,12,18),   "---",    (58,58,78)),
     }
     def tile(sym):
-        bg,lbl,tc=SBUF.get(sym,((18,18,28),"??",(255,255,255)))
+        bg,lbl,tc=SBUF.get(sym,((40,40,60),"??",(255,255,255)))
         t=Image.new("RGB",(TW,TH),bg); d=ImageDraw.Draw(t)
-        d.rectangle([1,1,TW-2,TH-2],outline=(175,175,175),width=1)
-        d.rectangle([3,3,TW-4,TH-4],outline=(118,118,118),width=1)
+        # 明るいグラデーション風枠
+        d.rectangle([0,0,TW-1,TH-1],outline=(220,220,255),width=2)
+        d.rectangle([3,3,TW-4,TH-4],outline=(180,180,220),width=1)
         if lbl:
-            fs=14 if len(lbl)>4 else 17
-            f=_rz_font(fs); bb=d.textbbox((0,0),lbl,font=f)
-            tw2,th2=bb[2]-bb[0],bb[3]-bb[1]
-            d.text(((TW-tw2)//2+1,(TH-th2)//2+1),lbl,fill=(0,0,0),font=f)
-            d.text(((TW-tw2)//2,(TH-th2)//2),lbl,fill=tc,font=f)
+            # フォントなしでも見えるように大きめに描く
+            try:
+                fs=16 if len(lbl)>4 else 20
+                f=_rz_font(fs); bb=d.textbbox((0,0),lbl,font=f)
+                tw2,th2=bb[2]-bb[0],bb[3]-bb[1]
+                d.text(((TW-tw2)//2+1,(TH-th2)//2+1),lbl,fill=(0,0,0),font=f)
+                d.text(((TW-tw2)//2,(TH-th2)//2),lbl,fill=tc,font=f)
+            except:
+                # フォールバック: 文字なしで色だけ
+                d.rectangle([10,10,TW-10,TH-10],fill=tuple(min(255,v+60) for v in bg))
         return t
     n=len(STRIP)
     cands=[i for i,s in enumerate(STRIP) if s==flag]
@@ -10528,31 +10534,43 @@ def _rz_make_reel(flag: str) -> bytes:
 
 
 def _rz_make_spin_screen() -> bytes:
-    """回転中画面"""
+    """回転中画面（明るく視認しやすいデザイン）"""
     try:
         from PIL import Image, ImageDraw
     except ImportError: return b""
-    import io as _io
+    import io as _io, math as _m
     TW,TH=142,55; PAD=5; W=TW*3+PAD*2; H=TH*3
-    # 回転中はシンボルを斜めストライプで表現
-    BG_COLS=[(0,0,30),(10,30,80),(0,0,30)]
-    LABELS=["?","?","?"]
-    cv=Image.new("RGB",(W,H),(10,10,25)); dc=ImageDraw.Draw(cv)
+    cv=Image.new("RGB",(W,H),(20,20,40)); dc=ImageDraw.Draw(cv)
+    STRIPE_COLS=[
+        (80,120,220),(120,160,255),(80,120,220),   # 青系
+        (220,180,60),(255,220,80),(220,180,60),    # 金系
+        (60,180,120),(100,220,160),(60,180,120),   # 緑系
+    ]
     for col in range(3):
         x0=col*(TW+PAD)
+        # 斜めストライプ（動いてる感）
         for row in range(3):
             y0=row*TH
-            # グラデーション風のブロック
-            for y in range(TH):
-                shade=int(15+abs(y-TH//2)*2)
-                dc.line([(x0,y0+y),(x0+TW-1,y0+y)],fill=(shade,shade+10,shade+35))
-            # 中段に???
-            if row==1:
-                f=_rz_font(22)
-                dc.text((x0+TW//2-18,y0+TH//2-14),"???",font=f,fill=(180,200,255))
-        dc.rectangle([x0-1,0,x0+TW,H-1],outline=(60,80,140),width=1)
-    dc.line([(0,TH-1),(W,TH-1)],fill=(100,150,255),width=2)
-    dc.line([(0,TH*2),(W,TH*2)],fill=(100,150,255),width=2)
+            c=STRIPE_COLS[col*3+row]
+            # 明るい背景
+            dc.rectangle([x0,y0,x0+TW-1,y0+TH-1],fill=c)
+            # 斜め線
+            for k in range(-TH,TW+TH,12):
+                dc.line([(x0+k,y0),(x0+k+TH,y0+TH-1)],
+                        fill=tuple(min(255,v+40) for v in c),width=3)
+        # 中段に「回」マーク
+        mx=x0+TW//2; my=H//2
+        dc.rectangle([mx-22,my-18,mx+22,my+18],fill=(0,0,0),outline=(255,255,255),width=2)
+        dc.rectangle([mx-14,my-10,mx+14,my+10],fill=(0,0,0),outline=(255,255,255),width=2)
+        dc.line([(mx-22,my-4),(mx-14,my-4)],fill=(255,255,255),width=2)
+        dc.line([(mx+14,my-4),(mx+22,my-4)],fill=(255,255,255),width=2)
+        dc.line([(mx-22,my+4),(mx-14,my+4)],fill=(255,255,255),width=2)
+        dc.line([(mx+14,my+4),(mx+22,my+4)],fill=(255,255,255),width=2)
+        # 縦区切り線
+        dc.rectangle([x0,0,x0+TW-1,H-1],outline=(200,200,255),width=1)
+    # 横ライン（入賞ライン）
+    dc.line([(0,TH-1),(W,TH-1)],fill=(255,220,0),width=3)
+    dc.line([(0,TH*2),(W,TH*2)],fill=(255,220,0),width=3)
     buf=_io.BytesIO(); cv.save(buf,"PNG"); return buf.getvalue()
 
 
@@ -11322,7 +11340,7 @@ class RezeroInsertBtn(discord.ui.Button):
         cm=await thread.send(content="▼ レバーを引いてゲームを始めるのだ！",view=RezeroIdleView(uid))
         sess["ctrl_msg_id"]=cm.id
         await interaction.edit_original_response(content=f"✅ **{self.machine['name']}** スレッドを開いたのだ！")
-        
+
 # =========================================================
 # 起動イベント
 # =========================================================
@@ -11423,6 +11441,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
