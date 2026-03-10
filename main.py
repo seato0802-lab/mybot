@@ -10592,37 +10592,43 @@ def _rzf(data:bytes,fn:str)->discord.File:
     return discord.File(_rz_io.BytesIO(data),filename=fn)
 # ── フレーム合成 ─────────────────────────────────────────────
 RZ_FRAME_WINDOWS = [
-    (154, 40, 304, 222),  # 左リール窓
-    (325, 40, 473, 222),  # 中リール窓
-    (495, 40, 645, 222),  # 右リール窓
+    (153, 18, 304, 224),  # 左リール窓
+    (325, 18, 473, 224),  # 中リール窓
+    (495, 18, 645, 224),  # 右リール窓
 ]
 
-async def _rz_composite(reel_bytes: bytes | None = None, frame_bytes: bytes | None = None) -> bytes | None:
-    """外枠画像にリール（またはコンテンツ）を合成して1枚の画像を返す"""
+async def _rz_composite(reel_bytes: bytes | None = None, frame_bytes: bytes | None = None,
+                        bg_bytes: bytes | None = None) -> bytes | None:
+    """外枠画像にリール/背景を合成して1枚の画像を返す"""
     try:
-        from PIL import Image
+        from PIL import Image, ImageDraw
         import io as _io
         if frame_bytes is None:
             frame_bytes = await _rzget("rz_machine_frame.png")
-        if not frame_bytes: return reel_bytes
+        if not frame_bytes: return reel_bytes or bg_bytes
         frame = Image.open(_io.BytesIO(frame_bytes)).convert("RGBA")
         FW, FH = frame.size  # 800x339
 
         if reel_bytes:
+            # リール画像を3窓に分割して貼る
             reel = Image.open(_io.BytesIO(reel_bytes)).convert("RGBA")
             RW, RH = reel.size
-            # 3窓それぞれにリール列を貼る
-            # リール画像はTW*3+PAD*2 x TH*3 形式 → 3列に分割
             TW = RW // 3
             for i, (wx0, wy0, wx1, wy1) in enumerate(RZ_FRAME_WINDOWS):
-                win_w = wx1 - wx0
-                win_h = wy1 - wy0
                 col_img = reel.crop((i * TW, 0, (i + 1) * TW, RH))
-                col_img = col_img.resize((win_w, win_h), Image.LANCZOS)
+                col_img = col_img.resize((wx1-wx0, wy1-wy0), Image.LANCZOS)
                 frame.paste(col_img, (wx0, wy0))
+        elif bg_bytes:
+            # 背景画像を3窓全体に引き伸ばして貼る
+            bg = Image.open(_io.BytesIO(bg_bytes)).convert("RGBA")
+            # 3窓を囲む全体範囲を計算
+            all_x0 = RZ_FRAME_WINDOWS[0][0]; all_y0 = RZ_FRAME_WINDOWS[0][1]
+            all_x1 = RZ_FRAME_WINDOWS[2][2]; all_y1 = RZ_FRAME_WINDOWS[2][3]
+            total_w = all_x1 - all_x0; total_h = all_y1 - all_y0
+            bg_resized = bg.resize((total_w, total_h), Image.LANCZOS)
+            frame.paste(bg_resized, (all_x0, all_y0))
         else:
-            # リールなし: 窓を暗い色でクリア
-            from PIL import ImageDraw
+            # 何もなし: 窓を暗くクリア
             draw = ImageDraw.Draw(frame)
             for (wx0, wy0, wx1, wy1) in RZ_FRAME_WINDOWS:
                 draw.rectangle([wx0, wy0, wx1, wy1], fill=(20, 20, 35, 255))
@@ -10632,7 +10638,7 @@ async def _rz_composite(reel_bytes: bytes | None = None, frame_bytes: bytes | No
         return buf.getvalue()
     except Exception as e:
         print(f"[rezero] フレーム合成失敗: {e}")
-        return reel_bytes
+        return reel_bytes or bg_bytes
 
 
 
@@ -10930,7 +10936,7 @@ async def _rz_start_prep(uid,orig_interaction=None):
           f"💥 撃破率：**{sess['final_rate']}%** ｜ アイコン：{ico}\n"
           f"⭐ 撃破ストック：**{sess['hakugei_stocks']}個**\n"
           f"━━━━━━━━━━━━━━━━")
-    img=await _rzget("rz_hakugei.png")
+    img=await _rz_composite(bg_bytes=await _rzget("rz_hakugei.png"))
     await _rz_update_img(sess,text,img,"rz_hakugei.png")
     thread=bot.get_channel(sess["thread_id"])
     if thread:
@@ -10979,7 +10985,7 @@ class RezeroPrepView(discord.ui.View):
                   f"⭐ 撃破ストック：**{sess['hakugei_stocks']}個**{stock_msg}\n"
                   f"━━━━━━━━━━━━━━━━")
             await interaction.response.defer()
-        img=await _rzget("rz_hakugei.png")
+        img=await _rz_composite(bg_bytes=await _rzget("rz_hakugei.png"))
         await _rz_update_img(sess,text,img,"rz_hakugei.png")
 
     @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_prep",row=1)
@@ -11025,7 +11031,7 @@ async def _rz_show_battle(uid):
           f"🐋 残り白鯨：{remain}{log}\n"
           f"━━━━━━━━━━━━━━━━\n"
           f"攻撃ボタンを3回押すのだ！（{sess['attack_count']}/3）")
-    img=await _rzget(key)
+    img=await _rz_composite(bg_bytes=await _rzget(key))
     await _rz_update_img(sess,text,img,key)
 
 
@@ -11064,7 +11070,7 @@ async def _rz_battle_result(uid,won):
     if won:
         sess["battles_won"]+=1
         if sess["battles_won"]>=3:
-            img=await _rzget("rz_at.png")
+            img=await _rz_composite(bg_bytes=await _rzget("rz_at.png"))
             await _rz_update_img(sess,"🌟 **白鯨3体撃破！！ゼロからっしゅ突入！！**",img,"rz_at.png")
             await asyncio.sleep(1.5); await _rz_start_onedari(uid)
         else:
@@ -11072,14 +11078,14 @@ async def _rz_battle_result(uid,won):
             await asyncio.sleep(1.0); await _rz_show_battle(uid)
     else:
         if sess["battle_num"]==1 and _rz_rand.random()<0.031:
-            img=await _rzget("rz_battle_red.png")
+            img=await _rz_composite(bg_bytes=await _rzget("rz_battle_red.png"))
             await _rz_update_img(sess,"🔄 **死に戻り！！3戦目へ強制突入！！**",img,"rz_battle_red.png")
             await asyncio.sleep(1.5)
             sess["battle_num"]=3; sess["attack_count"]=0; sess["attacker_log"]=[]; sess["bg_color"]="red"
             await _rz_show_battle(uid)
         else:
             sess["phase"]="idle"
-            img=await _rzget("rz_normal.png")
+            img=await _rz_composite(bg_bytes=await _rzget("rz_normal.png"))
             text=_rz_gtext(sess,"💀 **白鯨に敗北…** また来い！")
             await _rz_update_img(sess,text,img,"rz_normal.png")
             thread=bot.get_channel(sess["thread_id"])
@@ -11095,7 +11101,7 @@ async def _rz_start_onedari(uid):
     if not sess: return
     sess["phase"]="onedari"; sess["onedari_step"]=0; sess["onedari_games"]=0
     sess["at_count"]+=1; sess["games_since_at"]=0
-    img=await _rzget("rz_at.png")
+    img=await _rz_composite(bg_bytes=await _rzget("rz_at.png"))
     text=("🎀 **おねだりAttack！**\n"
           "━━━━━━━━━━━━━━━━\n"
           "エミリア「ねえ、一緒にいてくれる？」\n"
@@ -11125,7 +11131,7 @@ class RezeroOnedariView(discord.ui.View):
         if not sess or sess["phase"]!="onedari":
             return await interaction.response.defer()
         sess["onedari_step"]+=1; add=_rz_onedari(); sess["onedari_games"]+=add
-        img=await _rzget("rz_at.png")
+        img=await _rz_composite(bg_bytes=await _rzget("rz_at.png"))
         if sess["onedari_step"]>=5:
             sess["at_games"]=sess["onedari_games"]; sess["at_total_pay"]=0; sess["oni_mode"]=False; sess["phase"]="at"
             text=f"🌟 **初期G数確定！ {sess['at_games']}G でスタート！！**"
@@ -11191,12 +11197,12 @@ class RezeroATView(discord.ui.View):
         if pay: role_msg+=f" ＋{pay}枚"
         img_key="rz_oni.png" if oni_new else "rz_at.png"
         await interaction.response.defer()
-        img=await _rzget(img_key)
+        img=await _rz_composite(bg_bytes=await _rzget(img_key))
         if oni_new:
             await _rz_update_img(sess,
                 "👹 **鬼がかったやり方！！鬼モード突入！**\nスイカ上乗せ30G以上確定！！",
                 img,img_key)
-            await asyncio.sleep(1.5); img=await _rzget("rz_at.png"); img_key="rz_at.png"
+            await asyncio.sleep(1.5); img=await _rz_composite(bg_bytes=await _rzget("rz_at.png")); img_key="rz_at.png"
         if sess["at_games"]<=0:
             if sess["loop_stocks"]>0:
                 sess["loop_stocks"]-=1
@@ -11206,12 +11212,12 @@ class RezeroATView(discord.ui.View):
                 await asyncio.sleep(1.2); await _rz_start_onedari(self.uid)
             else:
                 sess["phase"]="idle"
-                img_end=await _rzget("rz_at_end.png")
+                img_end=await _rz_composite(bg_bytes=await _rzget("rz_at_end.png"))
                 await _rz_update_img(sess,
                     f"💫 **AT終了！** 総獲得：**{sess['at_total_pay']:,}枚**\nクレジット：**{sess['credit']:,}枚**",
                     img_end,"rz_at_end.png")
                 await asyncio.sleep(1.5)
-                img_n=await _rzget("rz_normal.png")
+                img_n=await _rz_composite(bg_bytes=await _rzget("rz_normal.png"))
                 await _rz_update_img(sess,_rz_gtext(sess),img_n,"rz_normal.png")
                 thread=bot.get_channel(sess["thread_id"])
                 if thread:
@@ -11265,7 +11271,8 @@ class RezeroAddCreditBtn(discord.ui.Button):
         except: pass
         ph=sess.get("phase","idle")
         view=RezeroATView(self.uid) if ph=="at" else RezeroIdleView(self.uid)
-        img=await _rzget("rz_at.png" if ph=="at" else "rz_normal.png")
+        _bg_fn="rz_at.png" if ph=="at" else "rz_normal.png"
+        img=await _rz_composite(bg_bytes=await _rzget(_bg_fn))
         await _rz_update_img(sess,_rz_gtext(sess,f"💴 **{self.amount:,}枚** 追加投入したのだ！"),img,"rz_bg.png")
         thread=bot.get_channel(sess["thread_id"])
         if thread:
@@ -11308,7 +11315,7 @@ class RezeroInsertBtn(discord.ui.Button):
             thread=await channel.create_thread(name=name,type=discord.ChannelType.public_thread,auto_archive_duration=60)
         sess=_new_rz(uid=uid,mid=self.machine["id"],setting=self.machine["setting"],credit=self.amount)
         sess["machine_name"]=self.machine["name"]; sess["thread_id"]=thread.id; rezero_sessions[uid]=sess
-        hm=await thread.send(content=f"🎰 **{self.machine['name']}**　設定{self.machine['setting']}"); sess["header_msg_id"]=hm.id
+        hm=await thread.send(content=f"🎰 **{self.machine['name']}**"); sess["header_msg_id"]=hm.id
         frame_img=await _rz_composite(None)
         im=await thread.send(content=_rz_gtext(sess),files=[_rzf(frame_img,"rz_normal.png")] if frame_img else [])
         sess["img_msg_id"]=im.id
@@ -11416,6 +11423,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
