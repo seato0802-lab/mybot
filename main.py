@@ -10550,9 +10550,21 @@ _RZ_SYMS = [
 ]
 _RZ_SN = len(_RZ_SYMS)
 
-def _rz_draw_tile(dc, x0, y0, si, TW, TH):
-    """1シンボルタイルを描画"""
-    col_rgb, lbl = _RZ_SYMS[si % _RZ_SN]
+def _rz_draw_tile(dc, x0, y0, si, TW, TH, canvas=None, sym_tiles=None):
+    """1シンボルタイルを描画。sym_tiles があれば画像を使う"""
+    si = si % _RZ_SN
+    col_rgb, lbl = _RZ_SYMS[si]
+    # シンボル画像がある場合はペースト
+    if canvas is not None and sym_tiles and si in sym_tiles:
+        try:
+            from PIL import Image
+            import io as _io
+            tile_img = Image.open(_io.BytesIO(sym_tiles[si])).convert("RGBA")
+            tile_img = tile_img.resize((TW-4, TH-2), Image.LANCZOS)
+            canvas.paste(tile_img, (x0+2, y0+1), mask=tile_img.split()[3])
+            return
+        except: pass
+    # フォールバック: 色付きブロック
     dc.rectangle([x0+2, y0+1, x0+TW-2, y0+TH-2], fill=col_rgb)
     dc.rectangle([x0+2, y0+1, x0+TW-2, y0+TH-2], outline=(255,255,255), width=2)
     try:
@@ -10564,51 +10576,75 @@ def _rz_draw_tile(dc, x0, y0, si, TW, TH):
     except: pass
 
 def _rz_build_gif(stopped_cols: list, stopped_syms: dict,
-                  frame_n: int = 20, speed: int = 4) -> bytes:
+                  frame_n: int = 20, speed: int = 4,
+                  frame_base_bytes: bytes = None,
+                  sym_tiles: dict = None) -> bytes:
     """
-    汎用リールGIF生成。
+    汎用リールGIF生成（台枠を直接合成）。
     stopped_cols: 停止済み列インデックスのリスト (0=左,1=中,2=右)
     stopped_syms: {列インデックス: 中段シンボルインデックス}
+    frame_base_bytes: 台枠PNG bytes（Noneなら台枠なし）
     """
     try:
         from PIL import Image, ImageDraw
     except ImportError: return b""
     import io as _io
     TW, TH = 142, 55; PAD = 5; W = TW*3 + PAD*2; H = TH*3
+
+    # 台枠を事前ロード
+    frame_base = None
+    if frame_base_bytes:
+        try:
+            frame_base = Image.open(_io.BytesIO(frame_base_bytes)).convert("RGBA")
+        except: pass
+
     frames = []
     for fi in range(frame_n):
-        cv = Image.new("RGB", (W, H), (10,10,20))
-        dc = ImageDraw.Draw(cv)
+        # リール部分を描画
+        reel = Image.new("RGB", (W, H), (10,10,20))
+        dc = ImageDraw.Draw(reel)
         for col in range(3):
             x0 = col * (TW + PAD)
             if col in stopped_cols:
-                # ── 停止列: 上中下を固定表示 ──
                 si = stopped_syms.get(col, 0)
-                _rz_draw_tile(dc, x0, 0,    (si-1) % _RZ_SN, TW, TH)
-                _rz_draw_tile(dc, x0, TH,    si    % _RZ_SN, TW, TH)
-                _rz_draw_tile(dc, x0, TH*2, (si+1) % _RZ_SN, TW, TH)
+                _rz_draw_tile(dc, x0, 0,    (si-1) % _RZ_SN, TW, TH, reel, sym_tiles)
+                _rz_draw_tile(dc, x0, TH,    si    % _RZ_SN, TW, TH, reel, sym_tiles)
+                _rz_draw_tile(dc, x0, TH*2, (si+1) % _RZ_SN, TW, TH, reel, sym_tiles)
             else:
-                # ── 回転列: スムーズスクロール ──
                 spd = speed + col
                 offset = (fi * spd + col * TH * 3) % (TH * _RZ_SN)
                 top = offset // TH; frac = offset % TH
                 for row in range(-1, 4):
-                    _rz_draw_tile(dc, x0, row*TH - frac, (top+row) % _RZ_SN, TW, TH)
-                # 窓の上下をマスク
+                    _rz_draw_tile(dc, x0, row*TH - frac, (top+row) % _RZ_SN, TW, TH, reel, sym_tiles)
                 dc.rectangle([x0, -TH*2, x0+TW, -1],  fill=(10,10,20))
                 dc.rectangle([x0, H,     x0+TW, H+TH*2], fill=(10,10,20))
-        # 入賞ライン
         dc.line([(0, TH),     (W, TH)],     fill=(255,220,0), width=3)
         dc.line([(0, TH*2-1), (W, TH*2-1)], fill=(255,220,0), width=3)
-        frames.append(cv)
+
+        if frame_base is not None:
+            # 台枠に直接合成（フル解像度RGBA）
+            fr = frame_base.copy()
+            reel_rgba = reel.convert("RGBA")
+            rw, rh = reel_rgba.size; cw3 = rw // 3
+            for i, (wx0,wy0,wx1,wy1) in enumerate(RZ_FRAME_WINDOWS):
+                col_strip = reel_rgba.crop((i*cw3, 0, (i+1)*cw3, rh))
+                col_strip = col_strip.resize((wx1-wx0, wy1-wy0), Image.LANCZOS)
+                fr.paste(col_strip, (wx0, wy0))
+            # RGBに変換してGIF用に量子化
+            frames.append(fr.convert("RGB").quantize(colors=128, method=Image.Quantize.FASTOCTREE))
+        else:
+            frames.append(reel.quantize(colors=128, method=Image.Quantize.FASTOCTREE))
+
     buf = _io.BytesIO()
     frames[0].save(buf, format="GIF", save_all=True,
                    append_images=frames[1:], duration=50, loop=0, optimize=False)
     return buf.getvalue()
 
 def _rz_make_spin_screen() -> bytes:
-    """全列回転GIF（レバー直後）"""
+    """全列回転GIF（台枠なし・レガシー用）"""
     return _rz_build_gif([], {})
+
+
 
 
 # ── シンボル画像キャッシュ（TW×TH） ──────────────────────────────────────
@@ -10649,64 +10685,62 @@ async def _rz_get_sym_tile(sym: str, tw: int, th: int) -> bytes | None:
     except Exception as e:
         print(f"[rezero] sym tile失敗 {sym}: {e}"); return None
 
-async def _rz_gif_composite(gif_raw: bytes) -> bytes | None:
-    """GIFの各フレームに台枠を合成して返す"""
-    try:
-        from PIL import Image
-        import io as _io
-        frame_bytes = await _rzget("rz_machine_frame.png")
-        if not frame_bytes: return gif_raw
-        frame_base = Image.open(_io.BytesIO(frame_bytes)).convert("RGBA")
-        src = Image.open(_io.BytesIO(gif_raw))
-        composited = []
+async def _rz_fetch_sym_tiles() -> dict:
+    """全シンボル画像を TW×TH でキャッシュして返す"""
+    TW, TH = 142, 55
+    tiles = {}
+    for si, (col_rgb, lbl) in enumerate(_RZ_SYMS):
+        # ラベルからファイル名を決める
+        lbl_to_fn = {
+            "BELL":"sym_BELL.png","REP":"sym_WCHERRY.png",
+            "弱CY":"sym_WCHERRY.png","強CY":"sym_SCHERRY.png",
+            "西瓜":"sym_SUIKA.png","---":None,"REM":"sym_REM.png",
+            "BAR":"sym_BAR.png","BLUE7":"sym_BLUE7.png","RED7":"sym_RED7.png",
+        }
+        fn = lbl_to_fn.get(lbl)
+        if not fn: continue
+        raw = await _rzget(fn)
+        if not raw: continue
         try:
-            while True:
-                reel = src.convert("RGBA"); RW, RH = reel.size; cw = RW // 3
-                fr = frame_base.copy()
-                for i, (wx0,wy0,wx1,wy1) in enumerate(RZ_FRAME_WINDOWS):
-                    col = reel.crop((i*cw, 0, (i+1)*cw, RH)).resize(
-                            (wx1-wx0, wy1-wy0), Image.LANCZOS)
-                    fr.paste(col, (wx0, wy0))
-                composited.append(fr.convert("P", palette=Image.ADAPTIVE, colors=128))
-                src.seek(src.tell() + 1)
-        except EOFError: pass
-        if not composited: return None
-        buf = _io.BytesIO()
-        composited[0].save(buf, format="GIF", save_all=True,
-                           append_images=composited[1:], duration=50, loop=0)
-        return buf.getvalue()
-    except Exception as e:
-        print(f"[rezero] gif_composite失敗: {e}"); return None
+            from PIL import Image
+            import io as _io
+            img = Image.open(_io.BytesIO(raw)).convert("RGBA")
+            img = img.resize((TW-4, TH-2), Image.LANCZOS)
+            buf = _io.BytesIO(); img.save(buf, "PNG")
+            tiles[si] = buf.getvalue()
+        except Exception as e:
+            print(f"[rezero] sym_tile {lbl}: {e}")
+    return tiles
 
 async def _rz_make_spin_async(stopped_cols: list = None,
                                stopped_syms: dict = None) -> bytes | None:
-    """リールGIF生成（台枠合成済み）
-    stopped_cols/stopped_syms が指定された場合は部分停止GIF、
-    なければ全列回転GIF。
-    """
+    """リールGIF生成（台枠を直接合成）"""
     if stopped_cols is None: stopped_cols = []
     if stopped_syms is None: stopped_syms = {}
-    raw = await asyncio.get_running_loop().run_in_executor(
-        None, _rz_build_gif, stopped_cols, stopped_syms)
-    if not raw: return None
-    return await _rz_gif_composite(raw)
+    frame_bytes = await _rzget("rz_machine_frame.png")
+    sym_tiles = await _rz_fetch_sym_tiles()
+    loop = asyncio.get_running_loop()
+    raw = await loop.run_in_executor(
+        None, _rz_build_gif, stopped_cols, stopped_syms, 20, 4, frame_bytes, sym_tiles)
+    return raw or None
 
 async def _rz_make_reel_async(flag: str) -> bytes | None:
-    """全列停止の結果画像（静止GIF）を生成"""
-    # flagからシンボルインデックスを決める
+    """全列停止の結果静止画を生成"""
     FLAG_SYM = {
         "BELL":"BELL","REPLAY":"REP","WCHERRY":"弱CY","SCHERRY":"強CY",
         "SUIKA":"西瓜","BAR":"BAR","REM":"REM","BEATRICE":"REP",
         "EMILIA":"REP","BLUE7":"BLUE7","RED7":"RED7",
     }
     lbl = FLAG_SYM.get(flag, "---")
-    # _RZ_SYMS からラベルに対応するインデックスを探す
     si = next((i for i,(c,l) in enumerate(_RZ_SYMS) if l==lbl), 0)
-    # 全列停止・1フレームだけで静止画GIF
-    raw = await asyncio.get_running_loop().run_in_executor(
-        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1)
-    if not raw: return None
-    return await _rz_gif_composite(raw)
+    frame_bytes = await _rzget("rz_machine_frame.png")
+    sym_tiles = await _rz_fetch_sym_tiles()
+    loop = asyncio.get_running_loop()
+    raw = await loop.run_in_executor(
+        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1, 4, frame_bytes, sym_tiles)
+    return raw or None
+
+
 
 
 async def _rzget(fn: str) -> bytes | None:
@@ -11626,6 +11660,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
