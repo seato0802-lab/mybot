@@ -10533,59 +10533,82 @@ def _rz_make_reel(flag: str) -> bytes:
     buf=_io.BytesIO(); cv.save(buf,"PNG"); return buf.getvalue()
 
 
-def _rz_make_spin_screen() -> bytes:
-    """回転アニメーションGIF（リールが縦スクロール）"""
+# ─────────────────────────────────────────────────────────────────────
+# リール共通シンボル定義
+# ─────────────────────────────────────────────────────────────────────
+_RZ_SYMS = [
+    ((208,162,0),  "BELL"),
+    ((0,148,188),  "REP"),
+    ((155,0,0),    "弱CY"),
+    ((198,0,0),    "強CY"),
+    ((0,128,22),   "西瓜"),
+    ((12,12,18),   "---"),
+    ((80,50,130),  "REM"),
+    ((180,120,50), "BAR"),
+    ((50,50,180),  "BLUE7"),
+    ((180,50,50),  "RED7"),
+]
+_RZ_SN = len(_RZ_SYMS)
+
+def _rz_draw_tile(dc, x0, y0, si, TW, TH):
+    """1シンボルタイルを描画"""
+    col_rgb, lbl = _RZ_SYMS[si % _RZ_SN]
+    dc.rectangle([x0+2, y0+1, x0+TW-2, y0+TH-2], fill=col_rgb)
+    dc.rectangle([x0+2, y0+1, x0+TW-2, y0+TH-2], outline=(255,255,255), width=2)
+    try:
+        from PIL import ImageFont
+        fnt = ImageFont.load_default()
+        bb = dc.textbbox((0,0), lbl, font=fnt)
+        tw2, th2 = bb[2]-bb[0], bb[3]-bb[1]
+        dc.text((x0+(TW-tw2)//2, y0+(TH-th2)//2), lbl, fill=(255,255,255), font=fnt)
+    except: pass
+
+def _rz_build_gif(stopped_cols: list, stopped_syms: dict,
+                  frame_n: int = 20, speed: int = 4) -> bytes:
+    """
+    汎用リールGIF生成。
+    stopped_cols: 停止済み列インデックスのリスト (0=左,1=中,2=右)
+    stopped_syms: {列インデックス: 中段シンボルインデックス}
+    """
     try:
         from PIL import Image, ImageDraw
     except ImportError: return b""
     import io as _io
-    TW,TH=142,55; PAD=5; W=TW*3+PAD*2; H=TH*3
-    SYMBOLS=[
-        ((208,162,0),  "BELL"),
-        ((0,148,188),  "REP"),
-        ((155,0,0),    "弱CY"),
-        ((198,0,0),    "強CY"),
-        ((0,128,22),   "西瓜"),
-        ((12,12,18),   "---"),
-        ((80,50,130),  "REM"),
-        ((180,120,50), "BAR"),
-    ]
-    N=len(SYMBOLS); FRAME_N=12; SPEED=6
-
-    def draw_reel_frame(f_idx):
-        cv=Image.new("RGB",(W,H),(10,10,20))
-        dc=ImageDraw.Draw(cv)
+    TW, TH = 142, 55; PAD = 5; W = TW*3 + PAD*2; H = TH*3
+    frames = []
+    for fi in range(frame_n):
+        cv = Image.new("RGB", (W, H), (10,10,20))
+        dc = ImageDraw.Draw(cv)
         for col in range(3):
-            x0=col*(TW+PAD)
-            spd=SPEED+col  # 列ごとに速度差
-            offset=(f_idx*spd + col*TH*3) % (TH*N)
-            sym_top=offset//TH; y_frac=offset%TH
-            for row in range(-1,4):
-                si=(sym_top+row)%N
-                col_rgb,lbl=SYMBOLS[si]
-                y0=row*TH-y_frac
-                dc.rectangle([x0,y0,x0+TW-1,y0+TH-1],fill=col_rgb)
-                dc.rectangle([x0,y0,x0+TW-1,y0+TH-1],outline=(230,230,255),width=2)
-                try:
-                    from PIL import ImageFont
-                    fnt=ImageFont.load_default()
-                    bb=dc.textbbox((0,0),lbl,font=fnt)
-                    tw2,th2=bb[2]-bb[0],bb[3]-bb[1]
-                    dc.text((x0+(TW-tw2)//2,y0+(TH-th2)//2),lbl,fill=(255,255,255),font=fnt)
-                except: pass
-            # 窓の上下を黒でマスク
-            dc.rectangle([x0,-TH,x0+TW-1,0],fill=(10,10,20))
-            dc.rectangle([x0,H,x0+TW-1,H+TH],fill=(10,10,20))
+            x0 = col * (TW + PAD)
+            if col in stopped_cols:
+                # ── 停止列: 上中下を固定表示 ──
+                si = stopped_syms.get(col, 0)
+                _rz_draw_tile(dc, x0, 0,    (si-1) % _RZ_SN, TW, TH)
+                _rz_draw_tile(dc, x0, TH,    si    % _RZ_SN, TW, TH)
+                _rz_draw_tile(dc, x0, TH*2, (si+1) % _RZ_SN, TW, TH)
+            else:
+                # ── 回転列: スムーズスクロール ──
+                spd = speed + col
+                offset = (fi * spd + col * TH * 3) % (TH * _RZ_SN)
+                top = offset // TH; frac = offset % TH
+                for row in range(-1, 4):
+                    _rz_draw_tile(dc, x0, row*TH - frac, (top+row) % _RZ_SN, TW, TH)
+                # 窓の上下をマスク
+                dc.rectangle([x0, -TH*2, x0+TW, -1],  fill=(10,10,20))
+                dc.rectangle([x0, H,     x0+TW, H+TH*2], fill=(10,10,20))
         # 入賞ライン
-        dc.line([(0,TH-1),(W,TH-1)],fill=(255,220,0),width=3)
-        dc.line([(0,TH*2),(W,TH*2)],fill=(255,220,0),width=3)
-        return cv
-
-    frames=[draw_reel_frame(i) for i in range(FRAME_N)]
-    buf=_io.BytesIO()
-    frames[0].save(buf,format="GIF",save_all=True,append_images=frames[1:],
-                   duration=60,loop=0,optimize=False)
+        dc.line([(0, TH),     (W, TH)],     fill=(255,220,0), width=3)
+        dc.line([(0, TH*2-1), (W, TH*2-1)], fill=(255,220,0), width=3)
+        frames.append(cv)
+    buf = _io.BytesIO()
+    frames[0].save(buf, format="GIF", save_all=True,
+                   append_images=frames[1:], duration=50, loop=0, optimize=False)
     return buf.getvalue()
+
+def _rz_make_spin_screen() -> bytes:
+    """全列回転GIF（レバー直後）"""
+    return _rz_build_gif([], {})
 
 
 # ── シンボル画像キャッシュ（TW×TH） ──────────────────────────────────────
@@ -10626,91 +10649,64 @@ async def _rz_get_sym_tile(sym: str, tw: int, th: int) -> bytes | None:
     except Exception as e:
         print(f"[rezero] sym tile失敗 {sym}: {e}"); return None
 
-async def _rz_make_reel_async(flag: str) -> bytes | None:
-    """シンボル画像を使ったリール停止画像（非同期）"""
-    try:
-        from PIL import Image, ImageDraw
-        import io as _io
-    except ImportError: return None
-    TW,TH=142,55; PAD=5; W=TW*3+PAD*2; H=TH*3
-    STRIP=["BELL","REPLAY","WCHERRY","BLANK","SUIKA","SCHERRY","BLANK",
-           "REPLAY","BELL","SUIKA","WCHERRY","BLANK","BELL","REPLAY",
-           "SCHERRY","BLANK","SUIKA","BELL","WCHERRY","BLANK","REPLAY"]
-    SBUF={
-        "BELL":   ((208,162,0),  "BELL",  (10,10,10)),
-        "REPLAY": ((0,148,188),  "REP",   (255,255,255)),
-        "WCHERRY":((155,0,0),    "弱",    (252,212,212)),
-        "SCHERRY":((198,0,0),    "強",    (252,252,0)),
-        "SUIKA":  ((0,128,22),   "SUIKA", (255,255,255)),
-        "BLANK":  ((12,12,18),   "---",   (58,58,78)),
-    }
-    # シンボル画像を事前取得
-    sym_imgs: dict[str, bytes | None] = {}
-    for sym in set(STRIP):
-        sym_imgs[sym] = await _rz_get_sym_tile(sym, TW, TH)
-
-    def tile(sym) -> Image.Image:
-        raw = sym_imgs.get(sym)
-        if raw:
-            try:
-                return Image.open(_io.BytesIO(raw)).convert("RGB")
-            except: pass
-        # フォールバック: 色付きブロック
-        bg,lbl,tc = SBUF.get(sym,((40,40,60),"??",(255,255,255)))
-        t = Image.new("RGB",(TW,TH),bg); d = ImageDraw.Draw(t)
-        d.rectangle([0,0,TW-1,TH-1],outline=(220,220,255),width=2)
-        try:
-            f=_rz_font(18); bb=d.textbbox((0,0),lbl,font=f)
-            tw2,th2=bb[2]-bb[0],bb[3]-bb[1]
-            d.text(((TW-tw2)//2,(TH-th2)//2),lbl,fill=tc,font=f)
-        except: pass
-        return t
-
-    n=len(STRIP)
-    cands=[i for i,s in enumerate(STRIP) if s==flag]
-    if not cands: cands=list(range(n))
-    cv=Image.new("RGB",(W,H),(14,14,21)); dc=ImageDraw.Draw(cv)
-    for col in range(3):
-        x0=col*(TW+PAD)
-        idx=_rz_rand.choice(cands) if col==1 else _rz_rand.randrange(n)
-        for row,sym in enumerate([STRIP[(idx-1)%n],STRIP[idx],STRIP[(idx+1)%n]]):
-            cv.paste(tile(sym),(x0,row*TH))
-    dc.line([(0,TH-1),(W,TH-1)],fill=(252,215,0),width=3)
-    dc.line([(0,TH*2),(W,TH*2)],fill=(252,215,0),width=3)
-    buf=_io.BytesIO(); cv.save(buf,"PNG")
-    return await _rz_composite(buf.getvalue())
-
-async def _rz_make_spin_async() -> bytes | None:
-    """回転アニメGIF（台枠に合成済み）"""
+async def _rz_gif_composite(gif_raw: bytes) -> bytes | None:
+    """GIFの各フレームに台枠を合成して返す"""
     try:
         from PIL import Image
         import io as _io
-        raw=_rz_make_spin_screen()
-        if not raw: return await _rz_composite(None)
-        # フレームごとに台枠合成してGIF再構築
-        frame_img=Image.open(_io.BytesIO(raw))
-        frame_bytes=await _rzget("rz_machine_frame.png")
-        if not frame_bytes: return raw
-        frame_base=Image.open(_io.BytesIO(frame_bytes)).convert("RGBA")
-        composited=[]
+        frame_bytes = await _rzget("rz_machine_frame.png")
+        if not frame_bytes: return gif_raw
+        frame_base = Image.open(_io.BytesIO(frame_bytes)).convert("RGBA")
+        src = Image.open(_io.BytesIO(gif_raw))
+        composited = []
         try:
             while True:
-                reel=frame_img.convert("RGBA"); RW,RH=reel.size; cw=RW//3
-                fr=frame_base.copy()
-                for i,(wx0,wy0,wx1,wy1) in enumerate(RZ_FRAME_WINDOWS):
-                    col=reel.crop((i*cw,0,(i+1)*cw,RH)).resize((wx1-wx0,wy1-wy0),Image.LANCZOS)
-                    fr.paste(col,(wx0,wy0))
-                composited.append(fr.convert("P",palette=Image.ADAPTIVE,colors=256))
-                frame_img.seek(frame_img.tell()+1)
+                reel = src.convert("RGBA"); RW, RH = reel.size; cw = RW // 3
+                fr = frame_base.copy()
+                for i, (wx0,wy0,wx1,wy1) in enumerate(RZ_FRAME_WINDOWS):
+                    col = reel.crop((i*cw, 0, (i+1)*cw, RH)).resize(
+                            (wx1-wx0, wy1-wy0), Image.LANCZOS)
+                    fr.paste(col, (wx0, wy0))
+                composited.append(fr.convert("P", palette=Image.ADAPTIVE, colors=128))
+                src.seek(src.tell() + 1)
         except EOFError: pass
-        if not composited: return await _rz_composite(None)
-        buf=_io.BytesIO()
-        composited[0].save(buf,format="GIF",save_all=True,append_images=composited[1:],
-                           duration=60,loop=0,optimize=False)
+        if not composited: return None
+        buf = _io.BytesIO()
+        composited[0].save(buf, format="GIF", save_all=True,
+                           append_images=composited[1:], duration=50, loop=0)
         return buf.getvalue()
     except Exception as e:
-        print(f"[rezero] spin_async失敗: {e}")
-        return await _rz_composite(None)
+        print(f"[rezero] gif_composite失敗: {e}"); return None
+
+async def _rz_make_spin_async(stopped_cols: list = None,
+                               stopped_syms: dict = None) -> bytes | None:
+    """リールGIF生成（台枠合成済み）
+    stopped_cols/stopped_syms が指定された場合は部分停止GIF、
+    なければ全列回転GIF。
+    """
+    if stopped_cols is None: stopped_cols = []
+    if stopped_syms is None: stopped_syms = {}
+    raw = await asyncio.get_running_loop().run_in_executor(
+        None, _rz_build_gif, stopped_cols, stopped_syms)
+    if not raw: return None
+    return await _rz_gif_composite(raw)
+
+async def _rz_make_reel_async(flag: str) -> bytes | None:
+    """全列停止の結果画像（静止GIF）を生成"""
+    # flagからシンボルインデックスを決める
+    FLAG_SYM = {
+        "BELL":"BELL","REPLAY":"REP","WCHERRY":"弱CY","SCHERRY":"強CY",
+        "SUIKA":"西瓜","BAR":"BAR","REM":"REM","BEATRICE":"REP",
+        "EMILIA":"REP","BLUE7":"BLUE7","RED7":"RED7",
+    }
+    lbl = FLAG_SYM.get(flag, "---")
+    # _RZ_SYMS からラベルに対応するインデックスを探す
+    si = next((i for i,(c,l) in enumerate(_RZ_SYMS) if l==lbl), 0)
+    # 全列停止・1フレームだけで静止画GIF
+    raw = await asyncio.get_running_loop().run_in_executor(
+        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1)
+    if not raw: return None
+    return await _rz_gif_composite(raw)
 
 
 async def _rzget(fn: str) -> bytes | None:
@@ -10904,11 +10900,13 @@ def _rz_attext(sess, extra=""):
     return "\n".join(lines)
 
 # ── 画像メッセージ更新（ctrl_msgとは別） ─────────────────
-async def _rz_update_img(sess, content, img_data=None, img_name="rz.png", view=None):
-    """画像メッセージを更新する（img_msgに画像+テキストを反映）"""
+def _rz_file(img_data:bytes, img_name:str) -> discord.File:
+    return discord.File(_rz_io.BytesIO(img_data), filename=img_name)
+
+async def _rz_update_header(sess):
+    """ヘッダーのフェーズ表示を更新"""
     thread=bot.get_channel(sess["thread_id"])
     if not thread: return
-    # ヘッダー更新（phase表示）
     phase_label={"idle":"","spinning":"回転中","hakugei_prep":"準備中",
                  "hakugei_challenge":"チャレンジ","hakugei_battle":f"第{sess.get('battle_num',1)}戦",
                  "onedari":"おねだり","at":"ゼロからっしゅ"}.get(sess["phase"],"")
@@ -10917,33 +10915,24 @@ async def _rz_update_img(sess, content, img_data=None, img_name="rz.png", view=N
         hm=await thread.fetch_message(sess["header_msg_id"])
         await hm.edit(content=f"🎰 **{sess.get('machine_name','re:ゼロ')}** {phase_label}{oni}")
     except: pass
-    # img_msg 更新
+
+async def _rz_update_img(sess, content, img_data=None, img_name="rz.png", view=None):
+    """ctrl_msg を画像+テキスト+Viewで更新（非インタラクション時）"""
+    thread=bot.get_channel(sess["thread_id"])
+    if not thread: return
+    await _rz_update_header(sess)
     try:
-        kwargs={"content":content}
-        if img_data: kwargs["files"]=[discord.File(_rz_io.BytesIO(img_data),filename=img_name)]
-        if view is not None: kwargs["view"]=view
-        if not sess.get("img_msg_id"):
-            im=await thread.send(**kwargs)
-            sess["img_msg_id"]=im.id
+        cm=await thread.fetch_message(sess["ctrl_msg_id"])
+        edit_kw={"content":content}
+        if img_data:
+            edit_kw["attachments"]=[_rz_file(img_data,img_name)]
         else:
-            im=await thread.fetch_message(sess["img_msg_id"])
-            if img_data:
-                # discord.py 2.3+: files= パラメータ対応
-                # それ以前: attachments=[]でクリアして別メッセージ送信
-                try:
-                    await im.edit(content=content,
-                                  attachments=[],
-                                  files=[discord.File(_rz_io.BytesIO(img_data),filename=img_name)])
-                except (TypeError, discord.HTTPException):
-                    # filesが使えない場合: 削除→再送信（位置はずれるが確実）
-                    await im.delete()
-                    im=await thread.send(content=content,files=[discord.File(_rz_io.BytesIO(img_data),filename=img_name)])
-                    sess["img_msg_id"]=im.id
-            else:
-                await im.edit(content=content,attachments=[])
+            edit_kw["attachments"]=[]
+        if view is not None: edit_kw["view"]=view
+        await cm.edit(**edit_kw)
     except Exception as e:
         import traceback; traceback.print_exc()
-        print(f"[rezero] img更新失敗({type(e).__name__}): {e}")
+        print(f"[rezero] ctrl更新失敗({type(e).__name__}): {e}")
 
 # ── タイムアウト・終了 ─────────────────────────────────────
 async def _rz_timeout(uid):
@@ -11018,96 +11007,123 @@ class RezeroIdleView(discord.ui.View):
 
         sess["flag"]=_rz_roll(sess["setting"])
         sess["total_games"]+=1; sess["games_since_at"]+=1
-        sess["phase"]="spinning"; sess["stop_count"]=0
+        sess["phase"]="spinning"
+        sess["stopped_cols"]=[]   # 停止済み列
+        sess["stopped_syms"]={}   # {列: 中段シンボルインデックス}
 
-        # 回転中画像を生成
-        spin_img=await _rz_make_spin_async()
-        # interaction で ctrl_msg（ボタン付き）を即座に更新
-        await interaction.response.edit_message(
-            content="🎰 **== 回 転 中 ==**\n\nSTOP ボタンを押すのだ！",
-            view=RezeroSpinView(self.uid))
-        # img_msg を回転中画像で更新
-        await _rz_update_img(sess,_rz_gtext(sess,"🎰 回転中..."),spin_img,"spin.gif")
+        # 全列回転GIFを生成してinteractionで直接ctrl_msgに添付
+        spin_img=await _rz_make_spin_async([],{})
+        edit_kw={
+            "content": "🎰 **== 回 転 中 ==**\n\nSTOP ボタンを押すのだ！",
+            "view": RezeroSpinView(self.uid),
+        }
+        if spin_img: edit_kw["attachments"]=[_rz_file(spin_img,"spin.gif")]
+        await interaction.response.edit_message(**edit_kw)
+        await _rz_update_header(sess)
 
     @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_idle")
     async def quit_game(self,i,b): await i.response.defer(); await _rz_quit(self.uid)
 
 
 class RezeroSpinView(discord.ui.View):
-    """回転中（左・中・右 を3回止める。状態はsessで管理）"""
-    def __init__(self,uid):
-        super().__init__(timeout=300); self.uid=uid
-        sess=rezero_sessions.get(uid)
-        sc=sess.get("stop_count",0) if sess else 0
+    """回転中（左・中・右 を個別に止める）"""
+    def __init__(self, uid):
+        super().__init__(timeout=300); self.uid = uid
+        sess = rezero_sessions.get(uid)
+        stopped = sess.get("stopped_cols", []) if sess else []
+        col_map = {"rz:stop_l": 0, "rz:stop_c": 1, "rz:stop_r": 2}
         for item in self.children:
-            cid=getattr(item,"custom_id","")
-            if sc>=1 and cid=="rz:stop_l": item.disabled=True
-            if sc>=2 and cid=="rz:stop_c": item.disabled=True
+            cid = getattr(item, "custom_id", "")
+            if col_map.get(cid) in stopped:
+                item.disabled = True
     async def on_timeout(self): await _rz_timeout(self.uid)
-    async def interaction_check(self,i):
-        if i.user.id!=self.uid:
-            await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
+    async def interaction_check(self, i):
+        if i.user.id != self.uid:
+            await i.response.send_message("これはあなたのゲームではないのだ", ephemeral=True); return False
         return True
 
-    async def _press_stop(self,interaction:discord.Interaction):
-        sess=rezero_sessions.get(self.uid)
-        if not sess or sess.get("phase")!="spinning":
+    async def _press_stop(self, interaction: discord.Interaction, col_idx: int):
+        """col_idx: 0=左, 1=中, 2=右"""
+        sess = rezero_sessions.get(self.uid)
+        if not sess or sess.get("phase") != "spinning":
             return await interaction.response.defer()
-        sc=sess.get("stop_count",0)+1
-        sess["stop_count"]=sc
 
-        if sc<3:
-            stopped="⬛"*sc; remain="🟥"*(3-sc)
-            await interaction.response.edit_message(
-                content=f"🎰 **== 回 転 中 ==**\n{stopped}{remain} 残り{3-sc}回 STOP！",
-                view=RezeroSpinView(self.uid))
+        stopped_cols: list = sess.setdefault("stopped_cols", [])
+        stopped_syms: dict = sess.setdefault("stopped_syms", {})
+
+        # すでに押した列は無視
+        if col_idx in stopped_cols:
+            return await interaction.response.defer()
+
+        # この列のシンボルをランダムに決定
+        si = _rz_rand.randrange(_RZ_SN)
+        stopped_cols.append(col_idx)
+        stopped_syms[col_idx] = si
+
+        all_stopped = (len(stopped_cols) == 3)
+
+        if not all_stopped:
+            # まだ残りの列がある → GIFを更新してボタンを更新
+            remain = 3 - len(stopped_cols)
+            mid_gif = await _rz_make_spin_async(stopped_cols, stopped_syms)
+            edit_kw = {
+                "content": f"🎰 **== 回 転 中 ==**\n残り {remain} 列",
+                "view": RezeroSpinView(self.uid),
+            }
+            if mid_gif: edit_kw["attachments"] = [_rz_file(mid_gif, "reel.gif")]
+            await interaction.response.edit_message(**edit_kw)
             return
 
-        # 3回止まった → 判定
-        sess["stop_count"]=0
-        sess["phase"]="idle"
-        flag=sess["flag"]
-        payout=REZERO_PAY.get(flag,0); pts=REZERO_PT.get(flag,1)
-        if flag=="REPLAY": sess["replay"]=True
-        else: sess["credit"]+=payout
-        sess["points"]+=pts
+        # ── 全列停止 → 判定 ──────────────────────────────────────────
+        sess["phase"] = "idle"
+        flag = sess["flag"]
+        payout = REZERO_PAY.get(flag, 0); pts = REZERO_PT.get(flag, 1)
+        if flag == "REPLAY": sess["replay"] = True
+        else: sess["credit"] += payout
+        sess["points"] += pts
+        sess["stopped_cols"] = []; sess["stopped_syms"] = {}
 
-        role_msg=FLAG_LBL.get(flag,"")
-        if payout>0: role_msg+=f" **+{payout}枚**"
-        pt_msg=f"✨ **+{pts}pt** → {sess['points']}/{REZERO_PT_MAX}pt"
+        role_msg = FLAG_LBL.get(flag, "")
+        if payout > 0: role_msg += f" **+{payout}枚**"
+        pt_msg = f"✨ **+{pts}pt** → {sess['points']}/{REZERO_PT_MAX}pt"
+        result_text = _rz_gtext(sess, f"{role_msg}\n{pt_msg}")
 
-        if sess["points"]>=REZERO_PT_MAX:
-            await interaction.response.edit_message(
-                content=f"⚔️ **白鯨攻略戦 突入！！**\n{role_msg}\n{pt_msg}",
-                view=None)
+        # 全列固定GIF（1フレーム静止画として表示）
+        reel_img = await _rz_make_reel_async(flag)
+
+        if sess["points"] >= REZERO_PT_MAX:
+            edit_kw = {"content": f"⚔️ **白鯨攻略戦 突入！！**\n{role_msg}\n{pt_msg}", "view": None}
         else:
-            await interaction.response.edit_message(
-                content=_rz_gtext(sess,f"{role_msg}\n{pt_msg}"),
-                view=RezeroIdleView(self.uid))
+            edit_kw = {"content": result_text, "view": RezeroIdleView(self.uid)}
+        if reel_img: edit_kw["attachments"] = [_rz_file(reel_img, "reel.gif")]
+        await interaction.response.edit_message(**edit_kw)
+        await _rz_update_header(sess)
 
-        reel_img=await _rz_make_reel_async(flag)
-        await _rz_update_img(sess,_rz_gtext(sess,f"{role_msg}\n{pt_msg}"),reel_img,"reel.png")
-
-        if sess["points"]>=REZERO_PT_MAX:
-            sess["points"]=0
-            sess["icon_color"]=_rz_roll_icon(sess["setting"])
-            base=REZERO_BASE_RATE.get(sess["setting"],50); up=_rz_icon_up(sess["icon_color"])
-            sess["base_rate"]=base; sess["final_rate"]=min(95,base+up)
-            sess["hakugei_stocks"]=0; sess["bell_count"]=0; sess["battle_num"]=0; sess["battles_won"]=0
+        if sess["points"] >= REZERO_PT_MAX:
+            sess["points"] = 0
+            sess["icon_color"] = _rz_roll_icon(sess["setting"])
+            base = REZERO_BASE_RATE.get(sess["setting"], 50)
+            up = _rz_icon_up(sess["icon_color"])
+            sess["base_rate"] = base; sess["final_rate"] = min(95, base+up)
+            sess["hakugei_stocks"] = 0; sess["bell_count"] = 0
+            sess["battle_num"] = 0; sess["battles_won"] = 0
             await asyncio.sleep(1.5)
-            await _rz_start_prep(self.uid,interaction)
+            await _rz_start_prep(self.uid, interaction)
 
-    @discord.ui.button(label="⬛ 左",style=discord.ButtonStyle.danger,custom_id="rz:stop_l",row=0)
-    async def stop_l(self,interaction,b): await self._press_stop(interaction)
+    @discord.ui.button(label="⬛ 左", style=discord.ButtonStyle.danger, custom_id="rz:stop_l", row=0)
+    async def stop_l(self, interaction, b):
+        await self._press_stop(interaction, 0)
 
-    @discord.ui.button(label="⬛ 中",style=discord.ButtonStyle.danger,custom_id="rz:stop_c",row=0)
-    async def stop_c(self,interaction,b): await self._press_stop(interaction)
+    @discord.ui.button(label="⬛ 中", style=discord.ButtonStyle.danger, custom_id="rz:stop_c", row=0)
+    async def stop_c(self, interaction, b):
+        await self._press_stop(interaction, 1)
 
-    @discord.ui.button(label="⬛ 右",style=discord.ButtonStyle.danger,custom_id="rz:stop_r",row=0)
-    async def stop_r(self,interaction,b): await self._press_stop(interaction)
+    @discord.ui.button(label="⬛ 右", style=discord.ButtonStyle.danger, custom_id="rz:stop_r", row=0)
+    async def stop_r(self, interaction, b):
+        await self._press_stop(interaction, 2)
 
-    @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_spin",row=1)
-    async def quit_game(self,i,b): await i.response.defer(); await _rz_quit(self.uid)
+    @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary, custom_id="rz:quit_spin", row=1)
+    async def quit_game(self, i, b): await i.response.defer(); await _rz_quit(self.uid)
 
 
 async def _rz_start_prep(uid,orig_interaction=None):
@@ -11502,10 +11518,11 @@ class RezeroInsertBtn(discord.ui.Button):
         sess=_new_rz(uid=uid,mid=self.machine["id"],setting=self.machine["setting"],credit=self.amount)
         sess["machine_name"]=self.machine["name"]; sess["thread_id"]=thread.id; rezero_sessions[uid]=sess
         hm=await thread.send(content=f"🎰 **{self.machine['name']}**"); sess["header_msg_id"]=hm.id
+        # ctrl_msg に初期画像（台枠）とボタンを一緒に送信
         frame_img=await _rz_composite(None)
-        im=await thread.send(content=_rz_gtext(sess),files=[_rzf(frame_img,"rz_normal.png")] if frame_img else [])
-        sess["img_msg_id"]=im.id
-        cm=await thread.send(content="▼ レバーを引いてゲームを始めるのだ！",view=RezeroIdleView(uid))
+        cm_files=[_rzf(frame_img,"rz_normal.png")] if frame_img else []
+        cm=await thread.send(content=_rz_gtext(sess)+"\n▼ レバーを引いてゲームを始めるのだ！",
+                             files=cm_files, view=RezeroIdleView(uid))
         sess["ctrl_msg_id"]=cm.id
         await interaction.edit_original_response(content=f"✅ **{self.machine['name']}** スレッドを開いたのだ！")
 
@@ -11609,6 +11626,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
