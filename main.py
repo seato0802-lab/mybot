@@ -10574,6 +10574,104 @@ def _rz_make_spin_screen() -> bytes:
     buf=_io.BytesIO(); cv.save(buf,"PNG"); return buf.getvalue()
 
 
+# ── シンボル画像キャッシュ（TW×TH） ──────────────────────────────────────
+_rz_sym_cache: dict[str,bytes] = {}
+
+SYM_FILENAMES = {
+    "BELL":    "sym_BELL.png",
+    "WCHERRY": "sym_WCHERRY.png",
+    "SUIKA":   "sym_SUIKA.png",
+    "SCHERRY": "sym_SCHERRY.png",
+    "BAR":     "sym_BAR.png",
+    "REM":     "sym_REM.png",
+    "BEATRICE":"sym_BEATRICE.png",
+    "EMILIA":  "sym_EMILIA.png",
+    "BLUE7":   "sym_BLUE7.png",
+    "RED7":    "sym_RED7.png",
+}
+
+async def _rz_get_sym_tile(sym: str, tw: int, th: int) -> bytes | None:
+    """シンボル画像をTW×THにリサイズして返す（キャッシュあり）"""
+    key = f"{sym}_{tw}x{th}"
+    if key in _rz_sym_cache: return _rz_sym_cache[key]
+    fn = SYM_FILENAMES.get(sym)
+    if not fn: return None
+    raw = await _rzget(fn)
+    if not raw: return None
+    try:
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(raw)).convert("RGBA")
+        img = img.resize((tw, th), Image.LANCZOS)
+        bg = Image.new("RGB", (tw, th), (20, 20, 35))
+        bg.paste(img, mask=img.split()[3])
+        buf = _io.BytesIO(); bg.save(buf, "PNG")
+        data = buf.getvalue()
+        _rz_sym_cache[key] = data
+        return data
+    except Exception as e:
+        print(f"[rezero] sym tile失敗 {sym}: {e}"); return None
+
+async def _rz_make_reel_async(flag: str) -> bytes | None:
+    """シンボル画像を使ったリール停止画像（非同期）"""
+    try:
+        from PIL import Image, ImageDraw
+        import io as _io
+    except ImportError: return None
+    TW,TH=142,55; PAD=5; W=TW*3+PAD*2; H=TH*3
+    STRIP=["BELL","REPLAY","WCHERRY","BLANK","SUIKA","SCHERRY","BLANK",
+           "REPLAY","BELL","SUIKA","WCHERRY","BLANK","BELL","REPLAY",
+           "SCHERRY","BLANK","SUIKA","BELL","WCHERRY","BLANK","REPLAY"]
+    SBUF={
+        "BELL":   ((208,162,0),  "BELL",  (10,10,10)),
+        "REPLAY": ((0,148,188),  "REP",   (255,255,255)),
+        "WCHERRY":((155,0,0),    "弱",    (252,212,212)),
+        "SCHERRY":((198,0,0),    "強",    (252,252,0)),
+        "SUIKA":  ((0,128,22),   "SUIKA", (255,255,255)),
+        "BLANK":  ((12,12,18),   "---",   (58,58,78)),
+    }
+    # シンボル画像を事前取得
+    sym_imgs: dict[str, bytes | None] = {}
+    for sym in set(STRIP):
+        sym_imgs[sym] = await _rz_get_sym_tile(sym, TW, TH)
+
+    def tile(sym) -> Image.Image:
+        raw = sym_imgs.get(sym)
+        if raw:
+            try:
+                return Image.open(_io.BytesIO(raw)).convert("RGB")
+            except: pass
+        # フォールバック: 色付きブロック
+        bg,lbl,tc = SBUF.get(sym,((40,40,60),"??",(255,255,255)))
+        t = Image.new("RGB",(TW,TH),bg); d = ImageDraw.Draw(t)
+        d.rectangle([0,0,TW-1,TH-1],outline=(220,220,255),width=2)
+        try:
+            f=_rz_font(18); bb=d.textbbox((0,0),lbl,font=f)
+            tw2,th2=bb[2]-bb[0],bb[3]-bb[1]
+            d.text(((TW-tw2)//2,(TH-th2)//2),lbl,fill=tc,font=f)
+        except: pass
+        return t
+
+    n=len(STRIP)
+    cands=[i for i,s in enumerate(STRIP) if s==flag]
+    if not cands: cands=list(range(n))
+    cv=Image.new("RGB",(W,H),(14,14,21)); dc=ImageDraw.Draw(cv)
+    for col in range(3):
+        x0=col*(TW+PAD)
+        idx=_rz_rand.choice(cands) if col==1 else _rz_rand.randrange(n)
+        for row,sym in enumerate([STRIP[(idx-1)%n],STRIP[idx],STRIP[(idx+1)%n]]):
+            cv.paste(tile(sym),(x0,row*TH))
+    dc.line([(0,TH-1),(W,TH-1)],fill=(252,215,0),width=3)
+    dc.line([(0,TH*2),(W,TH*2)],fill=(252,215,0),width=3)
+    buf=_io.BytesIO(); cv.save(buf,"PNG")
+    return await _rz_composite(buf.getvalue())
+
+async def _rz_make_spin_async() -> bytes | None:
+    """回転中画像（台枠に合成済み）"""
+    raw = _rz_make_spin_screen()
+    return await _rz_composite(raw) if raw else await _rz_composite(None)
+
+
 async def _rzget(fn: str) -> bytes | None:
     if fn in _rz_cache: return _rz_cache[fn]
     url=REZERO_ASSET_URLS.get(fn,"LOCAL")
@@ -10777,21 +10875,22 @@ async def _rz_update_img(sess, content, img_data=None, img_name="rz.png"):
         hm=await thread.fetch_message(sess["header_msg_id"])
         await hm.edit(content=f"🎰 **{sess.get('machine_name','re:ゼロ')}** {phase_label}{oni}")
     except: pass
-    # 画像更新（削除→再送信方式で確実に画像を表示）
+    # 画像更新（attachments=で確実に差し替え）
     try:
-        files=[_rzf(img_data,img_name)] if img_data else []
-        # 既存メッセージを削除して新規送信
+        if img_data:
+            f_obj=discord.File(_rz_io.BytesIO(img_data),filename=img_name)
         if sess.get("img_msg_id"):
-            try:
-                im=await thread.fetch_message(sess["img_msg_id"])
-                await im.delete()
-            except: pass
-            sess["img_msg_id"]=None
-        if files:
-            im=await thread.send(content=content,files=files)
+            im=await thread.fetch_message(sess["img_msg_id"])
+            if img_data:
+                await im.edit(content=content,attachments=[f_obj])
+            else:
+                await im.edit(content=content,attachments=[])
         else:
-            im=await thread.send(content=content)
-        sess["img_msg_id"]=im.id
+            if img_data:
+                im=await thread.send(content=content,files=[_rzf(img_data,img_name)])
+            else:
+                im=await thread.send(content=content)
+            sess["img_msg_id"]=im.id
     except Exception as e:
         import traceback; traceback.print_exc()
         print(f"[rezero] img更新失敗: {e}")
@@ -10869,58 +10968,53 @@ class RezeroIdleView(discord.ui.View):
 
         sess["flag"]=_rz_roll(sess["setting"])
         sess["total_games"]+=1; sess["games_since_at"]+=1
-        sess["phase"]="spinning"
+        sess["phase"]="spinning"; sess["stop_count"]=0
 
         # ★ STOPビューを即座に表示（interaction.response で直接編集）
         await interaction.response.edit_message(
             content="🎰 **== 回 転 中 ==**\n\nSTOP ボタンを押すのだ！",
             view=RezeroSpinView(self.uid))
         # 回転中画像を非同期で更新
-        spin_raw=await asyncio.get_running_loop().run_in_executor(None,_rz_make_spin_screen)
-        spin_img=await _rz_composite(spin_raw) if spin_raw else await _rz_composite(None)
-        if spin_img:
-            await _rz_update_img(sess,_rz_gtext(sess,"🎰 回転中..."),spin_img,"spin.png")
-        else:
-            print("[rezero] spin_img生成失敗")
+        spin_img=await _rz_make_spin_async()
+        await _rz_update_img(sess,_rz_gtext(sess,"🎰 回転中..."),spin_img,"spin.png")
 
     @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_idle")
     async def quit_game(self,i,b): await i.response.defer(); await _rz_quit(self.uid)
 
 
 class RezeroSpinView(discord.ui.View):
-    """回転中（左・中・右 を順番に3回止める）"""
-    def __init__(self,uid,stop_count=0):
-        super().__init__(timeout=300); self.uid=uid; self.stop_count=stop_count
-        self._lock=False
-        # 押し済みボタンを無効化
-        if stop_count>=1:
-            for item in self.children:
-                if getattr(item,"custom_id","")=="rz:stop_l": item.disabled=True
-        if stop_count>=2:
-            for item in self.children:
-                if getattr(item,"custom_id","")=="rz:stop_c": item.disabled=True
+    """回転中（左・中・右 を3回止める。状態はsessで管理）"""
+    def __init__(self,uid):
+        super().__init__(timeout=300); self.uid=uid
+        sess=rezero_sessions.get(uid)
+        sc=sess.get("stop_count",0) if sess else 0
+        for item in self.children:
+            cid=getattr(item,"custom_id","")
+            if sc>=1 and cid=="rz:stop_l": item.disabled=True
+            if sc>=2 and cid=="rz:stop_c": item.disabled=True
     async def on_timeout(self): await _rz_timeout(self.uid)
     async def interaction_check(self,i):
         if i.user.id!=self.uid:
             await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    async def _press_stop(self,interaction:discord.Interaction,col_idx:int):
+    async def _press_stop(self,interaction:discord.Interaction):
         sess=rezero_sessions.get(self.uid)
-        if not sess or sess["phase"]!="spinning" or self._lock:
+        if not sess or sess.get("phase")!="spinning":
             return await interaction.response.defer()
-        self._lock=True
-        self.stop_count+=1
+        sc=sess.get("stop_count",0)+1
+        sess["stop_count"]=sc
 
-        if self.stop_count<3:
-            # まだ止めていない列がある → ボタン更新して続行
-            new_view=RezeroSpinView(self.uid,self.stop_count)
+        if sc<3:
+            new_view=RezeroSpinView(self.uid)
+            stopped="⬛"*sc; remain="🟥"*(3-sc)
             await interaction.response.edit_message(
-                content=f"🎰 **== 回 転 中 ==**\n\n{'⬛'*self.stop_count}{'🟥'*(3-self.stop_count)} STOP！",
+                content=f"🎰 **== 回 転 中 ==**\n{stopped}{remain} 残り{3-sc}回 STOP！",
                 view=new_view)
             return
 
         # 3回止まった → 判定
+        sess["stop_count"]=0
         sess["phase"]="idle"
         flag=sess["flag"]
         payout=REZERO_PAY.get(flag,0); pts=REZERO_PT.get(flag,1)
@@ -10941,8 +11035,7 @@ class RezeroSpinView(discord.ui.View):
                 content=_rz_gtext(sess,f"{role_msg}\n{pt_msg}"),
                 view=RezeroIdleView(self.uid))
 
-        reel_raw=await asyncio.get_running_loop().run_in_executor(None,_rz_make_reel,flag)
-        reel_img=await _rz_composite(reel_raw)
+        reel_img=await _rz_make_reel_async(flag)
         await _rz_update_img(sess,_rz_gtext(sess,f"{role_msg}\n{pt_msg}"),reel_img,"reel.png")
 
         if sess["points"]>=REZERO_PT_MAX:
@@ -10955,13 +11048,13 @@ class RezeroSpinView(discord.ui.View):
             await _rz_start_prep(self.uid,interaction)
 
     @discord.ui.button(label="⬛ 左",style=discord.ButtonStyle.danger,custom_id="rz:stop_l",row=0)
-    async def stop_l(self,interaction,b): await self._press_stop(interaction,0)
+    async def stop_l(self,interaction,b): await self._press_stop(interaction)
 
     @discord.ui.button(label="⬛ 中",style=discord.ButtonStyle.danger,custom_id="rz:stop_c",row=0)
-    async def stop_c(self,interaction,b): await self._press_stop(interaction,1)
+    async def stop_c(self,interaction,b): await self._press_stop(interaction)
 
     @discord.ui.button(label="⬛ 右",style=discord.ButtonStyle.danger,custom_id="rz:stop_r",row=0)
-    async def stop_r(self,interaction,b): await self._press_stop(interaction,2)
+    async def stop_r(self,interaction,b): await self._press_stop(interaction)
 
     @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_spin",row=1)
     async def quit_game(self,i,b): await i.response.defer(); await _rz_quit(self.uid)
@@ -11466,6 +11559,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
