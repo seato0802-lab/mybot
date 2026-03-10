@@ -10655,7 +10655,9 @@ async def _rz_composite(reel_bytes: bytes | None = None, frame_bytes: bytes | No
         frame.save(buf, "PNG")
         return buf.getvalue()
     except Exception as e:
+        import traceback
         print(f"[rezero] フレーム合成失敗: {e}")
+        traceback.print_exc()
         return reel_bytes or bg_bytes
 
 
@@ -10775,22 +10777,23 @@ async def _rz_update_img(sess, content, img_data=None, img_name="rz.png"):
         hm=await thread.fetch_message(sess["header_msg_id"])
         await hm.edit(content=f"🎰 **{sess.get('machine_name','re:ゼロ')}** {phase_label}{oni}")
     except: pass
-    # 画像更新
+    # 画像更新（削除→再送信方式で確実に画像を表示）
     try:
         files=[_rzf(img_data,img_name)] if img_data else []
+        # 既存メッセージを削除して新規送信
         if sess.get("img_msg_id"):
-            im=await thread.fetch_message(sess["img_msg_id"])
-            if files:
-                await im.edit(content=content,attachments=[],files=files)
-            else:
-                await im.edit(content=content,attachments=[])
+            try:
+                im=await thread.fetch_message(sess["img_msg_id"])
+                await im.delete()
+            except: pass
+            sess["img_msg_id"]=None
+        if files:
+            im=await thread.send(content=content,files=files)
         else:
-            if files:
-                im=await thread.send(content=content,files=files)
-            else:
-                im=await thread.send(content=content)
-            sess["img_msg_id"]=im.id
+            im=await thread.send(content=content)
+        sess["img_msg_id"]=im.id
     except Exception as e:
+        import traceback; traceback.print_exc()
         print(f"[rezero] img更新失敗: {e}")
 
 # ── タイムアウト・終了 ─────────────────────────────────────
@@ -10874,29 +10877,51 @@ class RezeroIdleView(discord.ui.View):
             view=RezeroSpinView(self.uid))
         # 回転中画像を非同期で更新
         spin_raw=await asyncio.get_running_loop().run_in_executor(None,_rz_make_spin_screen)
-        spin_img=await _rz_composite(spin_raw)
-        await _rz_update_img(sess,_rz_gtext(sess,"🎰 回転中..."),spin_img,"spin.png")
+        spin_img=await _rz_composite(spin_raw) if spin_raw else await _rz_composite(None)
+        if spin_img:
+            await _rz_update_img(sess,_rz_gtext(sess,"🎰 回転中..."),spin_img,"spin.png")
+        else:
+            print("[rezero] spin_img生成失敗")
 
     @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_idle")
     async def quit_game(self,i,b): await i.response.defer(); await _rz_quit(self.uid)
 
 
 class RezeroSpinView(discord.ui.View):
-    """回転中（左・中・右 STOPボタン）"""
-    def __init__(self,uid): super().__init__(timeout=300); self.uid=uid; self._stopped=False
+    """回転中（左・中・右 を順番に3回止める）"""
+    def __init__(self,uid,stop_count=0):
+        super().__init__(timeout=300); self.uid=uid; self.stop_count=stop_count
+        self._lock=False
+        # 押し済みボタンを無効化
+        if stop_count>=1:
+            for item in self.children:
+                if getattr(item,"custom_id","")=="rz:stop_l": item.disabled=True
+        if stop_count>=2:
+            for item in self.children:
+                if getattr(item,"custom_id","")=="rz:stop_c": item.disabled=True
     async def on_timeout(self): await _rz_timeout(self.uid)
     async def interaction_check(self,i):
         if i.user.id!=self.uid:
             await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    async def _do_stop(self,interaction:discord.Interaction):
+    async def _press_stop(self,interaction:discord.Interaction,col_idx:int):
         sess=rezero_sessions.get(self.uid)
-        if not sess or sess["phase"]!="spinning" or self._stopped:
+        if not sess or sess["phase"]!="spinning" or self._lock:
             return await interaction.response.defer()
-        self._stopped=True
-        sess["phase"]="idle"
+        self._lock=True
+        self.stop_count+=1
 
+        if self.stop_count<3:
+            # まだ止めていない列がある → ボタン更新して続行
+            new_view=RezeroSpinView(self.uid,self.stop_count)
+            await interaction.response.edit_message(
+                content=f"🎰 **== 回 転 中 ==**\n\n{'⬛'*self.stop_count}{'🟥'*(3-self.stop_count)} STOP！",
+                view=new_view)
+            return
+
+        # 3回止まった → 判定
+        sess["phase"]="idle"
         flag=sess["flag"]
         payout=REZERO_PAY.get(flag,0); pts=REZERO_PT.get(flag,1)
         if flag=="REPLAY": sess["replay"]=True
@@ -10930,13 +10955,13 @@ class RezeroSpinView(discord.ui.View):
             await _rz_start_prep(self.uid,interaction)
 
     @discord.ui.button(label="⬛ 左",style=discord.ButtonStyle.danger,custom_id="rz:stop_l",row=0)
-    async def stop_l(self,interaction,b): await self._do_stop(interaction)
+    async def stop_l(self,interaction,b): await self._press_stop(interaction,0)
 
     @discord.ui.button(label="⬛ 中",style=discord.ButtonStyle.danger,custom_id="rz:stop_c",row=0)
-    async def stop_c(self,interaction,b): await self._do_stop(interaction)
+    async def stop_c(self,interaction,b): await self._press_stop(interaction,1)
 
     @discord.ui.button(label="⬛ 右",style=discord.ButtonStyle.danger,custom_id="rz:stop_r",row=0)
-    async def stop_r(self,interaction,b): await self._do_stop(interaction)
+    async def stop_r(self,interaction,b): await self._press_stop(interaction,2)
 
     @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_spin",row=1)
     async def quit_game(self,i,b): await i.response.defer(); await _rz_quit(self.uid)
@@ -11441,6 +11466,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
