@@ -11060,6 +11060,29 @@ class RezeroSpinView(discord.ui.View):
         stopped_syms[col_idx] = si
         all_stopped = (len(stopped_cols) == 3)
 
+        # 3列すべて止まったら、フラグに合った絵柄に揃える
+        if all_stopped:
+            _flag_to_si = {
+                "BELL":   0,  # BELL
+                "WCHERRY":1,  # 弱CY
+                "REPLAY": 3,  # REP
+                "SUIKA":  4,  # 西瓜
+                "SCHERRY":5,  # 強CY
+            }
+            f_si = _flag_to_si.get(sess["flag"])
+            if f_si is not None:
+                # 入賞役: 全列の中段を揃える（si がそのままセンターになる）
+                for c in [0, 1, 2]:
+                    stopped_syms[c] = f_si
+            else:
+                # BLANK: 中段が揃わないようにバラバラにする
+                candidates = list(range(_RZ_SN))
+                center = stopped_syms.get(0, 0) % _RZ_SN
+                for c in [1, 2]:
+                    # 前の列と被らない値を選ぶ
+                    choices = [x for x in candidates if x != center and x != stopped_syms.get(c-1, -1)]
+                    stopped_syms[c] = random.choice(choices) if choices else random.randrange(_RZ_SN)
+
         if not all_stopped:
             remain = 3 - len(stopped_cols)
             mid_gif = await _rz_make_spin_async(stopped_cols, stopped_syms)
@@ -11778,6 +11801,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
