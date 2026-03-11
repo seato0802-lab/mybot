@@ -10526,7 +10526,7 @@ def _rz_draw_tile(dc, x0, y0, si, TW, TH, canvas=None, sym_tiles=None):
 
 
 def _rz_build_gif(stopped_cols: list, stopped_syms: dict,
-                  frame_n: int = 20, speed: int = 4,
+                  frame_n: int = 20, speed: int = 28,
                   frame_base_bytes: bytes = None,
                   sym_tiles: dict = None) -> bytes:
     try:
@@ -10622,7 +10622,7 @@ async def _rz_make_spin_async(stopped_cols: list = None,
     sym_tiles = await _rz_fetch_sym_tiles()
     loop = asyncio.get_running_loop()
     raw = await loop.run_in_executor(
-        None, _rz_build_gif, stopped_cols, stopped_syms, 20, 4, frame_bytes, sym_tiles)
+        None, _rz_build_gif, stopped_cols, stopped_syms, 20, 28, frame_bytes, sym_tiles)
     return raw or None
 
 
@@ -11734,6 +11734,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
