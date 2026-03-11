@@ -11020,39 +11020,51 @@ class RezeroIdleView(discord.ui.View):
             await i.response.send_message("これはあなたのゲームではないのだ",ephemeral=True); return False
         return True
 
-    @discord.ui.button(label="🎰 レバーを引く！",style=discord.ButtonStyle.success,custom_id="rz:lever")
-    async def lever(self,interaction:discord.Interaction,b):
-        sess=rezero_sessions.get(self.uid)
-        if not sess or sess["phase"]!="idle":
-            return await interaction.response.send_message("今は操作できないのだ",ephemeral=True)
+    @discord.ui.button(label="🎰 レバーを引く！", style=discord.ButtonStyle.success, custom_id="rz:lever")
+    async def lever(self, interaction: discord.Interaction, b):
+        sess = rezero_sessions.get(self.uid)
+        if not sess or sess["phase"] != "idle":
+            return await interaction.response.send_message("今は操作できないのだ", ephemeral=True)
+
+        # ✅ 先にdeferして3秒タイムアウトを回避
+        await interaction.response.defer()
+
         if not sess.get("replay"):
-            if sess["credit"]<REZERO_BET:
-                await interaction.response.defer()
+            if sess["credit"] < REZERO_BET:
                 async with get_user_lock(self.uid):
-                    u=store.get_user(self.uid); coins=int(u.get("coins",0))
-                thread=bot.get_channel(sess["thread_id"])
+                    u = store.get_user(self.uid)
+                    coins = int(u.get("coins", 0))
+                thread = bot.get_channel(sess["thread_id"])
                 if thread:
                     await thread.send(
                         content=f"💸 クレジット不足（**{sess['credit']:,}枚**）\n💰 所持コイン：**{coins:,}枚**\n追加投入するのだ！",
-                        view=RezeroAddCreditView(uid=self.uid,coins=coins))
+                        view=RezeroAddCreditView(uid=self.uid, coins=coins))
                 return
-            sess["credit"]-=REZERO_BET
-        else: sess["replay"]=False
+            sess["credit"] -= REZERO_BET
+        else:
+            sess["replay"] = False
 
-        sess["flag"]=_rz_roll(sess["setting"])
-        sess["total_games"]+=1; sess["games_since_at"]+=1
-        sess["phase"]="spinning"
-        sess["stopped_cols"]=[]   # 停止済み列
-        sess["stopped_syms"]={}   # {列: 中段シンボルインデックス}
+        sess["flag"] = _rz_roll(sess["setting"])
+        sess["total_games"] += 1
+        sess["games_since_at"] += 1
+        sess["phase"] = "spinning"
+        sess["stopped_cols"] = []
+        sess["stopped_syms"] = {}
 
-        # 全列回転GIFを生成してinteractionで直接ctrl_msgに添付
-        spin_img=await _rz_make_spin_async([],{})
-        edit_kw={
+        # GIF生成（時間がかかっても問題なし）
+        spin_img = await _rz_make_spin_async([], {})
+
+        edit_kw = {
             "content": "🎰 **== 回 転 中 ==**\n\nSTOP ボタンを押すのだ！",
             "view": RezeroSpinView(self.uid),
         }
-        if spin_img: edit_kw["attachments"]=[_rz_file(spin_img,"spin.gif")]
-        await interaction.response.edit_message(**edit_kw)
+        if spin_img:
+            edit_kw["attachments"] = [_rz_file(spin_img, "spin.gif")]
+        else:
+            edit_kw["attachments"] = []
+
+        # ✅ defer済みなので interaction.message.edit() で更新
+        await interaction.message.edit(**edit_kw)
         await _rz_update_header(sess)
 
     @discord.ui.button(label="やめる",style=discord.ButtonStyle.secondary,custom_id="rz:quit_idle")
@@ -11077,7 +11089,6 @@ class RezeroSpinView(discord.ui.View):
         return True
 
     async def _press_stop(self, interaction: discord.Interaction, col_idx: int):
-        """col_idx: 0=左, 1=中, 2=右"""
         sess = rezero_sessions.get(self.uid)
         if not sess or sess.get("phase") != "spinning":
             return await interaction.response.defer()
@@ -11085,11 +11096,12 @@ class RezeroSpinView(discord.ui.View):
         stopped_cols: list = sess.setdefault("stopped_cols", [])
         stopped_syms: dict = sess.setdefault("stopped_syms", {})
 
-        # すでに押した列は無視
         if col_idx in stopped_cols:
             return await interaction.response.defer()
 
-        # この列のシンボルをランダムに決定
+        # ✅ 先にdeferして3秒タイムアウトを回避
+        await interaction.response.defer()
+
         si = _rz_rand.randrange(_RZ_SN)
         stopped_cols.append(col_idx)
         stopped_syms[col_idx] = si
@@ -11097,40 +11109,50 @@ class RezeroSpinView(discord.ui.View):
         all_stopped = (len(stopped_cols) == 3)
 
         if not all_stopped:
-            # まだ残りの列がある → GIFを更新してボタンを更新
             remain = 3 - len(stopped_cols)
             mid_gif = await _rz_make_spin_async(stopped_cols, stopped_syms)
             edit_kw = {
                 "content": f"🎰 **== 回 転 中 ==**\n残り {remain} 列",
                 "view": RezeroSpinView(self.uid),
             }
-            if mid_gif: edit_kw["attachments"] = [_rz_file(mid_gif, "reel.gif")]
-            await interaction.response.edit_message(**edit_kw)
+            if mid_gif:
+                edit_kw["attachments"] = [_rz_file(mid_gif, "reel.gif")]
+            else:
+                edit_kw["attachments"] = []
+            await interaction.message.edit(**edit_kw)
             return
 
-        # ── 全列停止 → 判定 ──────────────────────────────────────────
+        # ── 全列停止 → 判定 ──
         sess["phase"] = "idle"
         flag = sess["flag"]
-        payout = REZERO_PAY.get(flag, 0); pts = REZERO_PT.get(flag, 1)
-        if flag == "REPLAY": sess["replay"] = True
-        else: sess["credit"] += payout
+        payout = REZERO_PAY.get(flag, 0)
+        pts = REZERO_PT.get(flag, 1)
+        if flag == "REPLAY":
+            sess["replay"] = True
+        else:
+            sess["credit"] += payout
         sess["points"] += pts
-        sess["stopped_cols"] = []; sess["stopped_syms"] = {}
+        sess["stopped_cols"] = []
+        sess["stopped_syms"] = {}
 
         role_msg = FLAG_LBL.get(flag, "")
-        if payout > 0: role_msg += f" **+{payout}枚**"
+        if payout > 0:
+            role_msg += f" **+{payout}枚**"
         pt_msg = f"✨ **+{pts}pt** → {sess['points']}/{REZERO_PT_MAX}pt"
         result_text = _rz_gtext(sess, f"{role_msg}\n{pt_msg}")
 
-        # 全列固定GIF（1フレーム静止画として表示）
         reel_img = await _rz_make_reel_async(flag)
 
         if sess["points"] >= REZERO_PT_MAX:
-            edit_kw = {"content": f"⚔️ **白鯨攻略戦 突入！！**\n{role_msg}\n{pt_msg}", "view": None}
+            edit_kw = {"content": f"⚔️ **白鯨攻略戦 突入！！**\n{role_msg}\n{pt_msg}", "view": None, "attachments": []}
         else:
-            edit_kw = {"content": result_text, "view": RezeroIdleView(self.uid)}
-        if reel_img: edit_kw["attachments"] = [_rz_file(reel_img, "reel.gif")]
-        await interaction.response.edit_message(**edit_kw)
+            edit_kw = {"content": result_text, "view": RezeroIdleView(self.uid), "attachments": []}
+
+        if reel_img:
+            edit_kw["attachments"] = [_rz_file(reel_img, "reel.gif")]
+
+        # ✅ defer済みなので interaction.message.edit() で更新
+        await interaction.message.edit(**edit_kw)
         await _rz_update_header(sess)
 
         if sess["points"] >= REZERO_PT_MAX:
@@ -11138,9 +11160,12 @@ class RezeroSpinView(discord.ui.View):
             sess["icon_color"] = _rz_roll_icon(sess["setting"])
             base = REZERO_BASE_RATE.get(sess["setting"], 50)
             up = _rz_icon_up(sess["icon_color"])
-            sess["base_rate"] = base; sess["final_rate"] = min(95, base+up)
-            sess["hakugei_stocks"] = 0; sess["bell_count"] = 0
-            sess["battle_num"] = 0; sess["battles_won"] = 0
+            sess["base_rate"] = base
+            sess["final_rate"] = min(95, base + up)
+            sess["hakugei_stocks"] = 0
+            sess["bell_count"] = 0
+            sess["battle_num"] = 0
+            sess["battles_won"] = 0
             await asyncio.sleep(1.5)
             await _rz_start_prep(self.uid, interaction)
 
@@ -11660,6 +11685,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
