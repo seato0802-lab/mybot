@@ -1759,6 +1759,7 @@ USER_HEADERS = [
     "award_keys",
     "ai_chat_count",
     "ai_summary",
+    "rz_points",
 ]
 
 
@@ -10951,14 +10952,17 @@ async def _rz_timeout(uid):
     sess = rezero_sessions.pop(uid, None)
     if not sess: return
     cr = sess.get("credit", 0)
-    if cr > 0:
-        try:
-            async with get_user_lock(uid):
-                u = store.get_user(uid)
+    pts = sess.get("points", 0)
+    try:
+        async with get_user_lock(uid):
+            u = store.get_user(uid)
+            if cr > 0:
                 u["coins"] = int(u.get("coins", 0)) + cr
-                await sheets_upsert_async(u)
-        except Exception:
-            pass
+            # ポイントを保存（白鯨突入前のポイントを引き継ぐ）
+            u["rz_points"] = str(pts)
+            await sheets_upsert_async(u)
+    except Exception:
+        pass
     thread = bot.get_channel(sess.get("thread_id"))
     if thread:
         try:
@@ -10966,6 +10970,7 @@ async def _rz_timeout(uid):
             msg = f"⏰ 長時間操作がなかったため終了したのだ"
             if cr > 0:
                 msg += f"\n✅ 返却：**{cr:,}**枚 → 所持コインに加算されたのだ"
+            msg += f"\n📊 ポイント **{pts}pt** は次回に引き継がれるのだ"
             await ctrl_msg.edit(content=msg, view=None)
         except Exception:
             pass
@@ -10978,17 +10983,22 @@ async def _rz_timeout(uid):
 async def _rz_quit(uid):
     sess = rezero_sessions.pop(uid, None)
     cr = sess["credit"] if sess else 0
-    if sess and cr > 0:
+    pts = sess.get("points", 0) if sess else 0
+    if sess:
         async with get_user_lock(uid):
             u = store.get_user(uid)
-            u["coins"] = int(u.get("coins", 0)) + cr
+            if cr > 0:
+                u["coins"] = int(u.get("coins", 0)) + cr
+            # ポイントを保存（白鯨突入前のポイントを引き継ぐ）
+            u["rz_points"] = str(pts)
             await sheets_upsert_async(u)
     thread = bot.get_channel(sess["thread_id"]) if sess else None
     if thread:
         try:
             ctrl_msg = await thread.fetch_message(sess["ctrl_msg_id"])
-            await ctrl_msg.edit(
-                content=f"✅ **返却：{cr:,}**枚 → 所持コインに加算されたのだ", view=None)
+            msg = f"✅ **返却：{cr:,}**枚 → 所持コインに加算されたのだ"
+            msg += f"\n📊 ポイント **{pts}pt** は次回に引き継がれるのだ"
+            await ctrl_msg.edit(content=msg, view=None)
         except Exception:
             pass
         try:
@@ -11049,6 +11059,7 @@ class RezeroIdleView(discord.ui.View):
         sess["phase"] = "spinning"
         sess["stopped_cols"] = []
         sess["stopped_syms"] = {}
+        sess["spin_gen"] = sess.get("spin_gen", 0) + 1  # 世代番号++（古いViewを無効化）
 
         # スピン開始時に3列すべての最終シンボルを確定させる（止める順番に依存しないため）
         # 新シンボル: BELL=0 CHERRY=1 BLANK=2 RE=3 SUIKA=4 RESTAR=5 REM=6 EMILIA=7 REZERO=8
@@ -11101,6 +11112,8 @@ class RezeroSpinView(discord.ui.View):
         super().__init__(timeout=300)
         self.uid = uid
         sess = rezero_sessions.get(uid)
+        # このViewが生成された時点の世代番号を記録（古いViewの誤作動防止）
+        self.spin_gen = sess.get("spin_gen", 0) if sess else 0
         stopped = sess.get("stopped_cols", []) if sess else []
         col_map = {"rz:stop_l": 0, "rz:stop_c": 1, "rz:stop_r": 2}
         for item in self.children:
@@ -11120,6 +11133,9 @@ class RezeroSpinView(discord.ui.View):
     async def _press_stop(self, interaction: discord.Interaction, col_idx: int):
         sess = rezero_sessions.get(self.uid)
         if not sess or sess.get("phase") != "spinning":
+            return await interaction.response.defer()
+        # 世代番号チェック: 古いSpinViewからの操作は無視する
+        if sess.get("spin_gen", 0) != self.spin_gen:
             return await interaction.response.defer()
 
         stopped_cols: list = sess.setdefault("stopped_cols", [])
@@ -11201,6 +11217,14 @@ class RezeroSpinView(discord.ui.View):
 
         if sess["points"] >= REZERO_PT_MAX:
             sess["points"] = 0
+            # 白鯨突入でポイントリセット → Sheetsも更新
+            try:
+                async with get_user_lock(self.uid):
+                    u = store.get_user(self.uid)
+                    u["rz_points"] = "0"
+                    await sheets_upsert_async(u)
+            except Exception:
+                pass
             sess["icon_color"] = _rz_roll_icon(sess["setting"])
             base = REZERO_BASE_RATE.get(sess["setting"], 50)
             up = _rz_icon_up(sess["icon_color"])
@@ -11720,6 +11744,14 @@ class RezeroInsertBtn(discord.ui.Button):
                        setting=self.machine["setting"], credit=self.amount)
         sess["machine_name"] = self.machine["name"]
         sess["thread_id"] = thread.id
+        # Google Sheetsから前回のポイントを引き継ぐ
+        try:
+            async with get_user_lock(uid):
+                u_data = store.get_user(uid)
+            saved_pts = int(u_data.get("rz_points", 0) or 0)
+            sess["points"] = min(saved_pts, REZERO_PT_MAX - 1)  # 満タン未満に制限
+        except Exception:
+            sess["points"] = 0
         rezero_sessions[uid] = sess
         hm = await thread.send(content=f"🎰 **{self.machine['name']}**")
         sess["header_msg_id"] = hm.id
@@ -11735,7 +11767,7 @@ class RezeroInsertBtn(discord.ui.Button):
         setting = self.machine["setting"]
         base_rate = REZERO_BASE_RATE.get(setting, 50)
         role_text = (
-            f"📋 **役一覧（{self.machine['name']} / 設定{setting}）**\n"
+            f"📋 **役一覧（{self.machine['name']} ）**\n"
             f"```\n"
             f"役           払い出し  PT\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -11751,7 +11783,6 @@ class RezeroInsertBtn(discord.ui.Button):
             f"📊 PT GAUGE  (/500pt で白鯨突入)\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⚔️ 白鯨撃破率 (ベース)\n"
-            f"  設定{setting} → {base_rate}%\n"
             f"  アイコン色で最大+45% 上昇\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🌟 AT 上乗せ\n"
@@ -11865,6 +11896,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
