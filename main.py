@@ -10108,6 +10108,7 @@ REZERO_ASSET_URLS: dict[str, str] = {
     "sym_SCHERRY.png":      "https://drive.usercontent.google.com/download?id=1usbOrKzEpKngSBFkfTfLkGYemOwI1AGa&export=download&confirm=t",
     "sym_SUIKA.png":        "https://drive.usercontent.google.com/download?id=1cZHHXDJrSDH-In_uDO7fpqoXDBi5DfkK&export=download&confirm=t",
     "sym_WCHERRY.png":      "https://drive.usercontent.google.com/download?id=1xcdTXOTWH3S1s9T1IeaiVN8cKMuhSL6O&export=download&confirm=t",
+    "sym_REP.png":          "LOCAL",  # Pillowで自動生成する回転矢印シンボル
     "rz_normal.png":  "LOCAL",
     "rz_oni.png":     "LOCAL",
     "rz_at_end.png":  "LOCAL",
@@ -10325,6 +10326,33 @@ def _rz_make_bg(filename: str) -> bytes:
         draw.arc([cx-int(48*s),cy-int(20*s),cx-int(16*s),cy+int(8*s)], 320, 40, fill=(140,20,20), width=int(3*s))
 
     buf = io.BytesIO()
+
+    if filename == "sym_REP.png":
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        for y in range(H):
+            t = y / H
+            r2 = int(0*(1-t)+10*t); g2 = int(160*(1-t)+100*t); b2 = int(200*(1-t)+160*t)
+            draw.line([(0,y),(W,y)], fill=(r2,g2,b2,255))
+        draw.rounded_rectangle([1,1,W-2,H-2], radius=6, outline=(255,255,255,255), width=2)
+        cx2, cy2 = W//2, H//2; RR = 17
+        draw.arc([cx2-RR,cy2-RR,cx2+RR,cy2+RR], start=60, end=340, fill=(255,255,255,255), width=4)
+        ang = math.radians(60)
+        tip_x2 = cx2+RR*math.cos(ang); tip_y2 = cy2+RR*math.sin(ang)
+        tx2 = -math.sin(ang); ty2 = math.cos(ang); as2 = 7
+        p1=(tip_x2+tx2*as2,tip_y2+ty2*as2); p2=(tip_x2-tx2*as2,tip_y2-ty2*as2)
+        p3=(tip_x2+math.cos(ang)*as2*1.5, tip_y2+math.sin(ang)*as2*1.5)
+        draw.polygon([p1,p2,p3], fill=(255,255,255,255))
+        try:
+            fnt2 = _rz_font(13)
+        except:
+            fnt2 = None
+        if fnt2:
+            bb2 = draw.textbbox((0,0),"REP",font=fnt2)
+            tw2,th2 = bb2[2]-bb2[0],bb2[3]-bb2[1]
+            draw.text((cx2-tw2//2+1,cy2-th2//2+1),"REP",font=fnt2,fill=(0,80,120,200))
+            draw.text((cx2-tw2//2,cy2-th2//2),"REP",font=fnt2,fill=(255,255,255,255))
+        img.save(buf,"PNG"); return buf.getvalue()
 
     if filename == "rz_normal.png":
         img = Image.new("RGB", (W, H)); grd(img, [(0,(4,5,28)),(0.5,(12,22,62)),(1,(4,8,38))])
@@ -10589,7 +10617,7 @@ _rz_sym_cache: dict[str, bytes] = {}
 async def _rz_fetch_sym_tiles() -> dict:
     TW, TH = 142, 55
     lbl_to_fn = {
-        "BELL":  "sym_BELL.png",  "REP":   "sym_WCHERRY.png",
+        "BELL":  "sym_BELL.png",  "REP":   "sym_REP.png",
         "弱CY":  "sym_WCHERRY.png","強CY":  "sym_SCHERRY.png",
         "西瓜":  "sym_SUIKA.png", "---":    None,
         "REM":   "sym_REM.png",   "BAR":    "sym_BAR.png",
@@ -11801,6 +11829,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
