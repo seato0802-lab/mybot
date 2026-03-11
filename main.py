@@ -10493,7 +10493,7 @@ _RZ_SYMS = [
     ((0,148,188),  "REP"),    # 3
     ((0,128,22),   "西瓜"),   # 4
     ((198,0,0),    "強CY"),   # 5  弱CY(1)とは4つ離れている
-    ((12,12,18),   "---"),    # 6
+    ((45,45,80),   "---"),    # 6  暗青紫: 黒背景と区別できる色に変更
     ((80,50,130),  "REM"),    # 7
     ((50,50,180),  "BLUE7"),  # 8
     ((180,50,50),  "RED7"),   # 9
@@ -11643,6 +11643,38 @@ class RezeroInsertBtn(discord.ui.Button):
             files=cm_files,
             view=RezeroIdleView(uid))
         sess["ctrl_msg_id"] = cm.id
+
+        # 役一覧をスレッド末尾に固定送信（ジャグラーと同様）
+        setting = self.machine["setting"]
+        base_rate = REZERO_BASE_RATE.get(setting, 50)
+        role_text = (
+            f"📋 **役一覧（{self.machine['name']} / 設定{setting}）**\n"
+            f"```\n"
+            f"役           払い出し  PT\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔔 ベル        {REZERO_PAY['BELL']:>4}枚   +{REZERO_PT['BELL']}pt\n"
+            f"🔄 リプレイ      次G BET無  +{REZERO_PT['REPLAY']}pt\n"
+            f"🍒 弱チェリー    {REZERO_PAY['WCHERRY']:>4}枚   +{REZERO_PT['WCHERRY']}pt\n"
+            f"🍒 強チェリー    {REZERO_PAY['SCHERRY']:>4}枚   +{REZERO_PT['SCHERRY']}pt\n"
+            f"🍉 スイカ       {REZERO_PAY['SUIKA']:>4}枚   +{REZERO_PT['SUIKA']}pt\n"
+            f"　 ハズレ          0枚   +{REZERO_PT['BLANK']}pt\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"1G BET = {REZERO_BET}枚\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 PT GAUGE  (/500pt で白鯨突入)\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚔️ 白鯨撃破率 (ベース)\n"
+            f"  設定{setting} → {base_rate}%\n"
+            f"  アイコン色で最大+45% 上昇\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌟 AT 上乗せ\n"
+            f"  🍉 スイカ  → G数上乗せ (鬼モード時30G+確定)\n"
+            f"  🍒 強チェリー → ループストック+1 (最大3個)\n"
+            f"  🍒 弱チェリー → +5〜10G\n"
+            f"```"
+        )
+        await thread.send(content=role_text)
+
         await interaction.edit_original_response(
             content=f"✅ **{self.machine['name']}** スレッドを開いたのだ！")
         
@@ -11746,6 +11778,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
