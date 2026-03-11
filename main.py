@@ -11767,7 +11767,7 @@ class RezeroInsertBtn(discord.ui.Button):
         setting = self.machine["setting"]
         base_rate = REZERO_BASE_RATE.get(setting, 50)
         role_text = (
-            f"📋 **役一覧（{self.machine['name']} ）**\n"
+            f"📋 **役一覧（{self.machine['name']} / 設定{setting}）**\n"
             f"```\n"
             f"役           払い出し  PT\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -11783,6 +11783,7 @@ class RezeroInsertBtn(discord.ui.Button):
             f"📊 PT GAUGE  (/500pt で白鯨突入)\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⚔️ 白鯨撃破率 (ベース)\n"
+            f"  設定{setting} → {base_rate}%\n"
             f"  アイコン色で最大+45% 上昇\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🌟 AT 上乗せ\n"
@@ -11896,6 +11897,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
