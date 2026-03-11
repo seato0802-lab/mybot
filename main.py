@@ -10098,17 +10098,16 @@ REZERO_ASSET_URLS: dict[str, str] = {
     "rz_battle_red.png":    "https://drive.usercontent.google.com/download?id=1bNkuBBBRX7ZHmKxNsZhSaT_ZYkqG3bra&export=download&confirm=t",
     "rz_hakugei.png":       "https://drive.usercontent.google.com/download?id=1Lp179H62YWWNQF6cXw_PnpzlncadnQxE&export=download&confirm=t",
     "rz_machine_frame.png": "https://drive.usercontent.google.com/download?id=1OpdpWp-c_rDqtltKgqPYsZwj14TRkxLR&export=download&confirm=t",
-    "sym_BAR.png":          "https://drive.usercontent.google.com/download?id=1GPpxi4cXItpmTKTsfSH9UjhSpQ64s6tg&export=download&confirm=t",
-    "sym_BEATRICE.png":     "https://drive.usercontent.google.com/download?id=1C47M-bibvslq1tAOjyZFONVnH6Sj_ts0&export=download&confirm=t",
-    "sym_BELL.png":         "https://drive.usercontent.google.com/download?id=1Cz85zWZztV2MSnkXVqIIPJKsnaFjd8N5&export=download&confirm=t",
-    "sym_BLUE7.png":        "https://drive.usercontent.google.com/download?id=1HIr_8q-a60qmWaDB4eCVuY3N_a6ZONLL&export=download&confirm=t",
-    "sym_EMILIA.png":       "https://drive.usercontent.google.com/download?id=1vDmOZJrSOlSDz7fyhlXVTpWsxV_qtCVI&export=download&confirm=t",
-    "sym_RED7.png":         "https://drive.usercontent.google.com/download?id=111ARQBLZRf-FqygJ7bPtZkzHNKQkkmHr&export=download&confirm=t",
-    "sym_REM.png":          "https://drive.usercontent.google.com/download?id=1OxgwvXktTGrEpmFPTWlGZTPn6PYb5iPA&export=download&confirm=t",
-    "sym_SCHERRY.png":      "https://drive.usercontent.google.com/download?id=1usbOrKzEpKngSBFkfTfLkGYemOwI1AGa&export=download&confirm=t",
-    "sym_SUIKA.png":        "https://drive.usercontent.google.com/download?id=1cZHHXDJrSDH-In_uDO7fpqoXDBi5DfkK&export=download&confirm=t",
-    "sym_WCHERRY.png":      "https://drive.usercontent.google.com/download?id=1xcdTXOTWH3S1s9T1IeaiVN8cKMuhSL6O&export=download&confirm=t",
-    "sym_REP.png":          "https://drive.usercontent.google.com/download?id=1-EsAWbUgPFvYcjDmMg6BjlBHjLTXKzsM&export=download&confirm=t",
+    # シンボル画像（実機リール配列から切り出し・背景透過済み）
+    "sym_BELL.png":         "https://drive.usercontent.google.com/download?id=1RiVTlPYBdkEoqvYQXLJv9rQvqbrP3J5v&export=download&confirm=t",  # ベル
+    "sym_CHERRY.png":       "https://drive.usercontent.google.com/download?id=1yw6T7jsYkrgElRiO4MqVU9JEwdL_ncik&export=download&confirm=t",  # チェリー
+    "sym_BLANK.png":        "https://drive.usercontent.google.com/download?id=1yLZUDpquJ17Ir8naEFSXSRJeyk77WJf-&export=download&confirm=t",  # 貝（ブランク）
+    "sym_RE.png":           "https://drive.usercontent.google.com/download?id=1jKVq_ina9y9_RiyXQE4fHmkcivGa5ybj&export=download&confirm=t",  # Re:（リプレイ）
+    "sym_SUIKA.png":        "https://drive.usercontent.google.com/download?id=1WgoX8SlZVeAoCUe7rhKCfzcohjHXBe-E&export=download&confirm=t",  # スイカ
+    "sym_RESTAR.png":       "https://drive.usercontent.google.com/download?id=1DjjDZWijzWXIMRxHgX9tcsZw0WfhWlbr&export=download&confirm=t",  # Re:★
+    "sym_REM.png":          "https://drive.usercontent.google.com/download?id=11z2oawek-8CQbgZVA672ySnsL9AHPs87&export=download&confirm=t",  # レム
+    "sym_EMILIA.png":       "https://drive.usercontent.google.com/download?id=1WZiHo21rihHPzfWFWlmdZzPhPTtmLDO1&export=download&confirm=t",  # エミリア
+    "sym_REZERO.png":       "https://drive.usercontent.google.com/download?id=1CMblWgdynSUAhtoxiIg0Pw4Bnq8k74HW&export=download&confirm=t",  # Re:ゼロ（ブランク）
     "rz_normal.png":  "LOCAL",
     "rz_oni.png":     "LOCAL",
     "rz_at_end.png":  "LOCAL",
@@ -10514,19 +10513,29 @@ def _rz_make_bg(filename: str) -> bytes:
 # ─────────────────────────────────────────────────────────
 # リール共通シンボル定義
 # ─────────────────────────────────────────────────────────
+# 実機リール配列に基づくシンボル定義（9種）
+# index: 0=BELL 1=CHERRY 2=BLANK 3=RE 4=SUIKA 5=RESTAR 6=REM 7=EMILIA 8=REZERO
 _RZ_SYMS = [
-    ((208,162,0),  "BELL"),   # 0
-    ((155,0,0),    "弱CY"),   # 1  チェリー系を分散させて隣接しないようにする
-    ((180,120,50), "BAR"),    # 2
-    ((0,148,188),  "REP"),    # 3
-    ((0,128,22),   "西瓜"),   # 4
-    ((198,0,0),    "強CY"),   # 5  弱CY(1)とは4つ離れている
-    ((45,45,80),   "---"),    # 6  暗青紫: 黒背景と区別できる色に変更
-    ((80,50,130),  "REM"),    # 7
-    ((50,50,180),  "BLUE7"),  # 8
-    ((180,50,50),  "RED7"),   # 9
+    ((208,162,0),  "BELL"),    # 0 ベル
+    ((190,20,20),  "CHERRY"),  # 1 チェリー（強弱共通）
+    ((210,210,210),"BLANK"),   # 2 貝（ブランク）
+    ((0,100,200),  "RE"),      # 3 Re:（リプレイ・濃い青）
+    ((0,160,40),   "SUIKA"),   # 4 スイカ
+    ((100,180,230),"RESTAR"),  # 5 Re:★（薄い青）
+    ((60,120,200), "REM"),     # 6 レム
+    ((210,210,220),"EMILIA"),  # 7 エミリア
+    ((40,40,60),   "REZERO"),  # 8 Re:ゼロ（ブランク）
 ]
-_RZ_SN = len(_RZ_SYMS)
+_RZ_SN = len(_RZ_SYMS)  # 9
+
+# 実機リール配列（pos1=最下段〜pos20=最上段, 各値はシンボルindex）
+# BELL=0, CHERRY=1, BLANK=2, RE=3, SUIKA=4, RESTAR=5, REM=6, EMILIA=7, REZERO=8
+_RZ_REEL = [
+    # pos: 1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20
+    [2, 5, 0, 4, 8, 7, 5, 0, 4, 1, 2, 3, 0, 1, 1, 6, 3, 0, 1, 0],  # 左
+    [0, 5, 1, 8, 7, 0, 5, 1, 4, 2, 0, 3, 1, 1, 6, 0, 3, 1, 1, 2],  # 中
+    [3, 4, 0, 7, 8, 5, 4, 0, 1, 2, 5, 4, 0, 6, 3, 5, 1, 0, 1, 2],  # 右
+]
 
 
 def _rz_draw_tile(dc, x0, y0, si, TW, TH, canvas=None, sym_tiles=None):
@@ -10617,11 +10626,15 @@ _rz_sym_cache: dict[str, bytes] = {}
 async def _rz_fetch_sym_tiles() -> dict:
     TW, TH = 142, 55
     lbl_to_fn = {
-        "BELL":  "sym_BELL.png",  "REP":   "sym_REP.png",
-        "弱CY":  "sym_WCHERRY.png","強CY":  "sym_SCHERRY.png",
-        "西瓜":  "sym_SUIKA.png", "---":    None,
-        "REM":   "sym_REM.png",   "BAR":    "sym_BAR.png",
-        "BLUE7": "sym_BLUE7.png", "RED7":   "sym_RED7.png",
+        "BELL":   "sym_BELL.png",
+        "CHERRY": "sym_CHERRY.png",
+        "BLANK":  "sym_BLANK.png",
+        "RE":     "sym_RE.png",
+        "SUIKA":  "sym_SUIKA.png",
+        "RESTAR": "sym_RESTAR.png",
+        "REM":    "sym_REM.png",
+        "EMILIA": "sym_EMILIA.png",
+        "REZERO": "sym_REZERO.png",
     }
     tiles = {}
     for si, (col_rgb, lbl) in enumerate(_RZ_SYMS):
@@ -10656,11 +10669,13 @@ async def _rz_make_spin_async(stopped_cols: list = None,
 
 async def _rz_make_reel_async(flag: str) -> bytes | None:
     FLAG_SYM = {
-        "BELL":"BELL","REPLAY":"REP","WCHERRY":"弱CY","SCHERRY":"強CY",
-        "SUIKA":"西瓜","BAR":"BAR","REM":"REM","BEATRICE":"REP",
-        "EMILIA":"REP","BLUE7":"BLUE7","RED7":"RED7",
+        "BELL":    "BELL",
+        "REPLAY":  "RE",
+        "WCHERRY": "CHERRY",
+        "SCHERRY": "CHERRY",
+        "SUIKA":   "SUIKA",
     }
-    lbl = FLAG_SYM.get(flag, "---")
+    lbl = FLAG_SYM.get(flag, "BLANK")
     si = next((i for i, (c, l) in enumerate(_RZ_SYMS) if l == lbl), 0)
     frame_bytes = await _rzget("rz_machine_frame.png")
     sym_tiles = await _rz_fetch_sym_tiles()
@@ -11036,26 +11051,32 @@ class RezeroIdleView(discord.ui.View):
         sess["stopped_syms"] = {}
 
         # スピン開始時に3列すべての最終シンボルを確定させる（止める順番に依存しないため）
-        _flag_to_si = {
-            "BELL":   0,  # BELL
-            "WCHERRY":1,  # 弱CY
-            "REPLAY": 3,  # REP
-            "SUIKA":  4,  # 西瓜
-            "SCHERRY":5,  # 強CY
-        }
-        f_si = _flag_to_si.get(sess["flag"])
-        if f_si is not None:
-            # 入賞役: 全列同じシンボルで揃える
-            sess["final_sym"] = {0: f_si, 1: f_si, 2: f_si}
+        # 新シンボル: BELL=0 CHERRY=1 BLANK=2 RE=3 SUIKA=4 RESTAR=5 REM=6 EMILIA=7 REZERO=8
+        _non_cherry = [x for x in range(_RZ_SN) if x != 1]  # チェリー以外
+        _non_bell   = [x for x in range(_RZ_SN) if x != 0]
+        flag = sess["flag"]
+        if flag == "BELL":
+            sess["final_sym"] = {0: 0, 1: 0, 2: 0}          # 3列ベル揃い
+        elif flag == "REPLAY":
+            sess["final_sym"] = {0: 3, 1: 3, 2: 3}          # 3列Re:揃い
+        elif flag == "SUIKA":
+            sess["final_sym"] = {0: 4, 1: 4, 2: 4}          # 3列スイカ揃い
+        elif flag == "SCHERRY":
+            sess["final_sym"] = {0: 1, 1: 1, 2: 1}          # 3列チェリー揃い（強）
+        elif flag == "WCHERRY":
+            # 弱チェリー: 左のみチェリー、中・右はチェリー以外
+            c = random.choice(_non_cherry)
+            r = random.choice([x for x in _non_cherry if x != c])
+            sess["final_sym"] = {0: 1, 1: c, 2: r}
         else:
-            # BLANK: 揃わないようにバラバラに決める
+            # BLANK: 3列揃わないようにバラバラ（ベル・スイカ・チェリーは揃えない）
             picks = []
             for _ in range(3):
-                choices = [x for x in range(_RZ_SN) if not picks or x != picks[-1]]
-                picks.append(random.choice(choices))
-            # 万が一3つ揃ってしまった場合はずらす
+                avoid = set(picks[-1:]) | ({0,3,4,1} if len(picks)==2 and picks[0]==picks[1] else set())
+                choices = [x for x in range(_RZ_SN) if x not in avoid]
+                picks.append(random.choice(choices) if choices else random.randrange(_RZ_SN))
             if len(set(picks)) == 1:
-                picks[1] = (picks[1] + 2) % _RZ_SN
+                picks[1] = (picks[1] + 3) % _RZ_SN
             sess["final_sym"] = {0: picks[0], 1: picks[1], 2: picks[2]}
 
         spin_img = await _rz_make_spin_async([], {})
@@ -11129,26 +11150,33 @@ class RezeroSpinView(discord.ui.View):
             return
 
         # ── 全列停止 → 判定 ──
-        sess["phase"] = "idle"
+        # ※ phase変更はmessage.edit成功後に行う（失敗時にspinningに戻るため）
         flag = sess["flag"]
         payout = REZERO_PAY.get(flag, 0)
         pts = REZERO_PT.get(flag, 1)
+        final_syms = dict(stopped_syms)
+
+        role_msg = FLAG_LBL.get(flag, "")
+        if payout > 0:
+            role_msg += f" **+{payout}枚**"
+        pt_msg = f"✨ **+{pts}pt** → {(sess['points']+pts)}/{REZERO_PT_MAX}pt"
+        result_text = _rz_gtext(sess, f"{role_msg}\n{pt_msg}")
+
+        try:
+            reel_img = await _rz_make_static_async(final_syms)
+        except Exception as e:
+            print(f"[rezero] make_static失敗: {e}")
+            reel_img = None
+
+        # 画像生成後にphase変更・クレジット加算（ここで確定）
+        sess["phase"] = "idle"
         if flag == "REPLAY":
             sess["replay"] = True
         else:
             sess["credit"] += payout
         sess["points"] += pts
-        # 実際に止めたシンボルを保存してからリセット
-        final_syms = dict(stopped_syms)
         sess["stopped_cols"] = []
         sess["stopped_syms"] = {}
-
-        role_msg = FLAG_LBL.get(flag, "")
-        if payout > 0:
-            role_msg += f" **+{payout}枚**"
-        pt_msg = f"✨ **+{pts}pt** → {sess['points']}/{REZERO_PT_MAX}pt"
-        result_text = _rz_gtext(sess, f"{role_msg}\n{pt_msg}")
-        reel_img = await _rz_make_static_async(final_syms)
 
         if sess["points"] >= REZERO_PT_MAX:
             edit_kw = {
@@ -11164,7 +11192,11 @@ class RezeroSpinView(discord.ui.View):
             }
         if reel_img:
             edit_kw["attachments"] = [_rzf(reel_img, "reel.gif")]
-        await interaction.message.edit(**edit_kw)
+        try:
+            await interaction.message.edit(**edit_kw)
+        except Exception as e:
+            print(f"[rezero] message.edit失敗: {e}")
+            # 失敗してもphaseはidleのままにして次のレバー操作を受け付ける
         await _rz_update_header(sess)
 
         if sess["points"] >= REZERO_PT_MAX:
@@ -11833,6 +11865,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
