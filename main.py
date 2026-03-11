@@ -11009,6 +11009,9 @@ class RezeroIdleView(discord.ui.View):
         # GIF生成が3秒を超えるため先にdeferしてからmessage.editで更新する
         await interaction.response.defer()
 
+        # レバーを引くたびにタイムアウトを5分リセット
+        self.timeout = 300
+
         if not sess.get("replay"):
             if sess["credit"] < REZERO_BET:
                 async with get_user_lock(self.uid):
@@ -11700,7 +11703,7 @@ class RezeroInsertBtn(discord.ui.Button):
         setting = self.machine["setting"]
         base_rate = REZERO_BASE_RATE.get(setting, 50)
         role_text = (
-            f"📋 **役一覧（{self.machine['name']} ）**\n"
+            f"📋 **役一覧（{self.machine['name']} / 設定{setting}）**\n"
             f"```\n"
             f"役           払い出し  PT\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -11830,6 +11833,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
