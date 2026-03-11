@@ -10638,7 +10638,17 @@ async def _rz_make_reel_async(flag: str) -> bytes | None:
     sym_tiles = await _rz_fetch_sym_tiles()
     loop = asyncio.get_running_loop()
     raw = await loop.run_in_executor(
-        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1, 4, frame_bytes, sym_tiles)
+        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1, 28, frame_bytes, sym_tiles)
+    return raw or None
+
+
+async def _rz_make_static_async(stopped_syms: dict) -> bytes | None:
+    """3列すべて停止後、実際に止めたシンボルそのままで1フレーム静止画を生成する"""
+    frame_bytes = await _rzget("rz_machine_frame.png")
+    sym_tiles = await _rz_fetch_sym_tiles()
+    loop = asyncio.get_running_loop()
+    raw = await loop.run_in_executor(
+        None, _rz_build_gif, [0, 1, 2], stopped_syms, 1, 28, frame_bytes, sym_tiles)
     return raw or None
 
 
@@ -11073,6 +11083,8 @@ class RezeroSpinView(discord.ui.View):
         else:
             sess["credit"] += payout
         sess["points"] += pts
+        # 実際に止めたシンボルを保存してからリセット
+        final_syms = dict(stopped_syms)
         sess["stopped_cols"] = []
         sess["stopped_syms"] = {}
 
@@ -11081,7 +11093,7 @@ class RezeroSpinView(discord.ui.View):
             role_msg += f" **+{payout}枚**"
         pt_msg = f"✨ **+{pts}pt** → {sess['points']}/{REZERO_PT_MAX}pt"
         result_text = _rz_gtext(sess, f"{role_msg}\n{pt_msg}")
-        reel_img = await _rz_make_reel_async(flag)
+        reel_img = await _rz_make_static_async(final_syms)
 
         if sess["points"] >= REZERO_PT_MAX:
             edit_kw = {
@@ -11633,7 +11645,7 @@ class RezeroInsertBtn(discord.ui.Button):
         sess["ctrl_msg_id"] = cm.id
         await interaction.edit_original_response(
             content=f"✅ **{self.machine['name']}** スレッドを開いたのだ！")
-
+        
 # =========================================================
 # 起動イベント
 # =========================================================
@@ -11734,6 +11746,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
