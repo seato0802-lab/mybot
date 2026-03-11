@@ -10108,7 +10108,7 @@ REZERO_ASSET_URLS: dict[str, str] = {
     "sym_SCHERRY.png":      "https://drive.usercontent.google.com/download?id=1usbOrKzEpKngSBFkfTfLkGYemOwI1AGa&export=download&confirm=t",
     "sym_SUIKA.png":        "https://drive.usercontent.google.com/download?id=1cZHHXDJrSDH-In_uDO7fpqoXDBi5DfkK&export=download&confirm=t",
     "sym_WCHERRY.png":      "https://drive.usercontent.google.com/download?id=1xcdTXOTWH3S1s9T1IeaiVN8cKMuhSL6O&export=download&confirm=t",
-    "sym_REP.png":          "LOCAL",  # Pillowで自動生成する回転矢印シンボル
+    "sym_REP.png":          "https://drive.usercontent.google.com/download?id=1-EsAWbUgPFvYcjDmMg6BjlBHjLTXKzsM&export=download&confirm=t",
     "rz_normal.png":  "LOCAL",
     "rz_oni.png":     "LOCAL",
     "rz_at_end.png":  "LOCAL",
@@ -11032,6 +11032,29 @@ class RezeroIdleView(discord.ui.View):
         sess["stopped_cols"] = []
         sess["stopped_syms"] = {}
 
+        # スピン開始時に3列すべての最終シンボルを確定させる（止める順番に依存しないため）
+        _flag_to_si = {
+            "BELL":   0,  # BELL
+            "WCHERRY":1,  # 弱CY
+            "REPLAY": 3,  # REP
+            "SUIKA":  4,  # 西瓜
+            "SCHERRY":5,  # 強CY
+        }
+        f_si = _flag_to_si.get(sess["flag"])
+        if f_si is not None:
+            # 入賞役: 全列同じシンボルで揃える
+            sess["final_sym"] = {0: f_si, 1: f_si, 2: f_si}
+        else:
+            # BLANK: 揃わないようにバラバラに決める
+            picks = []
+            for _ in range(3):
+                choices = [x for x in range(_RZ_SN) if not picks or x != picks[-1]]
+                picks.append(random.choice(choices))
+            # 万が一3つ揃ってしまった場合はずらす
+            if len(set(picks)) == 1:
+                picks[1] = (picks[1] + 2) % _RZ_SN
+            sess["final_sym"] = {0: picks[0], 1: picks[1], 2: picks[2]}
+
         spin_img = await _rz_make_spin_async([], {})
         edit_kw = {
             "content": "🎰 **== 回 転 中 ==**\n\nSTOP ボタンを押すのだ！",
@@ -11083,33 +11106,11 @@ class RezeroSpinView(discord.ui.View):
         # GIF生成が3秒を超えるため先にdeferしてからmessage.editで更新する
         await interaction.response.defer()
 
-        si = random.randrange(_RZ_SN)
+        # スピン開始時に確定済みのシンボルをそのまま使用（止める順番に依存しない）
+        si = sess.get("final_sym", {}).get(col_idx, random.randrange(_RZ_SN))
         stopped_cols.append(col_idx)
         stopped_syms[col_idx] = si
         all_stopped = (len(stopped_cols) == 3)
-
-        # 3列すべて止まったら、フラグに合った絵柄に揃える
-        if all_stopped:
-            _flag_to_si = {
-                "BELL":   0,  # BELL
-                "WCHERRY":1,  # 弱CY
-                "REPLAY": 3,  # REP
-                "SUIKA":  4,  # 西瓜
-                "SCHERRY":5,  # 強CY
-            }
-            f_si = _flag_to_si.get(sess["flag"])
-            if f_si is not None:
-                # 入賞役: 全列の中段を揃える（si がそのままセンターになる）
-                for c in [0, 1, 2]:
-                    stopped_syms[c] = f_si
-            else:
-                # BLANK: 中段が揃わないようにバラバラにする
-                candidates = list(range(_RZ_SN))
-                center = stopped_syms.get(0, 0) % _RZ_SN
-                for c in [1, 2]:
-                    # 前の列と被らない値を選ぶ
-                    choices = [x for x in candidates if x != center and x != stopped_syms.get(c-1, -1)]
-                    stopped_syms[c] = random.choice(choices) if choices else random.randrange(_RZ_SN)
 
         if not all_stopped:
             remain = 3 - len(stopped_cols)
@@ -11699,7 +11700,7 @@ class RezeroInsertBtn(discord.ui.Button):
         setting = self.machine["setting"]
         base_rate = REZERO_BASE_RATE.get(setting, 50)
         role_text = (
-            f"📋 **役一覧（{self.machine['name']} / 設定{setting}）**\n"
+            f"📋 **役一覧（{self.machine['name']} ）**\n"
             f"```\n"
             f"役           払い出し  PT\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -11829,6 +11830,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
