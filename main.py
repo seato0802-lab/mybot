@@ -10608,10 +10608,14 @@ def _rz_build_gif(stopped_cols: list, stopped_syms: dict,
             canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
             reel_rgba = reel.convert("RGBA")
             rw, rh = reel_rgba.size; cw3 = rw // 3
-            for i, (wx0,wy0,wx1,wy1) in enumerate(RZ_FRAME_WINDOWS):
+            bsx0, bsy0, bsx1, bsy1 = _rz_screen_area(frame_base_bytes)
+            bcol_w = (bsx1 - bsx0) // 3
+            for i in range(3):
+                bcx0 = bsx0 + i * bcol_w
+                bcx1 = bsx0 + (i + 1) * bcol_w if i < 2 else bsx1
                 col_strip = reel_rgba.crop((i*cw3, 0, (i+1)*cw3, rh))
-                col_strip = col_strip.resize((wx1-wx0, wy1-wy0), Image.LANCZOS)
-                canvas.paste(col_strip, (wx0, wy0))
+                col_strip = col_strip.resize((bcx1 - bcx0, bsy1 - bsy0), Image.LANCZOS)
+                canvas.paste(col_strip, (bcx0, bsy0))
             # フレームを上から重ねる（ボタン・装飾が前面に出る）
             canvas.alpha_composite(frame_base)
             frames.append(canvas.convert("RGB").quantize(colors=128, method=Image.Quantize.FASTOCTREE))
@@ -10741,12 +10745,39 @@ def _rzf(data: bytes, fn: str) -> discord.File:
 
 
 # ── フレーム合成 ─────────────────────────────────────────
-# ── フレームのスクリーン領域（リール3列が収まる範囲）──
-# フレーム画像のスクリーン部分の座標 (x0, y0, x1, y1)
-# ※ フレーム画像に合わせて調整が必要な場合はここを変更する
-RZ_SCREEN_AREA = (153, 18, 645, 224)   # スクリーン全体
+# ── フレームのスクリーン領域 ──
+# 起動時にフレーム画像のアルファチャンネルから自動検出してキャッシュする
+_RZ_SCREEN_AREA_CACHE: tuple | None = None
 
-# 後方互換のため残す（リール列ごとのX分割に使用）
+def _rz_detect_screen_area(frame_bytes: bytes) -> tuple:
+    """フレーム画像の透明ピクセル範囲からスクリーンエリアを自動検出する"""
+    try:
+        from PIL import Image
+        import numpy as np
+        img = Image.open(io.BytesIO(frame_bytes)).convert("RGBA")
+        arr = np.array(img)
+        alpha = arr[:, :, 3]
+        transparent = alpha < 30
+        rows = np.any(transparent, axis=1)
+        cols = np.any(transparent, axis=0)
+        row_idx = np.where(rows)[0]
+        col_idx = np.where(cols)[0]
+        if len(row_idx) > 0 and len(col_idx) > 0:
+            return (int(col_idx[0]), int(row_idx[0]),
+                    int(col_idx[-1]) + 1, int(row_idx[-1]) + 1)
+    except Exception as e:
+        print(f"[rezero] スクリーンエリア検出失敗: {e}")
+    # フォールバック値
+    return (153, 18, 645, 224)
+
+def _rz_screen_area(frame_bytes: bytes | None = None) -> tuple:
+    global _RZ_SCREEN_AREA_CACHE
+    if _RZ_SCREEN_AREA_CACHE is None and frame_bytes:
+        _RZ_SCREEN_AREA_CACHE = _rz_detect_screen_area(frame_bytes)
+        print(f"[rezero] スクリーンエリア検出: {_RZ_SCREEN_AREA_CACHE}")
+    return _RZ_SCREEN_AREA_CACHE or (153, 18, 645, 224)
+
+# 後方互換のため残す（_rz_build_gif で使用）
 RZ_FRAME_WINDOWS = [
     (153, 18, 304, 224),
     (325, 18, 473, 224),
@@ -10774,8 +10805,8 @@ async def _rz_composite(reel_bytes: bytes | None = None,
         frame = Image.open(io.BytesIO(frame_bytes)).convert("RGBA")
         FW, FH = frame.size
 
-        # ── スクリーン領域を取得 ──
-        sx0, sy0, sx1, sy1 = RZ_SCREEN_AREA
+        # ── スクリーン領域を自動検出（初回のみ計算してキャッシュ）──
+        sx0, sy0, sx1, sy1 = _rz_screen_area(frame_bytes)
         sw, sh = sx1 - sx0, sy1 - sy0
 
         # ── ベースキャンバス（フレームと同サイズ・黒背景）──
@@ -10785,10 +10816,14 @@ async def _rz_composite(reel_bytes: bytes | None = None,
             # リール: 3列を個別にスクリーン領域に配置
             reel = Image.open(io.BytesIO(reel_bytes)).convert("RGBA")
             RW, RH = reel.size; TW = RW // 3
-            for i, (wx0, wy0, wx1, wy1) in enumerate(RZ_FRAME_WINDOWS):
+            # 自動検出エリアを列ごとに3分割して配置
+            col_w = (sx1 - sx0) // 3
+            for i in range(3):
+                cx0 = sx0 + i * col_w
+                cx1 = sx0 + (i + 1) * col_w if i < 2 else sx1
                 col_img = reel.crop((i * TW, 0, (i + 1) * TW, RH))
-                col_img = col_img.resize((wx1 - wx0, wy1 - wy0), Image.LANCZOS)
-                canvas.paste(col_img, (wx0, wy0))
+                col_img = col_img.resize((cx1 - cx0, sy1 - sy0), Image.LANCZOS)
+                canvas.paste(col_img, (cx0, sy0))
 
         elif bg_bytes:
             # 背景: スクリーン全体に引き伸ばして配置
@@ -10972,9 +11007,13 @@ async def _rz_update_img(sess, content, img_data=None, img_name="rz.png", view=N
     await _rz_update_header(sess)
     try:
         cm = await thread.fetch_message(sess["ctrl_msg_id"])
-        edit_kw = {"content": content, "attachments": []}
+        edit_kw = {"content": content}
         if img_data:
+            # 画像がある場合は更新
             edit_kw["attachments"] = [_rzf(img_data, img_name)]
+        else:
+            # 画像がない場合は前の画像をそのまま残す（attachments未指定）
+            pass
         if view is not None:
             edit_kw["view"] = view
         await cm.edit(**edit_kw)
@@ -11933,6 +11972,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
