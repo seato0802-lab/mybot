@@ -10605,18 +10605,12 @@ def _rz_build_gif(stopped_cols: list, stopped_syms: dict,
 
         if frame_base is not None:
             FW, FH = frame_base.size
-            # ベースキャンバス（黒背景）を作りリールを配置してからフレームを上に重ねる
+            # ベースキャンバス（黒背景）にリール全体をスクリーン領域へ一括貼り付け
             canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
-            reel_rgba = reel.convert("RGBA")
-            rw, rh = reel_rgba.size; cw3 = rw // 3
             bsx0, bsy0, bsx1, bsy1 = _rz_screen_area(frame_base_bytes)
-            bcol_w = (bsx1 - bsx0) // 3
-            for i in range(3):
-                bcx0 = bsx0 + i * bcol_w
-                bcx1 = bsx0 + (i + 1) * bcol_w if i < 2 else bsx1
-                col_strip = reel_rgba.crop((i*cw3, 0, (i+1)*cw3, rh))
-                col_strip = col_strip.resize((bcx1 - bcx0, bsy1 - bsy0), Image.LANCZOS)
-                canvas.paste(col_strip, (bcx0, bsy0))
+            reel_fit = reel.convert("RGBA").resize(
+                (bsx1 - bsx0, bsy1 - bsy0), Image.LANCZOS)
+            canvas.paste(reel_fit, (bsx0, bsy0))
             # フレームを上から重ねる（ボタン・装飾が前面に出る）
             canvas.alpha_composite(frame_base)
             frames.append(canvas.convert("RGB").quantize(colors=128, method=Image.Quantize.FASTOCTREE))
@@ -10677,7 +10671,11 @@ async def _rz_make_spin_async(stopped_cols: list = None,
     return raw or None
 
 
-async def _rz_make_reel_async(flag: str) -> bytes | None:
+async def _rz_make_reel_async(flag: str, bg_key: str = "rz_normal.png") -> bytes | None:
+    """
+    flag役のリール静止画をフレーム合成して返す。
+    bg_key で背景画像を指定できる（例: "rz_hakugei.png"）。
+    """
     FLAG_SYM = {
         "BELL":    "BELL",
         "REPLAY":  "RE",
@@ -10688,11 +10686,36 @@ async def _rz_make_reel_async(flag: str) -> bytes | None:
     lbl = FLAG_SYM.get(flag, "BLANK")
     si = next((i for i, (c, l) in enumerate(_RZ_SYMS) if l == lbl), 0)
     frame_bytes = await _rzget("rz_machine_frame.png")
-    sym_tiles = await _rz_fetch_sym_tiles()
+    bg_bytes    = await _rzget(bg_key)
+    sym_tiles   = await _rz_fetch_sym_tiles()
     loop = asyncio.get_running_loop()
+    # リール静止画（フレーム合成込み）を生成
     raw = await loop.run_in_executor(
         None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1, 28, frame_bytes, sym_tiles)
-    return raw or None
+    if not raw:
+        return None
+    # 背景が指定されている場合：bg を先に描いてその上にリールを重ねる
+    if bg_bytes and bg_key != "rz_normal.png":
+        try:
+            from PIL import Image
+            frame_img = Image.open(io.BytesIO(frame_bytes)).convert("RGBA") if frame_bytes else None
+            if frame_img:
+                FW, FH = frame_img.size
+                sx0, sy0, sx1, sy1 = _rz_screen_area(frame_bytes)
+                # キャンバスに背景を貼る
+                bg_img = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
+                canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
+                canvas.paste(bg_img.resize((sx1-sx0, sy1-sy0), Image.LANCZOS), (sx0, sy0))
+                # その上にリール静止画を半透明合成（リールが見えつつ背景も透ける）
+                reel_img = Image.open(io.BytesIO(raw)).convert("RGBA")
+                reel_fit = reel_img.resize((FW, FH), Image.LANCZOS) if reel_img.size != (FW, FH) else reel_img
+                canvas.alpha_composite(reel_fit)
+                buf = io.BytesIO()
+                canvas.convert("RGB").save(buf, "PNG")
+                return buf.getvalue()
+        except Exception as e:
+            print(f"[rezero] reel+bg合成失敗: {e}")
+    return raw
 
 
 async def _rz_make_static_async(stopped_syms: dict) -> bytes | None:
@@ -10751,22 +10774,47 @@ def _rzf(data: bytes, fn: str) -> discord.File:
 _RZ_SCREEN_AREA_CACHE: tuple | None = None
 
 def _rz_detect_screen_area(frame_bytes: bytes) -> tuple:
-    """フレーム画像の透明ピクセル範囲からスクリーンエリアを自動検出する（numpy不要・高速版）"""
+    """
+    フレーム画像の中央付近にある最大の連続透明矩形をスクリーンエリアとして検出。
+    外側の角丸・影の透明ピクセルは除外するため、画像中心から走査する。
+    """
     try:
         from PIL import Image
         img = Image.open(io.BytesIO(frame_bytes)).convert("RGBA")
         W, H = img.size
-        # アルファチャンネルだけ取り出してgetbbox()で透明範囲を一発取得
-        alpha = img.split()[3]           # アルファチャンネル
-        # 透明(alpha<30)ピクセルを白、それ以外を黒にした画像を作りbboxで範囲取得
-        threshold = alpha.point(lambda p: 255 if p < 30 else 0)
-        bbox = threshold.getbbox()       # (min_x, min_y, max_x, max_y) or None
-        if bbox:
-            print(f"[rezero] スクリーンエリア検出: {bbox}")
-            return bbox
+        alpha = img.split()[3]
+        pixels = alpha.load()
+
+        cx, cy = W // 2, H // 2  # 画像中心
+
+        # 中央列でスクリーンの上端・下端を探す（中心から上下に走査）
+        top = cy
+        while top > 0 and pixels[cx, top] < 30:
+            top -= 1
+        top += 1  # 透明開始行
+
+        bottom = cy
+        while bottom < H - 1 and pixels[cx, bottom] < 30:
+            bottom += 1
+        # bottom は透明終了行（exclusive）
+
+        # 中央行でスクリーンの左端・右端を探す
+        mid_y = (top + bottom) // 2
+        left = cx
+        while left > 0 and pixels[left, mid_y] < 30:
+            left -= 1
+        left += 1
+
+        right = cx
+        while right < W - 1 and pixels[right, mid_y] < 30:
+            right += 1
+
+        if right > left and bottom > top:
+            result = (left, top, right, bottom)
+            print(f"[rezero] スクリーンエリア検出: {result}")
+            return result
     except Exception as e:
         print(f"[rezero] スクリーンエリア検出失敗: {e}")
-    # フォールバック値
     return (153, 18, 645, 224)
 
 def _rz_screen_area(frame_bytes: bytes | None = None) -> tuple:
@@ -10812,17 +10860,10 @@ async def _rz_composite(reel_bytes: bytes | None = None,
         canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
 
         if reel_bytes:
-            # リール: 3列を個別にスクリーン領域に配置
+            # リール: スクリーン領域全体に一括貼り付け
             reel = Image.open(io.BytesIO(reel_bytes)).convert("RGBA")
-            RW, RH = reel.size; TW = RW // 3
-            # 自動検出エリアを列ごとに3分割して配置
-            col_w = (sx1 - sx0) // 3
-            for i in range(3):
-                cx0 = sx0 + i * col_w
-                cx1 = sx0 + (i + 1) * col_w if i < 2 else sx1
-                col_img = reel.crop((i * TW, 0, (i + 1) * TW, RH))
-                col_img = col_img.resize((cx1 - cx0, sy1 - sy0), Image.LANCZOS)
-                canvas.paste(col_img, (cx0, sy0))
+            reel_fit = reel.resize((sw, sh), Image.LANCZOS)
+            canvas.paste(reel_fit, (sx0, sy0))
 
         elif bg_bytes:
             # 背景: スクリーン全体に引き伸ばして配置
@@ -11341,9 +11382,10 @@ async def _rz_start_prep(uid):
             f"🔔 ベルナビ：{bells}（{sess['bell_count']}/5）\n"
             f"💥 撃破率：**{sess['final_rate']}%** ｜ アイコン：{ico}\n"
             f"⭐ 撃破ストック：**{sess['hakugei_stocks']}個**\n"
-            f"━━━━━━━━━━━━━━━━")
-    img = await _rz_composite(bg_bytes=await _rzget("rz_hakugei.png"))
-    await _rz_update_img(sess, text, img, "rz_hakugei.png", view=RezeroPrepView(uid))
+            f"━━━━━━━━━━━━━━━━\n"
+            f"「🔔 ベルを揃える！」を5回押すのだ！")
+    img = await _rz_make_reel_async("BELL", "rz_hakugei.png")
+    await _rz_update_img(sess, text, img, "rz_prep.gif", view=RezeroPrepView(uid))
 
 
 class RezeroPrepView(discord.ui.View):
@@ -11384,18 +11426,19 @@ class RezeroPrepView(discord.ui.View):
                     f"アイコン補正 {ico} → 最終撃破率：**{sess['final_rate']}%**\n"
                     f"⭐ 撃破ストック：**{sess['hakugei_stocks']}個**{stock_msg}\n"
                     f"━━━━━━━━━━━━━━━━\n"
-                    f"バトルを開始するのだ！")
-            img = await _rz_composite(bg_bytes=await _rzget("rz_hakugei.png"))
-            await _rz_update_img(sess, text, img, "rz_hakugei.png", view=RezeroChallengeView(self.uid))
+                    f"「⚡ バトル開始！」を押すのだ！")
+            img = await _rz_make_reel_async("BELL", "rz_hakugei.png")
+            await _rz_update_img(sess, text, img, "rz_challenge.gif", view=RezeroChallengeView(self.uid))
         else:
             text = (f"⚔️ **白鯨攻略戦【準備中】**\n"
                     f"━━━━━━━━━━━━━━━━\n"
                     f"🔔 ベルナビ：{bells}（{sess['bell_count']}/5）\n"
                     f"💥 撃破率：**{sess['final_rate']}%** ｜ アイコン：{ico}\n"
                     f"⭐ 撃破ストック：**{sess['hakugei_stocks']}個**{stock_msg}\n"
-                    f"━━━━━━━━━━━━━━━━")
-            img = await _rz_composite(bg_bytes=await _rzget("rz_hakugei.png"))
-            await _rz_update_img(sess, text, img, "rz_hakugei.png", view=RezeroPrepView(self.uid))
+                    f"━━━━━━━━━━━━━━━━\n"
+                    f"「🔔 ベルを揃える！」をあと**{5 - sess['bell_count']}回**押すのだ！")
+            img = await _rz_make_reel_async("BELL", "rz_hakugei.png")
+            await _rz_update_img(sess, text, img, "rz_prep.gif", view=RezeroPrepView(self.uid))
 
     @discord.ui.button(label="やめる", style=discord.ButtonStyle.secondary, custom_id="rz:quit_prep", row=1)
     async def quit_game(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -11971,6 +12014,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
