@@ -10751,21 +10751,19 @@ def _rzf(data: bytes, fn: str) -> discord.File:
 _RZ_SCREEN_AREA_CACHE: tuple | None = None
 
 def _rz_detect_screen_area(frame_bytes: bytes) -> tuple:
-    """フレーム画像の透明ピクセル範囲からスクリーンエリアを自動検出する"""
+    """フレーム画像の透明ピクセル範囲からスクリーンエリアを自動検出する（numpy不要・高速版）"""
     try:
         from PIL import Image
-        import numpy as np
         img = Image.open(io.BytesIO(frame_bytes)).convert("RGBA")
-        arr = np.array(img)
-        alpha = arr[:, :, 3]
-        transparent = alpha < 30
-        rows = np.any(transparent, axis=1)
-        cols = np.any(transparent, axis=0)
-        row_idx = np.where(rows)[0]
-        col_idx = np.where(cols)[0]
-        if len(row_idx) > 0 and len(col_idx) > 0:
-            return (int(col_idx[0]), int(row_idx[0]),
-                    int(col_idx[-1]) + 1, int(row_idx[-1]) + 1)
+        W, H = img.size
+        # アルファチャンネルだけ取り出してgetbbox()で透明範囲を一発取得
+        alpha = img.split()[3]           # アルファチャンネル
+        # 透明(alpha<30)ピクセルを白、それ以外を黒にした画像を作りbboxで範囲取得
+        threshold = alpha.point(lambda p: 255 if p < 30 else 0)
+        bbox = threshold.getbbox()       # (min_x, min_y, max_x, max_y) or None
+        if bbox:
+            print(f"[rezero] スクリーンエリア検出: {bbox}")
+            return bbox
     except Exception as e:
         print(f"[rezero] スクリーンエリア検出失敗: {e}")
     # フォールバック値
@@ -11973,6 +11971,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
