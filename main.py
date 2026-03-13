@@ -10567,7 +10567,8 @@ def _rz_draw_tile(dc, x0, y0, si, TW, TH, canvas=None, sym_tiles=None):
 def _rz_build_gif(stopped_cols: list, stopped_syms: dict,
                   frame_n: int = 20, speed: int = 28,
                   frame_base_bytes: bytes = None,
-                  sym_tiles: dict = None) -> bytes:
+                  sym_tiles: dict = None,
+                  bg_bytes: bytes = None) -> bytes:
     try:
         from PIL import Image, ImageDraw
     except ImportError:
@@ -10605,13 +10606,21 @@ def _rz_build_gif(stopped_cols: list, stopped_syms: dict,
 
         if frame_base is not None:
             FW, FH = frame_base.size
-            # ベースキャンバス（黒背景）にリール全体をスクリーン領域へ一括貼り付け
-            canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
             bsx0, bsy0, bsx1, bsy1 = _rz_screen_area(frame_base_bytes)
-            reel_fit = reel.convert("RGBA").resize(
-                (bsx1 - bsx0, bsy1 - bsy0), Image.LANCZOS)
+            sw, sh = bsx1 - bsx0, bsy1 - bsy0
+            # 1. 黒キャンバス
+            canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
+            # 2. 背景画像があればスクリーン領域に貼る
+            if bg_bytes:
+                try:
+                    bg_img = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
+                    canvas.paste(bg_img.resize((sw, sh), Image.LANCZOS), (bsx0, bsy0))
+                except Exception:
+                    pass
+            # 3. リールをスクリーン領域に貼る
+            reel_fit = reel.convert("RGBA").resize((sw, sh), Image.LANCZOS)
             canvas.paste(reel_fit, (bsx0, bsy0))
-            # フレームを上から重ねる（ボタン・装飾が前面に出る）
+            # 4. フレームを上から重ねる（ボタン・装飾が前面に出る）
             canvas.alpha_composite(frame_base)
             frames.append(canvas.convert("RGB").quantize(colors=128, method=Image.Quantize.FASTOCTREE))
         else:
@@ -10660,22 +10669,21 @@ async def _rz_fetch_sym_tiles() -> dict:
 
 
 async def _rz_make_spin_async(stopped_cols: list = None,
-                               stopped_syms: dict = None) -> bytes | None:
+                               stopped_syms: dict = None,
+                               bg_key: str = "rz_normal.png") -> bytes | None:
     if stopped_cols is None: stopped_cols = []
     if stopped_syms is None: stopped_syms = {}
     frame_bytes = await _rzget("rz_machine_frame.png")
-    sym_tiles = await _rz_fetch_sym_tiles()
+    bg_bytes    = await _rzget(bg_key)
+    sym_tiles   = await _rz_fetch_sym_tiles()
     loop = asyncio.get_running_loop()
     raw = await loop.run_in_executor(
-        None, _rz_build_gif, stopped_cols, stopped_syms, 20, 28, frame_bytes, sym_tiles)
+        None, _rz_build_gif, stopped_cols, stopped_syms, 20, 28, frame_bytes, sym_tiles, bg_bytes)
     return raw or None
 
 
 async def _rz_make_reel_async(flag: str, bg_key: str = "rz_normal.png") -> bytes | None:
-    """
-    flag役のリール静止画をフレーム合成して返す。
-    bg_key で背景画像を指定できる（例: "rz_hakugei.png"）。
-    """
+    """flag役のリール静止画をフレーム＋背景合成して返す。"""
     FLAG_SYM = {
         "BELL":    "BELL",
         "REPLAY":  "RE",
@@ -10689,33 +10697,9 @@ async def _rz_make_reel_async(flag: str, bg_key: str = "rz_normal.png") -> bytes
     bg_bytes    = await _rzget(bg_key)
     sym_tiles   = await _rz_fetch_sym_tiles()
     loop = asyncio.get_running_loop()
-    # リール静止画（フレーム合成込み）を生成
     raw = await loop.run_in_executor(
-        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1, 28, frame_bytes, sym_tiles)
-    if not raw:
-        return None
-    # 背景が指定されている場合：bg を先に描いてその上にリールを重ねる
-    if bg_bytes and bg_key != "rz_normal.png":
-        try:
-            from PIL import Image
-            frame_img = Image.open(io.BytesIO(frame_bytes)).convert("RGBA") if frame_bytes else None
-            if frame_img:
-                FW, FH = frame_img.size
-                sx0, sy0, sx1, sy1 = _rz_screen_area(frame_bytes)
-                # キャンバスに背景を貼る
-                bg_img = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
-                canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
-                canvas.paste(bg_img.resize((sx1-sx0, sy1-sy0), Image.LANCZOS), (sx0, sy0))
-                # その上にリール静止画を半透明合成（リールが見えつつ背景も透ける）
-                reel_img = Image.open(io.BytesIO(raw)).convert("RGBA")
-                reel_fit = reel_img.resize((FW, FH), Image.LANCZOS) if reel_img.size != (FW, FH) else reel_img
-                canvas.alpha_composite(reel_fit)
-                buf = io.BytesIO()
-                canvas.convert("RGB").save(buf, "PNG")
-                return buf.getvalue()
-        except Exception as e:
-            print(f"[rezero] reel+bg合成失敗: {e}")
-    return raw
+        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1, 28, frame_bytes, sym_tiles, bg_bytes)
+    return raw or None
 
 
 async def _rz_make_static_async(stopped_syms: dict) -> bytes | None:
@@ -12014,6 +11998,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
