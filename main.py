@@ -10098,7 +10098,7 @@ REZERO_ASSET_URLS: dict[str, str] = {
     "rz_battle_green.png":  "https://drive.usercontent.google.com/download?id=1lE4xJ1ZGqJK9y9N0pUvmNkQLwHMrjj-K&export=download&confirm=t",
     "rz_battle_red.png":    "https://drive.usercontent.google.com/download?id=1bNkuBBBRX7ZHmKxNsZhSaT_ZYkqG3bra&export=download&confirm=t",
     "rz_hakugei.png":       "https://drive.usercontent.google.com/download?id=1Lp179H62YWWNQF6cXw_PnpzlncadnQxE&export=download&confirm=t",
-    "rz_machine_frame.png": "https://drive.usercontent.google.com/download?id=1OpdpWp-c_rDqtltKgqPYsZwj14TRkxLR&export=download&confirm=t",
+    "rz_machine_frame.png": "https://drive.usercontent.google.com/download?id=1BaRtpKLhiYsQUcEjCQMVCJtLphnJCc1X&export=download&confirm=t",
     # シンボル画像（実機リール配列から切り出し・背景透過済み）
     "sym_BELL.png":         "https://drive.usercontent.google.com/download?id=1RiVTlPYBdkEoqvYQXLJv9rQvqbrP3J5v&export=download&confirm=t",  # ベル
     "sym_CHERRY.png":       "https://drive.usercontent.google.com/download?id=1yw6T7jsYkrgElRiO4MqVU9JEwdL_ncik&export=download&confirm=t",  # チェリー
@@ -10603,14 +10603,18 @@ def _rz_build_gif(stopped_cols: list, stopped_syms: dict,
         dc.line([(0, TH*2-1), (W, TH*2-1)],  fill=(255,220,0), width=3)
 
         if frame_base is not None:
-            fr = frame_base.copy()
+            FW, FH = frame_base.size
+            # ベースキャンバス（黒背景）を作りリールを配置してからフレームを上に重ねる
+            canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
             reel_rgba = reel.convert("RGBA")
             rw, rh = reel_rgba.size; cw3 = rw // 3
             for i, (wx0,wy0,wx1,wy1) in enumerate(RZ_FRAME_WINDOWS):
                 col_strip = reel_rgba.crop((i*cw3, 0, (i+1)*cw3, rh))
                 col_strip = col_strip.resize((wx1-wx0, wy1-wy0), Image.LANCZOS)
-                fr.paste(col_strip, (wx0, wy0))
-            frames.append(fr.convert("RGB").quantize(colors=128, method=Image.Quantize.FASTOCTREE))
+                canvas.paste(col_strip, (wx0, wy0))
+            # フレームを上から重ねる（ボタン・装飾が前面に出る）
+            canvas.alpha_composite(frame_base)
+            frames.append(canvas.convert("RGB").quantize(colors=128, method=Image.Quantize.FASTOCTREE))
         else:
             frames.append(reel.quantize(colors=128, method=Image.Quantize.FASTOCTREE))
 
@@ -10737,6 +10741,12 @@ def _rzf(data: bytes, fn: str) -> discord.File:
 
 
 # ── フレーム合成 ─────────────────────────────────────────
+# ── フレームのスクリーン領域（リール3列が収まる範囲）──
+# フレーム画像のスクリーン部分の座標 (x0, y0, x1, y1)
+# ※ フレーム画像に合わせて調整が必要な場合はここを変更する
+RZ_SCREEN_AREA = (153, 18, 645, 224)   # スクリーン全体
+
+# 後方互換のため残す（リール列ごとのX分割に使用）
 RZ_FRAME_WINDOWS = [
     (153, 18, 304, 224),
     (325, 18, 473, 224),
@@ -10747,33 +10757,59 @@ RZ_FRAME_WINDOWS = [
 async def _rz_composite(reel_bytes: bytes | None = None,
                          frame_bytes: bytes | None = None,
                          bg_bytes: bytes | None = None) -> bytes | None:
+    """
+    コンテンツ（リール or 背景）を描いてからフレームを上に重ねる方式。
+    フレーム画像のスクリーン部分が透明なら自然に重なり、
+    ボタンや装飾が常に前面に表示される。
+    """
     try:
         from PIL import Image, ImageDraw
         if frame_bytes is None:
             frame_bytes = await _rzget("rz_machine_frame.png")
+
         if not frame_bytes:
+            # フレームなし: コンテンツをそのまま返す
             return reel_bytes or bg_bytes
+
         frame = Image.open(io.BytesIO(frame_bytes)).convert("RGBA")
+        FW, FH = frame.size
+
+        # ── スクリーン領域を取得 ──
+        sx0, sy0, sx1, sy1 = RZ_SCREEN_AREA
+        sw, sh = sx1 - sx0, sy1 - sy0
+
+        # ── ベースキャンバス（フレームと同サイズ・黒背景）──
+        canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
+
         if reel_bytes:
+            # リール: 3列を個別にスクリーン領域に配置
             reel = Image.open(io.BytesIO(reel_bytes)).convert("RGBA")
             RW, RH = reel.size; TW = RW // 3
             for i, (wx0, wy0, wx1, wy1) in enumerate(RZ_FRAME_WINDOWS):
-                col_img = reel.crop((i*TW, 0, (i+1)*TW, RH))
-                col_img = col_img.resize((wx1-wx0, wy1-wy0), Image.LANCZOS)
-                frame.paste(col_img, (wx0, wy0))
+                col_img = reel.crop((i * TW, 0, (i + 1) * TW, RH))
+                col_img = col_img.resize((wx1 - wx0, wy1 - wy0), Image.LANCZOS)
+                canvas.paste(col_img, (wx0, wy0))
+
         elif bg_bytes:
+            # 背景: スクリーン全体に引き伸ばして配置
             bg = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
-            all_x0 = RZ_FRAME_WINDOWS[0][0]; all_y0 = RZ_FRAME_WINDOWS[0][1]
-            all_x1 = RZ_FRAME_WINDOWS[2][2]; all_y1 = RZ_FRAME_WINDOWS[2][3]
-            bg_resized = bg.resize((all_x1-all_x0, all_y1-all_y0), Image.LANCZOS)
-            frame.paste(bg_resized, (all_x0, all_y0))
+            bg_resized = bg.resize((sw, sh), Image.LANCZOS)
+            canvas.paste(bg_resized, (sx0, sy0))
+
         else:
-            draw = ImageDraw.Draw(frame)
-            for (wx0, wy0, wx1, wy1) in RZ_FRAME_WINDOWS:
-                draw.rectangle([wx0, wy0, wx1, wy1], fill=(20,20,35,255))
+            # 何もなし: スクリーンを暗い青で塗る
+            draw = ImageDraw.Draw(canvas)
+            draw.rectangle([sx0, sy0, sx1, sy1], fill=(20, 20, 35, 255))
+
+        # ── フレームをアルファ合成で上に重ねる ──
+        # フレームのスクリーン部分が透明なら背景が透けて見え、
+        # ボタン・装飾部分はそのまま前面に表示される
+        canvas.alpha_composite(frame)
+
         buf = io.BytesIO()
-        frame.save(buf, "PNG")
+        canvas.convert("RGB").save(buf, "PNG")
         return buf.getvalue()
+
     except Exception as e:
         traceback.print_exc()
         print(f"[rezero] フレーム合成失敗: {e}")
@@ -11897,6 +11933,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
