@@ -10671,6 +10671,7 @@ async def _rz_fetch_sym_tiles() -> dict:
 async def _rz_make_spin_async(stopped_cols: list = None,
                                stopped_syms: dict = None,
                                bg_key: str = "rz_normal.png") -> bytes | None:
+    """アニメGIF生成。フレームは _rz_build_gif 内で合成（bg は直接渡す）。"""
     if stopped_cols is None: stopped_cols = []
     if stopped_syms is None: stopped_syms = {}
     frame_bytes = await _rzget("rz_machine_frame.png")
@@ -10683,7 +10684,10 @@ async def _rz_make_spin_async(stopped_cols: list = None,
 
 
 async def _rz_make_reel_async(flag: str, bg_key: str = "rz_normal.png") -> bytes | None:
-    """flag役のリール静止画をフレーム＋背景合成して返す。"""
+    """
+    flag役のリール静止画を生成し、bg_key の背景と合成して返す。
+    描画順: 背景 → リール → フレーム
+    """
     FLAG_SYM = {
         "BELL":    "BELL",
         "REPLAY":  "RE",
@@ -10693,23 +10697,28 @@ async def _rz_make_reel_async(flag: str, bg_key: str = "rz_normal.png") -> bytes
     }
     lbl = FLAG_SYM.get(flag, "BLANK")
     si = next((i for i, (c, l) in enumerate(_RZ_SYMS) if l == lbl), 0)
-    frame_bytes = await _rzget("rz_machine_frame.png")
-    bg_bytes    = await _rzget(bg_key)
-    sym_tiles   = await _rz_fetch_sym_tiles()
-    loop = asyncio.get_running_loop()
-    raw = await loop.run_in_executor(
-        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1, 28, frame_bytes, sym_tiles, bg_bytes)
-    return raw or None
-
-
-async def _rz_make_static_async(stopped_syms: dict) -> bytes | None:
-    """3列すべて停止後、実際に止めたシンボルそのままで1フレーム静止画を生成する"""
-    frame_bytes = await _rzget("rz_machine_frame.png")
     sym_tiles = await _rz_fetch_sym_tiles()
     loop = asyncio.get_running_loop()
-    raw = await loop.run_in_executor(
-        None, _rz_build_gif, [0, 1, 2], stopped_syms, 1, 28, frame_bytes, sym_tiles)
-    return raw or None
+    # フレームなし・背景なしで純粋なリール画像のみ生成
+    reel_raw = await loop.run_in_executor(
+        None, _rz_build_gif, [0,1,2], {0:si,1:si,2:si}, 1, 28, None, sym_tiles, None)
+    if not reel_raw:
+        return None
+    # bg と reel を _rz_composite に渡して合成（bg→reel→frame の順）
+    bg_bytes = await _rzget(bg_key)
+    return await _rz_composite(reel_bytes=reel_raw, bg_bytes=bg_bytes)
+
+
+async def _rz_make_static_async(stopped_syms: dict, bg_key: str = "rz_normal.png") -> bytes | None:
+    """3列すべて停止後の静止画。bg→reel→frame の順で合成。"""
+    sym_tiles = await _rz_fetch_sym_tiles()
+    loop = asyncio.get_running_loop()
+    reel_raw = await loop.run_in_executor(
+        None, _rz_build_gif, [0, 1, 2], stopped_syms, 1, 28, None, sym_tiles, None)
+    if not reel_raw:
+        return None
+    bg_bytes = await _rzget(bg_key)
+    return await _rz_composite(reel_bytes=reel_raw, bg_bytes=bg_bytes)
 
 
 async def _rzget(fn: str) -> bytes | None:
@@ -10820,49 +10829,39 @@ async def _rz_composite(reel_bytes: bytes | None = None,
                          frame_bytes: bytes | None = None,
                          bg_bytes: bytes | None = None) -> bytes | None:
     """
-    コンテンツ（リール or 背景）を描いてからフレームを上に重ねる方式。
-    フレーム画像のスクリーン部分が透明なら自然に重なり、
-    ボタンや装飾が常に前面に表示される。
+    描画順: 黒キャンバス → 背景(bg) → リール(reel) → フレーム(frame)
+    bg と reel を両方渡すと「背景の上にリールを重ねた」絵になる。
     """
     try:
         from PIL import Image, ImageDraw
         if frame_bytes is None:
             frame_bytes = await _rzget("rz_machine_frame.png")
-
         if not frame_bytes:
-            # フレームなし: コンテンツをそのまま返す
             return reel_bytes or bg_bytes
 
         frame = Image.open(io.BytesIO(frame_bytes)).convert("RGBA")
         FW, FH = frame.size
-
-        # ── スクリーン領域を自動検出（初回のみ計算してキャッシュ）──
         sx0, sy0, sx1, sy1 = _rz_screen_area(frame_bytes)
         sw, sh = sx1 - sx0, sy1 - sy0
 
-        # ── ベースキャンバス（フレームと同サイズ・黒背景）──
         canvas = Image.new("RGBA", (FW, FH), (10, 10, 20, 255))
 
-        if reel_bytes:
-            # リール: スクリーン領域全体に一括貼り付け
-            reel = Image.open(io.BytesIO(reel_bytes)).convert("RGBA")
-            reel_fit = reel.resize((sw, sh), Image.LANCZOS)
-            canvas.paste(reel_fit, (sx0, sy0))
-
-        elif bg_bytes:
-            # 背景: スクリーン全体に引き伸ばして配置
+        # ① 背景をスクリーン領域に貼る
+        if bg_bytes:
             bg = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
-            bg_resized = bg.resize((sw, sh), Image.LANCZOS)
-            canvas.paste(bg_resized, (sx0, sy0))
+            canvas.paste(bg.resize((sw, sh), Image.LANCZOS), (sx0, sy0))
 
-        else:
-            # 何もなし: スクリーンを暗い青で塗る
+        # ② リールをその上に重ねる（背景なしの場合は黒地の上）
+        if reel_bytes:
+            reel = Image.open(io.BytesIO(reel_bytes)).convert("RGB").convert("RGBA")
+            canvas.paste(reel.resize((sw, sh), Image.LANCZOS), (sx0, sy0))
+
+        # ③ 背景もリールもない場合は暗い青で塗る
+        if not bg_bytes and not reel_bytes:
             draw = ImageDraw.Draw(canvas)
             draw.rectangle([sx0, sy0, sx1, sy1], fill=(20, 20, 35, 255))
 
-        # ── フレームをアルファ合成で上に重ねる ──
-        # フレームのスクリーン部分が透明なら背景が透けて見え、
-        # ボタン・装飾部分はそのまま前面に表示される
+        # ④ フレームを最前面に重ねる
         canvas.alpha_composite(frame)
 
         buf = io.BytesIO()
@@ -11998,6 +11997,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
