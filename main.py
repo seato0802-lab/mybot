@@ -2029,6 +2029,7 @@ class SheetsStore:
             "award_keys": s("award_keys", ""),
             "ai_chat_count": i("ai_chat_count", 0),
             "ai_summary": s("ai_summary", ""),
+            "rz_points": i("rz_points", 0),
         }
 
     def _load_users_and_index(self):
@@ -11972,6 +11973,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     bot.run(token)
+
 
 
 
